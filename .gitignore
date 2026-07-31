@@ -1,0 +1,16 @@
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+target/
+logs/
+*.log
+
+.env
+application-local.yml
+application-prod.yml
+
+uploads/
+workspace/
+
