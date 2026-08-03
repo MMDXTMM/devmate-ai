@@ -2,7 +2,7 @@
 
 DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
-当前已经完成基础工程和第一版数据库，下一阶段是 **项目管理业务闭环**。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成基础工程、第一版数据库和 **项目管理基础 CRUD 闭环**。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
 
 ## 当前已具备
 
@@ -14,6 +14,8 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - MySQL 运行配置模板
 - H2 零配置开发模式
 - 统一接口响应与全局异常处理
+- 项目创建、详情、分页筛选、修改和逻辑删除接口
+- 独立 Vue 3 + TypeScript 项目管理前端
 - 健康检查接口及基础测试
 
 ## 快速启动
@@ -24,7 +26,7 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 ./mvnw spring-boot:run
 ```
 
-默认使用内存 H2 数据库，适合首次启动和接口调试。访问：
+默认激活 `local` Profile 并连接本机 MySQL。数据库连接信息保存在不会提交 Git 的 `application-local.yml`。访问：
 
 - `GET http://localhost:8080/api/health`
 - `GET http://localhost:8080/actuator/health`
@@ -33,6 +35,26 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 
 ```bash
 ./mvnw test
+```
+
+## 启动 Vue 前端
+
+后端保持在 `http://localhost:8080` 运行，再打开一个终端：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+访问 `http://localhost:5173`。开发服务器会把 `/api` 请求代理到 Spring Boot，因此前后端仍是两个独立工程，但不需要额外处理开发环境跨域。
+
+前端检查命令：
+
+```bash
+cd frontend
+npm test
+npm run build
 ```
 
 ## 切换到本地 MySQL
@@ -52,20 +74,25 @@ cp src/main/resources/application-local.yml.example \
    src/main/resources/application-local.yml
 ```
 
-3. 修改本机数据库账号密码，然后启动：
+3. 修改本机数据库账号密码，然后直接启动：
 
 ```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+./mvnw spring-boot:run
 ```
 
 `application-local.yml` 已被 Git 忽略；两台电脑可以拥有各自的数据库密码。数据库结构由 `src/main/resources/db/migration` 中的 Flyway 脚本同步，而不是提交数据库文件。
+
+自动化测试显式使用 `test` Profile 和 H2 内存数据库，不会修改本地 MySQL 数据。
 
 ## 文档
 
 - [项目总设计](docs/PROJECT_BLUEPRINT.md)
 - [分阶段开发路线](docs/DEVELOPMENT_ROADMAP.md)
+- [面试导向学习与开发路线](docs/LEARNING_ROADMAP.md)
 - [本地开发与多端同步](docs/LOCAL_DEVELOPMENT.md)
 - [数据库设计](docs/DATABASE_DESIGN.md)
+- [项目管理模块](docs/PROJECT_MANAGEMENT.md)
+- [前端开发与联调](docs/FRONTEND_DEVELOPMENT.md)
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
 - [AI 辅助开发与项目归属规范](docs/AI_COLLABORATION_GUIDE.md)
 - [项目决策与变更日志](docs/PROJECT_LOG.md)

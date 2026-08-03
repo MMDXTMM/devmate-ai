@@ -1,6 +1,8 @@
 spring:
   application:
     name: devmate-ai
+  profiles:
+    default: local
   datasource:
     url: jdbc:h2:mem:devmate;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
     username: sa
@@ -40,4 +42,3 @@ logging:
   level:
     root: info
     com.devmate: debug
-
