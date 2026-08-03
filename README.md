@@ -1,8 +1,8 @@
 # DevMate AI
 
-DevMate AI 是一个面向研发团队的智能协作 Agent 平台。它不是单纯的聊天机器人，而是让大模型基于项目源码、技术文档和受控工具，辅助完成代码理解、需求分析、故障诊断与变更风险分析。
+DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
-当前仓库处于 **阶段 1：Spring Boot 基础工程**。现阶段采用模块化单体，先完成可运行、可测试、可演进的业务闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成基础工程和第一版数据库，下一阶段是 **项目管理业务闭环**。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
 
 ## 当前已具备
 
@@ -65,5 +65,8 @@ cp src/main/resources/application-local.yml.example \
 - [项目总设计](docs/PROJECT_BLUEPRINT.md)
 - [分阶段开发路线](docs/DEVELOPMENT_ROADMAP.md)
 - [本地开发与多端同步](docs/LOCAL_DEVELOPMENT.md)
+- [数据库设计](docs/DATABASE_DESIGN.md)
+- [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
+- [AI 辅助开发与项目归属规范](docs/AI_COLLABORATION_GUIDE.md)
+- [项目决策与变更日志](docs/PROJECT_LOG.md)
 - [架构决策记录](docs/ARCHITECTURE_DECISIONS.md)
-

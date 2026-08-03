@@ -11,16 +11,19 @@ public class Project {
 
     @TableId
     private Long id;
+    private Long ownerId;
     private String name;
     private String description;
     private String sourceType;
     private String sourceLocation;
     private String defaultBranch;
+    private String currentRevision;
     private String status;
     @TableLogic
     private Integer deleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime lastIndexedAt;
 
     public Long getId() {
         return id;
@@ -28,6 +31,14 @@ public class Project {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getOwnerId() {
+        return ownerId;
+    }
+
+    public void setOwnerId(Long ownerId) {
+        this.ownerId = ownerId;
     }
 
     public String getName() {
@@ -70,6 +81,14 @@ public class Project {
         this.defaultBranch = defaultBranch;
     }
 
+    public String getCurrentRevision() {
+        return currentRevision;
+    }
+
+    public void setCurrentRevision(String currentRevision) {
+        this.currentRevision = currentRevision;
+    }
+
     public String getStatus() {
         return status;
     }
@@ -100,6 +119,14 @@ public class Project {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public LocalDateTime getLastIndexedAt() {
+        return lastIndexedAt;
+    }
+
+    public void setLastIndexedAt(LocalDateTime lastIndexedAt) {
+        this.lastIndexedAt = lastIndexedAt;
     }
 }
 

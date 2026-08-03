@@ -1,0 +1,199 @@
+# DevMate AI 数据库设计
+
+## 1. 设计目标
+
+第一版数据库需要支撑这条完整业务链路：
+
+```text
+用户创建项目
+  → 导入源码或文档
+  → 创建索引任务
+  → 解析为知识块
+  → 写入向量存储
+  → 用户发起会话
+  → Agent 调用检索/诊断工具
+  → 记录回答、耗时和工具链路
+```
+
+MySQL 负责结构化业务数据和关联关系。向量本体后续由 Elasticsearch 或专用向量数据库保存；MySQL 的 `knowledge_chunk.vector_id` 只保存外部向量记录标识。
+
+## 2. 表关系
+
+```mermaid
+erDiagram
+    APP_USER ||--o{ PROJECT : owns
+    APP_USER ||--o{ PROJECT_MEMBER : joins
+    PROJECT ||--o{ PROJECT_MEMBER : contains
+    PROJECT ||--o{ KNOWLEDGE_DOCUMENT : contains
+    KNOWLEDGE_DOCUMENT ||--o{ KNOWLEDGE_CHUNK : splits_into
+    PROJECT ||--o{ INDEX_TASK : indexes
+    APP_USER ||--o{ CONVERSATION : starts
+    PROJECT ||--o{ CONVERSATION : scopes
+    CONVERSATION ||--o{ CONVERSATION_MESSAGE : contains
+    PROJECT ||--o{ BUG_ANALYSIS : diagnoses
+    CONVERSATION o|--o{ BUG_ANALYSIS : relates_to
+    CONVERSATION o|--o{ AI_INVOCATION_LOG : produces
+    AI_INVOCATION_LOG ||--o{ TOOL_CALL_LOG : invokes
+```
+
+## 3. 核心表
+
+### 3.1 `app_user`
+
+保存登录用户。表名不使用 `user`，避免与不同数据库的关键字冲突。
+
+关键字段：
+
+- `username`：唯一登录名。
+- `password_hash`：只存密码哈希，不存明文密码。
+- `status`：`ACTIVE`、`DISABLED`、`LOCKED`。
+- `deleted`：逻辑删除标记。
+
+### 3.2 `project`
+
+保存接入 DevMate AI 的研发项目。
+
+关键字段：
+
+- `owner_id`：项目所有者。
+- `source_type`：`LOCAL`、`GIT`、`UPLOAD`。
+- `source_location`：本地路径、Git 地址或上传文件引用。
+- `current_revision`：当前已导入的提交哈希或版本号。
+- `status`：`CREATED`、`INDEXING`、`READY`、`FAILED`。
+- `last_indexed_at`：最近成功完成知识库构建的时间。
+
+`owner_id` 在 V2 中暂时允许为空，是为了让已有 V1 数据能够平滑升级；项目创建业务会要求所有者必填，后续完成存量回填后再通过迁移增加非空约束。
+
+### 3.3 `project_member`
+
+表示用户与项目之间的权限关系。
+
+- 同一用户在同一项目只能有一条成员记录。
+- `member_role` 可取 `OWNER`、`MAINTAINER`、`DEVELOPER`、`VIEWER`。
+- 后续所有检索和 Tool 调用都应先校验该关系。
+
+### 3.4 `knowledge_document`
+
+保存源码文件或技术文档的元数据，不在这里保存文件本体。
+
+- `source_kind`：`SOURCE_CODE`、`README`、`TECH_DOC`、`API_DOC`。
+- `content_hash`：判断文件内容是否变化，用于增量更新。
+- `path_hash`：文件路径的 SHA-256，用于建立定长唯一索引；完整路径仍保存在 `file_path`。
+- `revision`：文件所属的 Git 提交或导入版本。
+- `status`：`PENDING`、`PARSING`、`INDEXED`、`FAILED`。
+- `(project_id, path_hash, revision)` 唯一，防止同一版本重复导入，同时避免 `utf8mb4` 长路径超过 MySQL 的索引长度限制。
+
+### 3.5 `knowledge_chunk`
+
+RAG 的最小检索单元。
+
+- `chunk_type`：`CLASS`、`METHOD`、`DOCUMENT_SECTION` 等。
+- `symbol_name`：类名、方法签名或文档标题。
+- `start_line`、`end_line`：用于回答时给出源码位置。
+- `content_hash`：去重和增量索引。
+- `vector_id`：向量数据库中的记录 ID。
+- `project_id` 是有意保留的冗余字段，用于高频项目隔离过滤，避免每次检索都连接文档表。
+
+### 3.6 `index_task`
+
+记录代码解析和知识库构建任务。
+
+- `task_type`：`FULL`、`INCREMENTAL`、`DELETE`。
+- `status`：`PENDING`、`RUNNING`、`SUCCEEDED`、`FAILED`。
+- 文件计数用于展示进度。
+- 后续接入 RabbitMQ 时，任务 ID 同时作为幂等依据之一。
+
+### 3.7 `conversation` 与 `conversation_message`
+
+会话和消息分表，而不是把一次问答放在同一行：
+
+- 支持多轮对话以及 Tool 消息扩展。
+- `message_role` 可取 `SYSTEM`、`USER`、`ASSISTANT`、`TOOL`。
+- `(conversation_id, sequence_no)` 保证消息顺序唯一。
+- Token 字段记录在 AI 回复消息上，便于按会话统计。
+
+### 3.8 `bug_analysis`
+
+保存一次可独立查看的 Bug 诊断任务和结果。
+
+- 原始异常保存在 `error_log`。
+- 分析结果保存在 `analysis_result`。
+- `severity`：`UNKNOWN`、`LOW`、`MEDIUM`、`HIGH`、`CRITICAL`。
+- 可关联产生本次分析的会话。
+
+### 3.9 `ai_invocation_log`
+
+记录一次模型调用的运行指标和错误信息。
+
+- 不保存完整 Prompt 和模型回答，避免敏感源码被重复写入审计表。
+- `trace_id` 串联一次用户请求中的模型和工具调用。
+- Token、耗时、模型和状态支持后续性能与成本分析。
+
+### 3.10 `tool_call_log`
+
+记录 Agent 每次工具选择和执行结果。
+
+- `arguments_summary` 和 `result_summary` 只保存脱敏摘要。
+- 通过 `invocation_id` 还原一次 Agent 请求的工具调用链。
+- 可统计各工具的成功率和延迟。
+
+## 4. 为什么暂时不建这些表
+
+- 向量表：向量维度和索引由目标向量存储管理。
+- Redis 会话表：Redis 是缓存，不是事实数据源。
+- MQ 消息表：先完成同步闭环；接入可靠消息时再根据方案设计 Outbox。
+- 微服务独立数据库：当前是模块化单体，过早分库会增加事务和联调成本。
+
+## 5. 代码审查阶段计划增加的表
+
+以下表已经进入设计计划，但在代码审查字段和状态流转完成评审前不创建迁移，避免先建表后反复修改。
+
+### `code_review_task`
+
+保存一次代码审查任务：
+
+- 所属项目、创建用户
+- 基准版本和目标版本
+- 审查范围与触发方式
+- 任务状态和失败原因
+- 变更文件数、问题数和执行耗时
+- 使用的模型、Prompt 版本和规则集版本
+
+### `code_review_finding`
+
+保存一条结构化审查问题：
+
+- 文件、起止行号和代码符号
+- 问题分类、严重程度和置信度
+- 标题、证据、风险场景、建议和验证方法
+- 来源：静态分析、LLM 或混合结论
+- 去重指纹和当前处理状态
+
+### `code_review_feedback`
+
+保存开发者对 Finding 的反馈：
+
+- 采纳、驳回、误报或稍后处理
+- 反馈说明和操作用户
+- 用于评测和后续规则、Prompt 优化
+
+计划关系：
+
+```mermaid
+erDiagram
+    PROJECT ||--o{ CODE_REVIEW_TASK : has
+    APP_USER ||--o{ CODE_REVIEW_TASK : creates
+    CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FINDING : produces
+    CODE_REVIEW_FINDING ||--o{ CODE_REVIEW_FEEDBACK : receives
+    APP_USER ||--o{ CODE_REVIEW_FEEDBACK : submits
+```
+
+这些表预计在代码审查 MVP 开始前通过新的 Flyway 迁移创建，不修改已经执行的 V1、V2。
+
+## 6. 数据库版本管理
+
+- `V1__initialize_core_schema.sql`：初始项目表。
+- `V2__add_agent_knowledge_schema.sql`：用户、权限、知识库、会话、Bug、AI 和 Tool 审计表。
+- 已执行的迁移文件不再修改；后续每次变更新增 `V3`、`V4` 等脚本。
+
+本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。
