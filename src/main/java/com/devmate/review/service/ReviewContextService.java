@@ -80,7 +80,8 @@ public class ReviewContextService {
                 task.getTargetRevision(),
                 seedIds,
                 request.topK(),
-                request.tokenBudget()
+                request.tokenBudget(),
+                request.retrievalMode()
         ));
     }
 

@@ -206,9 +206,9 @@ tbody tr:hover { background: #fbfcfb; }
 .retrieval-modal { width: min(980px, 100%); }
 .retrieval-form { padding: 18px 22px; border-bottom: 1px solid var(--line); background: #fafbfa; }
 .retrieval-form > label > span, .retrieval-controls label span { display: block; margin-bottom: 6px; color: #4d5750; font-size: 10px; font-weight: 700; }
-.retrieval-form textarea, .retrieval-controls input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; outline: none; background: #fff; resize: vertical; }
-.retrieval-form textarea:focus, .retrieval-controls input:focus { border-color: #719982; box-shadow: 0 0 0 3px rgba(27,105,70,.08); }
-.retrieval-controls { display: grid; grid-template-columns: 100px 150px 1fr 1fr; align-items: end; gap: 9px; margin-top: 10px; }
+.retrieval-form textarea, .retrieval-controls input, .retrieval-controls select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; outline: none; background: #fff; resize: vertical; }
+.retrieval-form textarea:focus, .retrieval-controls input:focus, .retrieval-controls select:focus { border-color: #719982; box-shadow: 0 0 0 3px rgba(27,105,70,.08); }
+.retrieval-controls { display: grid; grid-template-columns: 140px 100px 150px 1fr 1fr; align-items: end; gap: 9px; margin-top: 10px; }
 .retrieval-form > small { display: block; margin-top: 9px; color: var(--muted); font-size: 9px; }
 .retrieval-summary { padding: 14px 22px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; border-bottom: 1px solid var(--line); }
 .retrieval-summary span { padding: 10px; border-radius: 8px; background: #f6f8f6; }

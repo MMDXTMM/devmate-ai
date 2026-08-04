@@ -1,5 +1,6 @@
 import type {
   ApiResponse,
+  EmbeddingIndexTask,
   IndexTask,
   PageData,
   Project,
@@ -91,6 +92,16 @@ export const projectApi = {
 
   latestImport(id: string): Promise<IndexTask> {
     return request(`/api/projects/${encodeURIComponent(id)}/imports/latest`)
+  },
+
+  indexEmbeddings(id: string): Promise<EmbeddingIndexTask> {
+    return request(`/api/projects/${encodeURIComponent(id)}/embeddings/index`, {
+      method: 'POST',
+    })
+  },
+
+  latestEmbeddingIndex(id: string): Promise<EmbeddingIndexTask> {
+    return request(`/api/projects/${encodeURIComponent(id)}/embeddings/tasks/latest`)
   },
 
   listSourceDocuments(id: string): Promise<SourceDocument[]> {

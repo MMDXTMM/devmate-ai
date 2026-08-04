@@ -15,7 +15,7 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。向量本体后续由 Elasticsearch 或专用向量数据库保存；MySQL 的 `knowledge_chunk.vector_id` 只保存外部向量记录标识。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。
 
 ## 2. 表关系
 
@@ -37,6 +37,9 @@ erDiagram
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
     PROJECT ||--o{ RETRIEVAL_EVALUATION_CASE : defines
     PROJECT ||--o{ RETRIEVAL_EVALUATION_RUN : evaluates
+    PROJECT ||--o{ EMBEDDING_INDEX_TASK : builds
+    PROJECT ||--o{ EMBEDDING_VECTOR : isolates
+    KNOWLEDGE_CHUNK ||--o{ EMBEDDING_VECTOR : embeds
     CONVERSATION o|--o{ BUG_ANALYSIS : relates_to
     CONVERSATION o|--o{ AI_INVOCATION_LOG : produces
     AI_INVOCATION_LOG ||--o{ TOOL_CALL_LOG : invokes
@@ -111,7 +114,18 @@ RAG 的最小检索单元。
 - 文件计数用于展示进度。
 - 后续接入 RabbitMQ 时，任务 ID 同时作为幂等依据之一。
 
-### 3.7 `conversation` 与 `conversation_message`
+### 3.7 `embedding_vector` 与 `embedding_index_task`
+
+V9 增加可替换的向量索引实现：
+
+- `embedding_vector` 绑定项目、Chunk、revision、provider、模型、维度与内容哈希。
+- 复合唯一约束防止相同 Chunk 和模型版本重复写入。
+- `vector_json` 仅用于小规模开发与测试；Java 侧设置扫描上限并明确返回是否截断。
+- `embedding_index_task` 保存索引总数、成功、跳过、失败和脱敏错误，支持失败后续建。
+- 远端模型调用不处于数据库长事务；每个批次保存使用独立短事务。
+- 新 revision 或模型版本不会复用不兼容向量。
+
+### 3.8 `conversation` 与 `conversation_message`
 
 会话和消息分表，而不是把一次问答放在同一行：
 
@@ -120,7 +134,7 @@ RAG 的最小检索单元。
 - `(conversation_id, sequence_no)` 保证消息顺序唯一。
 - Token 字段记录在 AI 回复消息上，便于按会话统计。
 
-### 3.8 `bug_analysis`
+### 3.9 `bug_analysis`
 
 保存一次可独立查看的 Bug 诊断任务和结果。
 
@@ -129,7 +143,7 @@ RAG 的最小检索单元。
 - `severity`：`UNKNOWN`、`LOW`、`MEDIUM`、`HIGH`、`CRITICAL`。
 - 可关联产生本次分析的会话。
 
-### 3.9 `ai_invocation_log`
+### 3.10 `ai_invocation_log`
 
 记录一次模型调用的运行指标和错误信息。
 
@@ -137,7 +151,7 @@ RAG 的最小检索单元。
 - `trace_id` 串联一次用户请求中的模型和工具调用。
 - Token、耗时、模型和状态支持后续性能与成本分析。
 
-### 3.10 `tool_call_log`
+### 3.11 `tool_call_log`
 
 记录 Agent 每次工具选择和执行结果。
 
@@ -145,7 +159,7 @@ RAG 的最小检索单元。
 - 通过 `invocation_id` 还原一次 Agent 请求的工具调用链。
 - 可统计各工具的成功率和延迟。
 
-### 3.11 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
+### 3.12 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
 
 V8 增加可复现的检索评测：
 
@@ -157,7 +171,7 @@ V8 增加可复现的检索评测：
 
 ## 4. 为什么暂时不建这些表
 
-- 向量表：向量维度和索引由目标向量存储管理。
+- 专用向量库 Schema：当前通过适配层使用 MySQL 小规模验证，替换为目标向量存储时再按其索引能力设计。
 - Redis 会话表：Redis 是缓存，不是事实数据源。
 - MQ 消息表：先完成同步闭环；接入可靠消息时再根据方案设计 Outbox。
 - 微服务独立数据库：当前是模块化单体，过早分库会增加事务和联调成本。

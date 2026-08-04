@@ -2,7 +2,7 @@
 
 DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
-当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图，以及带 Token 预算和固定评测集的 `lexical-graph-v1` 检索基线。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图，以及带固定评测集的关键词/向量/关系图混合 RAG。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
 
 ## 当前已具备
 
@@ -31,6 +31,9 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - 项目/revision 隔离的关键词与符号检索、Diff 种子和关系图上下文扩展
 - Top-K、Token 预算、内容去重和可见裁剪原因
 - 固定检索评测集以及 Recall@K、Precision@K、HitRate@K、MRR 指标
+- 本地确定性 Embedding 与 DashScope 真实语义模型双 Provider
+- 项目/revision/模型版本隔离的幂等向量索引和失败续建
+- `LEXICAL/VECTOR/HYBRID` 三种检索模式、RRF 融合与显式降级
 - Vue 上下文检索与证据浏览界面
 - 健康检查接口及基础测试
 
@@ -118,6 +121,7 @@ cp src/main/resources/application-local.yml.example \
 - [配置上下文解析与关联](docs/CONFIGURATION_CONTEXT.md)
 - [数据库结构上下文](docs/DATABASE_CONTEXT.md)
 - [面向变更的检索基线与评测](docs/RETRIEVAL_BASELINE.md)
+- [向量索引与混合 RAG](docs/VECTOR_RAG.md)
 - [前端开发与联调](docs/FRONTEND_DEVELOPMENT.md)
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
 - [同类开源项目对比与路线优化](docs/OPEN_SOURCE_COMPARISON.md)

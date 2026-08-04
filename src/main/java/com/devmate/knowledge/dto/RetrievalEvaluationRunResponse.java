@@ -12,6 +12,7 @@ public record RetrievalEvaluationRunResponse(
         String revision,
         String datasetVersion,
         String retrievalConfigVersion,
+        String retrievalMode,
         String status,
         int totalCases,
         int resolvedCases,

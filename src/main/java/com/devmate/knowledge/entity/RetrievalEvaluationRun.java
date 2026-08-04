@@ -15,6 +15,7 @@ public class RetrievalEvaluationRun {
     private String revision;
     private String datasetVersion;
     private String retrievalConfigVersion;
+    private String retrievalMode;
     private String status;
     private Integer totalCases;
     private Integer resolvedCases;
@@ -38,6 +39,8 @@ public class RetrievalEvaluationRun {
     public void setDatasetVersion(String datasetVersion) { this.datasetVersion = datasetVersion; }
     public String getRetrievalConfigVersion() { return retrievalConfigVersion; }
     public void setRetrievalConfigVersion(String retrievalConfigVersion) { this.retrievalConfigVersion = retrievalConfigVersion; }
+    public String getRetrievalMode() { return retrievalMode; }
+    public void setRetrievalMode(String retrievalMode) { this.retrievalMode = retrievalMode; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Integer getTotalCases() { return totalCases; }

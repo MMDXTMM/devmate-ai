@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ApiError, projectApi } from '../services/projectApi'
-import type { RetrievalSearch, RetrievalTrimReason } from '../types/project'
+import type { RetrievalMode, RetrievalSearch, RetrievalTrimReason } from '../types/project'
 
 const props = defineProps<{
   open: boolean
@@ -10,7 +10,9 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
-const form = reactive({ query: '', topK: 8, tokenBudget: 4000 })
+const form = reactive<{ query: string; topK: number; tokenBudget: number; retrievalMode: RetrievalMode }>({
+  query: '', topK: 8, tokenBudget: 4000, retrievalMode: 'HYBRID',
+})
 const result = ref<RetrievalSearch | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
@@ -41,6 +43,7 @@ async function search(targetMode: 'project' | 'diff') {
     query: form.query.trim(),
     topK: form.topK,
     tokenBudget: form.tokenBudget,
+    retrievalMode: form.retrievalMode,
   }
   try {
     result.value = targetMode === 'project'
@@ -86,6 +89,11 @@ watch(
           ></textarea>
         </label>
         <div class="retrieval-controls">
+          <label><span>检索策略</span><select v-model="form.retrievalMode" aria-label="检索策略">
+            <option value="HYBRID">混合检索</option>
+            <option value="LEXICAL">关键词基线</option>
+            <option value="VECTOR">向量优先</option>
+          </select></label>
           <label><span>Top-K</span><input v-model.number="form.topK" type="number" min="1" max="20" /></label>
           <label><span>Token 预算</span><input v-model.number="form.tokenBudget" type="number" min="100" max="12000" step="100" /></label>
           <button class="button secondary" type="button" :disabled="loading" @click="search('diff')">围绕最新 Diff</button>
@@ -98,7 +106,7 @@ watch(
       <div v-if="loading" class="source-loading">正在执行项目/版本隔离的混合检索与预算裁剪…</div>
       <template v-else-if="result">
         <div class="retrieval-summary">
-          <span><small>模式</small><b>{{ mode === 'diff' ? 'Diff 上下文' : '项目检索' }}</b></span>
+          <span><small>模式</small><b>{{ result.executedMode }}</b></span>
           <span><small>候选</small><b>{{ result.candidateCount }}</b></span>
           <span><small>采用</small><b>{{ result.selectedCount }} / {{ result.topK }}</b></span>
           <span><small>预算</small><b>{{ result.usedTokens }} / {{ result.tokenBudget }}（{{ budgetRate }}%）</b></span>
@@ -108,6 +116,12 @@ watch(
         </div>
         <div v-if="result.referenceLimitReached" class="notice warning">
           变更种子的关系数量达到扩展上限，本次调用关系上下文可能不完整。
+        </div>
+        <div v-if="result.vectorLimitReached" class="notice warning">
+          向量数量达到开发型存储扫描上限，后续需要迁移到专用 ANN 向量检索。
+        </div>
+        <div v-if="result.degradationReason" class="notice warning">
+          向量检索已降级：{{ result.degradationReason }}
         </div>
 
         <div v-if="!result.hits.length" class="state-box compact">

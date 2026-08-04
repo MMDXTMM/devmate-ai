@@ -19,6 +19,7 @@ import com.devmate.knowledge.mapper.RetrievalEvaluationCaseMapper;
 import com.devmate.knowledge.mapper.RetrievalEvaluationRunMapper;
 import com.devmate.knowledge.retrieval.ContextRetrievalService;
 import com.devmate.knowledge.retrieval.RetrievalSearchCommand;
+import com.devmate.knowledge.retrieval.RetrievalMode;
 import com.devmate.project.dto.ProjectResponse;
 import com.devmate.project.service.ProjectService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -115,8 +116,12 @@ public class RetrievalEvaluationService {
                 .toList();
     }
 
-    @Transactional
-    public RetrievalEvaluationRunResponse run(Long projectId, String datasetVersion) {
+    public RetrievalEvaluationRunResponse run(
+            Long projectId,
+            String datasetVersion,
+            RetrievalMode requestedMode
+    ) {
+        RetrievalMode retrievalMode = requestedMode == null ? RetrievalMode.LEXICAL : requestedMode;
         ProjectResponse project = projectService.getProject(projectId);
         if (!StringUtils.hasText(project.currentRevision())) {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先成功导入项目源码");
@@ -154,8 +159,15 @@ public class RetrievalEvaluationService {
                     project.currentRevision(),
                     List.of(),
                     evaluationCase.getTopK(),
-                    properties.getDefaultTokenBudget()
+                    properties.getDefaultTokenBudget(),
+                    retrievalMode
             ));
+            if (!retrievalMode.name().equals(response.executedMode())) {
+                throw new BusinessException(
+                        ErrorCode.INVALID_ARGUMENT,
+                        "所选检索模式未就绪：" + response.degradationReason()
+                );
+            }
             List<Long> returnedIds = response.hits().stream().map(hit -> hit.chunkId()).toList();
             int relevantRetrieved = (int) returnedIds.stream().filter(expectedIds::contains).count();
             double recall = relevantRetrieved / (double) expectedIds.size();
@@ -185,7 +197,8 @@ public class RetrievalEvaluationService {
         run.setProjectId(projectId);
         run.setRevision(project.currentRevision());
         run.setDatasetVersion(datasetVersion.trim());
-        run.setRetrievalConfigVersion(properties.getConfigVersion());
+        run.setRetrievalConfigVersion(retrievalService.configVersion(retrievalMode));
+        run.setRetrievalMode(retrievalMode.name());
         run.setStatus("SUCCEEDED");
         run.setTotalCases(cases.size());
         run.setResolvedCases(resolvedCases);
@@ -323,7 +336,7 @@ public class RetrievalEvaluationService {
     ) {
         return new RetrievalEvaluationRunResponse(
                 run.getId(), run.getProjectId(), run.getRevision(), run.getDatasetVersion(),
-                run.getRetrievalConfigVersion(), run.getStatus(), run.getTotalCases(),
+                run.getRetrievalConfigVersion(), run.getRetrievalMode(), run.getStatus(), run.getTotalCases(),
                 run.getResolvedCases(), run.getRecallAtK().doubleValue(),
                 run.getPrecisionAtK().doubleValue(), run.getHitRateAtK().doubleValue(),
                 run.getMeanReciprocalRank().doubleValue(), run.getCreatedAt(),

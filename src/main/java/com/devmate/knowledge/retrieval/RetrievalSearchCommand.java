@@ -7,7 +7,8 @@ public record RetrievalSearchCommand(
         String revision,
         List<Long> seedChunkIds,
         Integer topK,
-        Integer tokenBudget
+        Integer tokenBudget,
+        RetrievalMode retrievalMode
 ) {
     public RetrievalSearchCommand {
         seedChunkIds = seedChunkIds == null ? List.of() : List.copyOf(seedChunkIds);

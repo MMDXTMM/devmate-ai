@@ -55,7 +55,11 @@ public class RetrievalEvaluationController {
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId,
             @Valid @RequestBody RunRetrievalEvaluationRequest request
     ) {
-        return ApiResponse.success(evaluationService.run(projectId, request.datasetVersion()));
+        return ApiResponse.success(evaluationService.run(
+                projectId,
+                request.datasetVersion(),
+                request.retrievalMode()
+        ));
     }
 
     @GetMapping("/evaluation-runs/latest")

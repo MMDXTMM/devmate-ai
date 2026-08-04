@@ -237,6 +237,13 @@ describe('projectApi', () => {
         revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         query: 'transaction boundary',
         configVersion: 'lexical-graph-v1',
+        requestedMode: 'HYBRID',
+        executedMode: 'HYBRID',
+        embeddingProvider: 'LOCAL',
+        embeddingModel: 'code-hash-v1',
+        vectorIndexAvailable: true,
+        vectorCandidateCount: 3,
+        vectorLimitReached: false,
         candidateCount: 8,
         candidateLimitReached: false,
         referenceLimitReached: false,
@@ -256,15 +263,51 @@ describe('projectApi', () => {
       query: 'transaction boundary',
       topK: 5,
       tokenBudget: 2000,
+      retrievalMode: 'HYBRID',
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/2084116785588305922/retrieval/search',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ query: 'transaction boundary', topK: 5, tokenBudget: 2000 }),
+        body: JSON.stringify({
+          query: 'transaction boundary',
+          topK: 5,
+          tokenBudget: 2000,
+          retrievalMode: 'HYBRID',
+        }),
       }),
     )
     expect(result.configVersion).toBe('lexical-graph-v1')
+  })
+
+  it('starts an embedding index task without sending provider secrets', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588310000',
+        projectId: '2084116785588305922',
+        revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        provider: 'LOCAL',
+        modelName: 'code-hash-v1',
+        dimensions: 256,
+        status: 'SUCCEEDED',
+        totalChunks: 10,
+        processedChunks: 10,
+        skippedChunks: 0,
+        failedChunks: 0,
+        createdAt: '2026-08-04T00:00:00Z',
+      },
+      timestamp: '2026-08-04T00:00:00Z',
+    }))
+
+    const result = await projectApi.indexEmbeddings('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/embeddings/index',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(result.processedChunks).toBe(10)
   })
 })

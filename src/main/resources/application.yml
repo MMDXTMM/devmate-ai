@@ -64,6 +64,18 @@ devmate:
     preview-characters: 800
     max-trimmed-details: 50
     max-evaluation-cases: 100
+  embedding:
+    provider: ${DEVMATE_EMBEDDING_PROVIDER:LOCAL}
+    model: ${DEVMATE_EMBEDDING_MODEL:text-embedding-v4}
+    base-url: ${DEVMATE_EMBEDDING_BASE_URL:}
+    api-key: ${DASHSCOPE_API_KEY:}
+    dimensions: ${DEVMATE_EMBEDDING_DIMENSIONS:1024}
+    local-dimensions: 256
+    batch-size: 10
+    max-input-characters: 16000
+    max-index-chunks: 5000
+    max-vector-scan: 5000
+    minimum-similarity: 0.05
   analysis:
     timeout-seconds: 30
     max-files: 200

@@ -277,6 +277,31 @@ class RetrievalControllerTest {
                 .andExpect(jsonPath("$.message").value("预期文件路径必须是项目内相对路径"));
     }
 
+    @Test
+    void refusesToLabelLexicalFallbackAsHybridEvaluation() throws Exception {
+        mockMvc.perform(post("/api/projects/{projectId}/retrieval/evaluation-cases", project.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "datasetVersion":"hybrid-not-ready",
+                                  "name":"reserve-stock",
+                                  "query":"reserve stock",
+                                  "expectedFilePath":"src/main/java/com/example/OrderService.java",
+                                  "expectedSymbolName":"com.example.OrderService#reserveStock(Long)",
+                                  "topK":3
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/projects/{projectId}/retrieval/evaluation-runs", project.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"datasetVersion":"hybrid-not-ready","retrievalMode":"HYBRID"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", startsWith("所选检索模式未就绪")));
+    }
+
     private Project insertProject(String name, String revision) {
         LocalDateTime now = LocalDateTime.now();
         Project value = new Project();

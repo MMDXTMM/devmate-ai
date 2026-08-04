@@ -25,6 +25,24 @@ export interface ProjectForm {
 
 export type IndexTaskStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
 
+export interface EmbeddingIndexTask {
+  id: string
+  projectId: string
+  revision: string
+  provider: string
+  modelName: string
+  dimensions: number
+  status: IndexTaskStatus
+  totalChunks: number
+  processedChunks: number
+  skippedChunks: number
+  failedChunks: number
+  errorMessage?: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+
 export interface IndexTask {
   id: string
   projectId: string
@@ -177,6 +195,7 @@ export interface StaticAnalysis {
 }
 
 export type RetrievalTrimReason = 'DUPLICATE_CONTENT' | 'TOKEN_BUDGET' | 'TOP_K'
+export type RetrievalMode = 'LEXICAL' | 'VECTOR' | 'HYBRID'
 
 export interface RetrievalHit {
   chunkId: string
@@ -206,6 +225,14 @@ export interface RetrievalSearch {
   revision: string
   query: string
   configVersion: string
+  requestedMode: RetrievalMode
+  executedMode: RetrievalMode | 'LEXICAL_FALLBACK'
+  embeddingProvider: string
+  embeddingModel: string
+  vectorIndexAvailable: boolean
+  vectorCandidateCount: number
+  vectorLimitReached: boolean
+  degradationReason?: string
   candidateCount: number
   candidateLimitReached: boolean
   referenceLimitReached: boolean
@@ -223,6 +250,7 @@ export interface RetrievalSearchForm {
   query: string
   topK: number
   tokenBudget: number
+  retrievalMode: RetrievalMode
 }
 
 export interface ProjectQuery {

@@ -13,10 +13,13 @@ import com.devmate.knowledge.entity.KnowledgeDocument;
 import com.devmate.knowledge.mapper.CodeReferenceMapper;
 import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
+import com.devmate.knowledge.embedding.EmbeddingProvider;
+import com.devmate.knowledge.vector.VectorMatch;
+import com.devmate.knowledge.vector.VectorRetrievalService;
+import com.devmate.knowledge.vector.VectorSearchResult;
 import com.devmate.project.dto.ProjectResponse;
 import com.devmate.project.service.ProjectService;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -44,6 +47,8 @@ public class ContextRetrievalService {
     private final KnowledgeDocumentMapper documentMapper;
     private final CodeReferenceMapper referenceMapper;
     private final LexicalGraphRanker ranker;
+    private final HybridRetrievalRanker hybridRanker;
+    private final VectorRetrievalService vectorRetrievalService;
     private final RetrievalProperties properties;
 
     public ContextRetrievalService(
@@ -52,6 +57,8 @@ public class ContextRetrievalService {
             KnowledgeDocumentMapper documentMapper,
             CodeReferenceMapper referenceMapper,
             LexicalGraphRanker ranker,
+            HybridRetrievalRanker hybridRanker,
+            VectorRetrievalService vectorRetrievalService,
             RetrievalProperties properties
     ) {
         this.projectService = projectService;
@@ -59,10 +66,11 @@ public class ContextRetrievalService {
         this.documentMapper = documentMapper;
         this.referenceMapper = referenceMapper;
         this.ranker = ranker;
+        this.hybridRanker = hybridRanker;
+        this.vectorRetrievalService = vectorRetrievalService;
         this.properties = properties;
     }
 
-    @Transactional(readOnly = true)
     public RetrievalSearchResponse search(Long projectId, RetrievalSearchCommand command) {
         ProjectResponse project = projectService.getProject(projectId);
         String revision = resolveRevision(project, command.revision());
@@ -99,13 +107,38 @@ public class ContextRetrievalService {
         Map<Long, Set<String>> graphReasons = graphReasons(seedIds, referenceLoad.references());
         includeGraphNeighbors(projectId, revision, graphReasons.keySet(), candidates);
 
+        RetrievalMode requestedMode = command.retrievalMode() == null
+                ? RetrievalMode.HYBRID
+                : command.retrievalMode();
+        EmbeddingProvider embeddingProvider = vectorRetrievalService.currentProvider();
+        VectorSearchResult vectorResult = requestedMode == RetrievalMode.LEXICAL
+                ? VectorSearchResult.unavailable(null)
+                : vectorRetrievalService.search(
+                        projectId,
+                        revision,
+                        command.query().trim(),
+                        properties.getCandidateLimit()
+                );
+        includeVectorMatches(projectId, revision, vectorResult.matches(), candidates);
         Map<Long, KnowledgeDocument> documents = loadDocuments(candidates);
-        List<RetrievalCandidate> ranked = ranker.rank(
+        List<RetrievalCandidate> lexicalRanked = ranker.rank(
                 candidates,
                 documents,
                 command.query().trim(),
                 seedIds,
                 graphReasons
+        );
+        RetrievalMode effectiveMode = requestedMode == RetrievalMode.LEXICAL || !vectorResult.available()
+                ? RetrievalMode.LEXICAL
+                : requestedMode;
+        Map<Long, KnowledgeChunk> chunksById = candidates.stream()
+                .collect(Collectors.toMap(KnowledgeChunk::getId, Function.identity()));
+        List<RetrievalCandidate> ranked = hybridRanker.fuse(
+                effectiveMode,
+                lexicalRanked,
+                vectorResult.matches(),
+                chunksById,
+                documents
         );
         BudgetedResults budgeted = applyBudget(ranked, topK, tokenBudget);
 
@@ -118,7 +151,15 @@ public class ContextRetrievalService {
                 projectId,
                 revision,
                 command.query().trim(),
-                properties.getConfigVersion(),
+                configVersion(effectiveMode, embeddingProvider),
+                requestedMode.name(),
+                requestedMode == effectiveMode ? effectiveMode.name() : "LEXICAL_FALLBACK",
+                embeddingProvider.providerName(),
+                embeddingProvider.modelName(),
+                vectorResult.available(),
+                vectorResult.matches().size(),
+                vectorResult.limitReached(),
+                vectorResult.degradationReason(),
                 candidates.size(),
                 candidateLimitReached,
                 referenceLoad.limitReached(),
@@ -131,6 +172,18 @@ public class ContextRetrievalService {
                 budgeted.selected().stream().map(this::toHitResponse).toList(),
                 trimmedDetails
         );
+    }
+
+    public String configVersion(RetrievalMode mode) {
+        return configVersion(mode, vectorRetrievalService.currentProvider());
+    }
+
+    private String configVersion(RetrievalMode mode, EmbeddingProvider provider) {
+        if (mode == RetrievalMode.LEXICAL) {
+            return properties.getConfigVersion();
+        }
+        return properties.getConfigVersion() + "+" + provider.providerName().toLowerCase()
+                + ":" + provider.modelName() + ":" + provider.dimensions();
     }
 
     private String resolveRevision(ProjectResponse project, String requestedRevision) {
@@ -214,6 +267,24 @@ public class ContextRetrievalService {
                 .filter(chunk -> revision.equals(chunk.getRevision()))
                 .toList();
         appendMissing(candidates, neighbors);
+    }
+
+    private void includeVectorMatches(
+            Long projectId,
+            String revision,
+            List<VectorMatch> matches,
+            List<KnowledgeChunk> candidates
+    ) {
+        if (matches.isEmpty()) {
+            return;
+        }
+        List<KnowledgeChunk> vectorChunks = chunkMapper.selectBatchIds(
+                        matches.stream().map(VectorMatch::chunkId).toList()
+                ).stream()
+                .filter(chunk -> Objects.equals(projectId, chunk.getProjectId()))
+                .filter(chunk -> revision.equals(chunk.getRevision()))
+                .toList();
+        appendMissing(candidates, vectorChunks);
     }
 
     private void appendMissing(List<KnowledgeChunk> target, List<KnowledgeChunk> additional) {

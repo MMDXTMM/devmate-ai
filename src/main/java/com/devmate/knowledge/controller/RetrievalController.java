@@ -37,7 +37,8 @@ public class RetrievalController {
                         request.revision(),
                         request.seedChunkIds(),
                         request.topK(),
-                        request.tokenBudget()
+                        request.tokenBudget(),
+                        request.retrievalMode()
                 )
         ));
     }

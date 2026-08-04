@@ -1,5 +1,6 @@
 package com.devmate.knowledge.dto;
 
+import com.devmate.knowledge.retrieval.RetrievalMode;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -22,6 +23,7 @@ public record RetrievalSearchRequest(
         Integer topK,
         @Min(value = 100, message = "Token预算不能小于100")
         @Max(value = 12000, message = "Token预算不能超过12000")
-        Integer tokenBudget
+        Integer tokenBudget,
+        RetrievalMode retrievalMode
 ) {
 }
