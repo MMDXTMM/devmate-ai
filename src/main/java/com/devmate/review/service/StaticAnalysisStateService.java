@@ -105,6 +105,7 @@ public class StaticAnalysisStateService {
                 task.getId(),
                 reviewTask.getId(),
                 reviewTask.getIndexTaskId(),
+                reviewTask.getTargetRevision(),
                 files
         );
     }

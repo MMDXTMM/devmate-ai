@@ -3,10 +3,15 @@ package com.devmate.knowledge.source;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.DoWhileLoopTree;
+import com.sun.source.tree.EnhancedForLoopTree;
+import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.SynchronizedTree;
+import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePathScanner;
@@ -20,6 +25,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import javax.lang.model.element.Modifier;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -145,6 +151,8 @@ public class JavaSourceParser {
         private final Deque<String> sourceSymbols = new ArrayDeque<>();
         private final List<ParsedSourceChunk> chunks = new ArrayList<>();
         private final List<ParsedCodeReference> references = new ArrayList<>();
+        private int loopDepth;
+        private int synchronizedDepth;
 
         private ChunkScanner(
                 CompilationUnitTree unit,
@@ -195,10 +203,47 @@ public class JavaSourceParser {
                     tree
             );
             sourceSymbols.addLast(symbolName);
+            boolean synchronizedMethod = tree.getModifiers().getFlags().contains(Modifier.SYNCHRONIZED);
+            if (synchronizedMethod) {
+                synchronizedDepth++;
+            }
             try {
                 return super.visitMethod(tree, unused);
             } finally {
+                if (synchronizedMethod) {
+                    synchronizedDepth--;
+                }
                 sourceSymbols.removeLast();
+            }
+        }
+
+        @Override
+        public Void visitForLoop(ForLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitForLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitEnhancedForLoop(EnhancedForLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitEnhancedForLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitWhileLoop(WhileLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitWhileLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitDoWhileLoop(DoWhileLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitDoWhileLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitSynchronized(SynchronizedTree tree, Void unused) {
+            synchronizedDepth++;
+            try {
+                return super.visitSynchronized(tree, unused);
+            } finally {
+                synchronizedDepth--;
             }
         }
 
@@ -230,11 +275,22 @@ public class JavaSourceParser {
                             qualifier,
                             tree.getArguments().size(),
                             tree,
-                            "{\"classification\":\"NAMING_CONVENTION\"}"
+                            "{\"classification\":\"NAMING_CONVENTION\","
+                                    + "\"loopDepth\":" + loopDepth + ","
+                                    + "\"synchronizedDepth\":" + synchronizedDepth + "}"
                     );
                 }
             }
             return super.visitMethodInvocation(tree, unused);
+        }
+
+        private Void visitLoop(java.util.function.Supplier<Void> scanner) {
+            loopDepth++;
+            try {
+                return scanner.get();
+            } finally {
+                loopDepth--;
+            }
         }
 
         @Override

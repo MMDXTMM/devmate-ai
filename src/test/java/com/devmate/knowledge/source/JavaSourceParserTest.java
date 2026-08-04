@@ -88,9 +88,11 @@ class JavaSourceParserTest {
                     private int limit;
                     private UserMapper userMapper;
 
-                    void review() {
+                    synchronized void review() {
                         validate();
-                        userMapper.selectById(1L);
+                        for (int index = 0; index < 1; index++) {
+                            userMapper.selectById(1L);
+                        }
                     }
 
                     void validate() {}
@@ -115,7 +117,9 @@ class JavaSourceParserTest {
                 .satisfies(reference -> {
                     assertThat(reference.referenceName()).isEqualTo("selectById");
                     assertThat(reference.qualifier()).isEqualTo("userMapper");
-                    assertThat(reference.startLine()).isEqualTo(11);
+                    assertThat(reference.startLine()).isEqualTo(12);
+                    assertThat(reference.metadataJson()).contains("\"loopDepth\":1");
+                    assertThat(reference.metadataJson()).contains("\"synchronizedDepth\":1");
                 });
     }
 

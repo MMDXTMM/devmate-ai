@@ -5,6 +5,7 @@ import com.devmate.knowledge.source.SourceImportException;
 import com.devmate.knowledge.source.WorkspaceManager;
 import com.devmate.review.config.StaticAnalysisProperties;
 import com.devmate.review.source.JavaStaticAnalyzer;
+import com.devmate.review.source.ProjectRuleAnalyzer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -26,6 +27,8 @@ class StaticAnalysisServiceTest {
     private WorkspaceManager workspaceManager;
     @Mock
     private JavaStaticAnalyzer analyzer;
+    @Mock
+    private ProjectRuleAnalyzer projectRuleAnalyzer;
 
     @Test
     void marksTaskFailedWhenStaticToolFails() {
@@ -34,13 +37,16 @@ class StaticAnalysisServiceTest {
                 stateService,
                 workspaceManager,
                 analyzer,
+                projectRuleAnalyzer,
                 properties
         );
-        StaticAnalysisContext context = new StaticAnalysisContext(1L, 2L, 3L, 4L, List.of());
+        StaticAnalysisContext context = new StaticAnalysisContext(
+                1L, 2L, 3L, 4L, "target-revision", List.of()
+        );
         Path repositoryRoot = Path.of("/tmp/devmate-static-failure");
         given(analyzer.toolName()).willReturn("PMD");
         given(analyzer.toolVersion()).willReturn("7.26.0");
-        given(stateService.prepare(1L, "PMD", "7.26.0")).willReturn(context);
+        given(stateService.prepare(1L, "PMD+DEVMATE", "7.26.0+1.0")).willReturn(context);
         given(workspaceManager.requireTaskDirectory(1L, 4L)).willReturn(repositoryRoot);
         given(analyzer.analyze(repositoryRoot.toAbsolutePath().normalize(), List.of()))
                 .willThrow(new SourceImportException("PMD规则执行失败"));

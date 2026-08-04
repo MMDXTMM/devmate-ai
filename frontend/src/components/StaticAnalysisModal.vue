@@ -58,7 +58,7 @@ watch(
         {{ errorMessage }}
         <button class="text-button" type="button" @click="runAnalysis">重试</button>
       </div>
-      <div v-if="loading" class="source-loading">正在对本次变更运行受控 PMD 规则…</div>
+      <div v-if="loading" class="source-loading">正在对本次变更运行 PMD 与项目规则…</div>
       <template v-else-if="report">
         <div class="analysis-summary">
           <span><small>工具</small><b>{{ report.toolName }} {{ report.toolVersion }}</b></span>
@@ -68,7 +68,7 @@ watch(
 
         <div v-if="!report.findings.length" class="state-box compact">
           <h3>当前规则未发现直接命中变更行的问题</h3>
-          <p>这不代表代码没有风险；后续 RAG 与 AI 审查会继续分析并发、事务和一致性问题。</p>
+          <p>这不代表代码没有风险；后续 RAG 与 AI 审查会继续分析需要更多上下文的并发、事务和一致性问题。</p>
         </div>
         <div v-else class="finding-list">
           <article v-for="finding in report.findings" :key="finding.id" class="finding-card">
