@@ -7,6 +7,7 @@ public record ParsedSourceChunk(
         String chunkType,
         String symbolName,
         List<String> annotations,
+        Integer parameterCount,
         String content,
         String contentHash,
         int startLine,

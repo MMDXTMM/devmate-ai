@@ -7,12 +7,15 @@ import com.devmate.knowledge.dto.IndexTaskResponse;
 import com.devmate.knowledge.entity.IndexTask;
 import com.devmate.knowledge.entity.KnowledgeDocument;
 import com.devmate.knowledge.entity.KnowledgeChunk;
+import com.devmate.knowledge.entity.CodeReference;
+import com.devmate.knowledge.mapper.CodeReferenceMapper;
 import com.devmate.knowledge.mapper.IndexTaskMapper;
 import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
 import com.devmate.knowledge.model.IndexTaskStatus;
 import com.devmate.knowledge.source.GitRepositoryValidator;
 import com.devmate.knowledge.source.ParsedSourceChunk;
+import com.devmate.knowledge.source.ParsedCodeReference;
 import com.devmate.knowledge.source.ParsedSourceFile;
 import com.devmate.project.entity.Project;
 import com.devmate.project.mapper.ProjectMapper;
@@ -26,6 +29,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class SourceImportStateService {
@@ -37,6 +43,7 @@ public class SourceImportStateService {
     private final IndexTaskMapper indexTaskMapper;
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
+    private final CodeReferenceMapper referenceMapper;
     private final GitRepositoryValidator repositoryValidator;
     private final ObjectMapper objectMapper;
 
@@ -45,6 +52,7 @@ public class SourceImportStateService {
             IndexTaskMapper indexTaskMapper,
             KnowledgeDocumentMapper documentMapper,
             KnowledgeChunkMapper chunkMapper,
+            CodeReferenceMapper referenceMapper,
             GitRepositoryValidator repositoryValidator,
             ObjectMapper objectMapper
     ) {
@@ -52,6 +60,7 @@ public class SourceImportStateService {
         this.indexTaskMapper = indexTaskMapper;
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
+        this.referenceMapper = referenceMapper;
         this.repositoryValidator = repositoryValidator;
         this.objectMapper = objectMapper;
     }
@@ -112,6 +121,7 @@ public class SourceImportStateService {
         for (ParsedSourceFile file : files) {
             upsertDocument(context.projectId(), revision, file, now);
         }
+        replaceReferences(context.projectId(), revision, files, now);
 
         IndexTask task = requireTask(context.taskId());
         task.setRevision(revision);
@@ -224,15 +234,116 @@ public class SourceImportStateService {
             chunk.setStartLine(parsedChunk.startLine());
             chunk.setEndLine(parsedChunk.endLine());
             chunk.setRevision(revision);
-            chunk.setMetadataJson(writeMetadata(parsedChunk.annotations()));
+            chunk.setMetadataJson(writeMetadata(
+                    parsedChunk.annotations(),
+                    parsedChunk.parameterCount()
+            ));
             chunk.setCreatedAt(now);
             chunkMapper.insert(chunk);
         }
     }
 
-    private String writeMetadata(List<String> annotations) {
+    private void replaceReferences(
+            Long projectId,
+            String revision,
+            List<ParsedSourceFile> files,
+            LocalDateTime now
+    ) {
+        referenceMapper.delete(Wrappers.lambdaQuery(CodeReference.class)
+                .eq(CodeReference::getProjectId, projectId)
+                .eq(CodeReference::getRevision, revision));
+
+        List<KnowledgeChunk> storedChunks = chunkMapper.selectList(
+                Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getProjectId, projectId)
+                        .eq(KnowledgeChunk::getRevision, revision)
+        );
+        Map<String, List<KnowledgeChunk>> chunksBySymbol = storedChunks.stream()
+                .filter(chunk -> StringUtils.hasText(chunk.getSymbolName()))
+                .collect(Collectors.groupingBy(KnowledgeChunk::getSymbolName));
+        Map<String, ParsedSourceChunk> parsedChunksBySymbol = files.stream()
+                .flatMap(file -> file.chunks().stream())
+                .collect(Collectors.toMap(
+                        ParsedSourceChunk::symbolName,
+                        Function.identity(),
+                        (left, right) -> left
+                ));
+
+        for (ParsedSourceFile file : files) {
+            for (ParsedCodeReference parsedReference : file.references()) {
+                KnowledgeChunk sourceChunk = uniqueChunk(
+                        chunksBySymbol.get(parsedReference.sourceSymbolName())
+                );
+                if (sourceChunk == null) {
+                    continue;
+                }
+                KnowledgeChunk targetChunk = resolveSameTypeTarget(
+                        parsedReference,
+                        sourceChunk,
+                        chunksBySymbol,
+                        parsedChunksBySymbol
+                );
+                CodeReference reference = new CodeReference();
+                reference.setProjectId(projectId);
+                reference.setSourceChunkId(sourceChunk.getId());
+                reference.setTargetChunkId(targetChunk == null ? null : targetChunk.getId());
+                reference.setRevision(revision);
+                reference.setReferenceKind(parsedReference.referenceKind());
+                reference.setReferenceName(parsedReference.referenceName());
+                reference.setQualifier(parsedReference.qualifier());
+                reference.setArgumentCount(parsedReference.argumentCount());
+                reference.setStartLine(parsedReference.startLine());
+                reference.setEndLine(parsedReference.endLine());
+                reference.setMetadataJson(parsedReference.metadataJson());
+                reference.setCreatedAt(now);
+                referenceMapper.insert(reference);
+            }
+        }
+    }
+
+    private KnowledgeChunk resolveSameTypeTarget(
+            ParsedCodeReference reference,
+            KnowledgeChunk sourceChunk,
+            Map<String, List<KnowledgeChunk>> chunksBySymbol,
+            Map<String, ParsedSourceChunk> parsedChunksBySymbol
+    ) {
+        if (!"METHOD_CALL".equals(reference.referenceKind())) {
+            return null;
+        }
+        String sourceSymbol = sourceChunk.getSymbolName();
+        int methodSeparator = sourceSymbol.indexOf('#');
+        if (methodSeparator < 0 || !isSelfQualifier(reference.qualifier(), sourceSymbol.substring(0, methodSeparator))) {
+            return null;
+        }
+        String ownerType = sourceSymbol.substring(0, methodSeparator);
+        String targetPrefix = ownerType + "#" + reference.referenceName() + "(";
+        List<KnowledgeChunk> candidates = chunksBySymbol.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith(targetPrefix))
+                .filter(entry -> {
+                    ParsedSourceChunk parsed = parsedChunksBySymbol.get(entry.getKey());
+                    return parsed != null && parsed.parameterCount() != null
+                            && parsed.parameterCount().equals(reference.argumentCount());
+                })
+                .flatMap(entry -> entry.getValue().stream())
+                .toList();
+        return uniqueChunk(candidates);
+    }
+
+    private boolean isSelfQualifier(String qualifier, String ownerType) {
+        if (!StringUtils.hasText(qualifier) || "this".equals(qualifier)) {
+            return true;
+        }
+        String simpleOwner = ownerType.substring(ownerType.lastIndexOf('.') + 1);
+        return simpleOwner.equals(qualifier);
+    }
+
+    private KnowledgeChunk uniqueChunk(List<KnowledgeChunk> chunks) {
+        return chunks != null && chunks.size() == 1 ? chunks.getFirst() : null;
+    }
+
+    private String writeMetadata(List<String> annotations, Integer parameterCount) {
         try {
-            return objectMapper.writeValueAsString(new ChunkMetadata(annotations));
+            return objectMapper.writeValueAsString(new ChunkMetadata(annotations, parameterCount));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("序列化源码符号元数据失败", exception);
         }
@@ -254,6 +365,6 @@ public class SourceImportStateService {
         return trimmed.length() <= 1000 ? trimmed : trimmed.substring(0, 1000);
     }
 
-    private record ChunkMetadata(List<String> annotations) {
+    private record ChunkMetadata(List<String> annotations, Integer parameterCount) {
     }
 }

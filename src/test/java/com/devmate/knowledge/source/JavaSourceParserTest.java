@@ -77,6 +77,48 @@ class JavaSourceParserTest {
                 .hasMessageContaining("第1行");
     }
 
+    @Test
+    void extractsMethodConfigurationAndDataAccessReferences() {
+        String content = """
+                package com.example.review;
+
+                @ConfigurationProperties(prefix = "review")
+                class ReviewService {
+                    @Value("${review.limit:10}")
+                    private int limit;
+                    private UserMapper userMapper;
+
+                    void review() {
+                        validate();
+                        userMapper.selectById(1L);
+                    }
+
+                    void validate() {}
+                }
+                """;
+
+        ParsedSourceContent parsed = parser.parseContent("ReviewService.java", content);
+
+        assertThat(parsed.references())
+                .extracting(ParsedCodeReference::referenceKind)
+                .containsExactly("CONFIG_PREFIX", "CONFIG_KEY", "METHOD_CALL", "METHOD_CALL", "DATA_ACCESS");
+        assertThat(parsed.references())
+                .filteredOn(reference -> reference.referenceKind().equals("CONFIG_KEY"))
+                .singleElement()
+                .satisfies(reference -> {
+                    assertThat(reference.referenceName()).isEqualTo("review.limit");
+                    assertThat(reference.sourceSymbolName()).isEqualTo("com.example.review.ReviewService");
+                });
+        assertThat(parsed.references())
+                .filteredOn(reference -> reference.referenceKind().equals("DATA_ACCESS"))
+                .singleElement()
+                .satisfies(reference -> {
+                    assertThat(reference.referenceName()).isEqualTo("selectById");
+                    assertThat(reference.qualifier()).isEqualTo("userMapper");
+                    assertThat(reference.startLine()).isEqualTo(11);
+                });
+    }
+
     private ScannedSourceFile sourceFile(Path path, String content) {
         return new ScannedSourceFile(
                 path.getFileName().toString(),

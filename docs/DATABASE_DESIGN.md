@@ -217,6 +217,19 @@ erDiagram
 
 `review_finding` 已在 V6 创建；`code_review_feedback` 将在审查反馈与评测阶段通过新迁移创建。
 
+### `code_reference`
+
+保存当前源码版本中的确定性关系证据：
+
+- `source_chunk_id`：引用所属的类或方法；
+- `target_chunk_id`：能够唯一解析时关联目标方法，无法证明时为空；
+- `reference_kind`：方法调用、数据访问、配置键或配置前缀；
+- `reference_name/qualifier/argument_count`：解析和展示所需的调用事实；
+- `start_line/end_line`：由 AST 得到的真实源码位置；
+- `revision`：关系只能在相同项目版本内使用。
+
+数据访问命名识别只用于补充上下文，不直接作为 Finding。目标 Chunk 删除时外键将关联置空，来源 Chunk 删除时引用随之删除。
+
 ## 6. 数据库版本管理
 
 - `V1__initialize_core_schema.sql`：初始项目表。
@@ -225,6 +238,7 @@ erDiagram
 - `V4__add_code_review_diff_schema.sql`：Diff任务与文件覆盖清单。
 - `V5__add_base_diff_line_ranges.sql`：保存基准版本删除行区间。
 - `V6__add_static_analysis_schema.sql`：静态分析任务与统一 Finding。
+- `V7__add_code_reference_graph.sql`：方法调用、配置与数据访问关系图。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

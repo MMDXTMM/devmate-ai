@@ -5,10 +5,13 @@ import com.devmate.common.error.BusinessException;
 import com.devmate.common.error.ErrorCode;
 import com.devmate.knowledge.dto.SourceDocumentResponse;
 import com.devmate.knowledge.dto.SourceSymbolResponse;
+import com.devmate.knowledge.dto.SourceReferenceResponse;
+import com.devmate.knowledge.entity.CodeReference;
 import com.devmate.knowledge.entity.KnowledgeChunk;
 import com.devmate.knowledge.entity.KnowledgeDocument;
 import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
+import com.devmate.knowledge.mapper.CodeReferenceMapper;
 import com.devmate.project.entity.Project;
 import com.devmate.project.mapper.ProjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -17,6 +20,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class SourceStructureQueryService {
@@ -24,17 +32,20 @@ public class SourceStructureQueryService {
     private final ProjectMapper projectMapper;
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
+    private final CodeReferenceMapper referenceMapper;
     private final ObjectMapper objectMapper;
 
     public SourceStructureQueryService(
             ProjectMapper projectMapper,
             KnowledgeDocumentMapper documentMapper,
             KnowledgeChunkMapper chunkMapper,
+            CodeReferenceMapper referenceMapper,
             ObjectMapper objectMapper
     ) {
         this.projectMapper = projectMapper;
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
+        this.referenceMapper = referenceMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -73,6 +84,54 @@ public class SourceStructureQueryService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<SourceReferenceResponse> listReferences(Long projectId) {
+        Project project = requireProject(projectId);
+        if (project.getCurrentRevision() == null) {
+            return List.of();
+        }
+        List<CodeReference> references = referenceMapper.selectList(
+                Wrappers.lambdaQuery(CodeReference.class)
+                        .eq(CodeReference::getProjectId, projectId)
+                        .eq(CodeReference::getRevision, project.getCurrentRevision())
+                        .orderByAsc(CodeReference::getStartLine)
+        );
+        if (references.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> chunkIds = references.stream()
+                .flatMap(reference -> java.util.stream.Stream.of(
+                        reference.getSourceChunkId(),
+                        reference.getTargetChunkId()
+                ))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, KnowledgeChunk> chunks = chunkMapper.selectBatchIds(chunkIds).stream()
+                .collect(Collectors.toMap(KnowledgeChunk::getId, Function.identity()));
+        Set<Long> documentIds = chunks.values().stream()
+                .map(KnowledgeChunk::getDocumentId)
+                .collect(Collectors.toSet());
+        Map<Long, KnowledgeDocument> documents = documentMapper.selectBatchIds(documentIds).stream()
+                .collect(Collectors.toMap(KnowledgeDocument::getId, Function.identity()));
+
+        return references.stream()
+                .map(reference -> {
+                    KnowledgeChunk source = chunks.get(reference.getSourceChunkId());
+                    if (source == null) {
+                        return null;
+                    }
+                    KnowledgeDocument document = documents.get(source.getDocumentId());
+                    return SourceReferenceResponse.from(
+                            reference,
+                            source,
+                            document == null ? null : document.getFilePath(),
+                            chunks.get(reference.getTargetChunkId())
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
     private Project requireProject(Long projectId) {
         Project project = projectMapper.selectById(projectId);
         if (project == null) {
@@ -93,6 +152,6 @@ public class SourceStructureQueryService {
         }
     }
 
-    private record ChunkMetadata(List<String> annotations) {
+    private record ChunkMetadata(List<String> annotations, Integer parameterCount) {
     }
 }

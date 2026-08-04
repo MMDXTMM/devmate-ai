@@ -64,6 +64,24 @@ export interface SourceSymbol {
   revision: string
 }
 
+export type SourceReferenceKind = 'METHOD_CALL' | 'DATA_ACCESS' | 'CONFIG_KEY' | 'CONFIG_PREFIX'
+
+export interface SourceReference {
+  id: string
+  referenceKind: SourceReferenceKind
+  referenceName: string
+  qualifier?: string
+  argumentCount?: number
+  sourceChunkId: string
+  sourceSymbolName: string
+  sourceFilePath?: string
+  targetChunkId?: string
+  targetSymbolName?: string
+  startLine: number
+  endLine: number
+  resolved: boolean
+}
+
 export interface LineRange {
   startLine: number
   endLine: number

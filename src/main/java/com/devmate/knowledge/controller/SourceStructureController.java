@@ -3,6 +3,7 @@ package com.devmate.knowledge.controller;
 import com.devmate.common.api.ApiResponse;
 import com.devmate.knowledge.dto.SourceDocumentResponse;
 import com.devmate.knowledge.dto.SourceSymbolResponse;
+import com.devmate.knowledge.dto.SourceReferenceResponse;
 import com.devmate.knowledge.service.SourceStructureQueryService;
 import jakarta.validation.constraints.Positive;
 import org.springframework.validation.annotation.Validated;
@@ -29,6 +30,13 @@ public class SourceStructureController {
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId
     ) {
         return ApiResponse.success(queryService.listDocuments(projectId));
+    }
+
+    @GetMapping("/references")
+    public ApiResponse<List<SourceReferenceResponse>> listReferences(
+            @Positive(message = "项目ID必须大于0") @PathVariable Long projectId
+    ) {
+        return ApiResponse.success(queryService.listReferences(projectId));
     }
 
     @GetMapping("/{documentId}/symbols")

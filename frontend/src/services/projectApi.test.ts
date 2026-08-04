@@ -169,6 +169,34 @@ describe('projectApi', () => {
     expect(result.changedFiles).toBe(3)
   })
 
+  it('loads persisted source references', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: [{
+        id: '2084116785588307100',
+        referenceKind: 'METHOD_CALL',
+        referenceName: 'validate',
+        sourceChunkId: '2084116785588307001',
+        sourceSymbolName: 'com.example.ReviewService#review()',
+        targetChunkId: '2084116785588307002',
+        targetSymbolName: 'com.example.ReviewService#validate()',
+        startLine: 12,
+        endLine: 12,
+        resolved: true,
+      }],
+      timestamp: '2026-08-04T00:00:00Z',
+    }))
+
+    const references = await projectApi.listSourceReferences('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/sources/references',
+      expect.any(Object),
+    )
+    expect(references[0].targetSymbolName).toBe('com.example.ReviewService#validate()')
+  })
+
   it('starts deterministic static analysis for the latest diff', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       code: 0,
