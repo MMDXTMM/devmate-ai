@@ -1,6 +1,7 @@
 package com.devmate.knowledge.source;
 
 import java.util.List;
+import java.util.Map;
 
 public record ParsedSourceChunk(
         int chunkIndex,
@@ -8,6 +9,7 @@ public record ParsedSourceChunk(
         String symbolName,
         List<String> annotations,
         Integer parameterCount,
+        Map<String, Object> metadata,
         String content,
         String contentHash,
         int startLine,
@@ -15,5 +17,6 @@ public record ParsedSourceChunk(
 ) {
     public ParsedSourceChunk {
         annotations = List.copyOf(annotations);
+        metadata = Map.copyOf(metadata);
     }
 }

@@ -44,13 +44,15 @@ export interface SourceDocument {
   id: string
   fileName: string
   filePath: string
+  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION'
+  fileType: 'JAVA' | 'YAML' | 'PROPERTIES'
   packageName?: string
   revision: string
   status: 'PARSED' | 'FAILED'
   chunkCount: number
 }
 
-export type SourceSymbolType = 'CLASS' | 'CONSTRUCTOR' | 'METHOD'
+export type SourceSymbolType = 'CLASS' | 'CONSTRUCTOR' | 'METHOD' | 'CONFIG_PROPERTY'
 
 export interface SourceSymbol {
   id: string
@@ -77,6 +79,7 @@ export interface SourceReference {
   sourceFilePath?: string
   targetChunkId?: string
   targetSymbolName?: string
+  targetFilePath?: string
   startLine: number
   endLine: number
   resolved: boolean

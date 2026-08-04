@@ -13,6 +13,7 @@ public class SourceImportProperties {
     private int cloneTimeoutSeconds = 60;
     private int cloneDepth = 50;
     private int maxJavaFiles = 1000;
+    private int maxConfigFiles = 100;
     private long maxFileSizeBytes = 1024 * 1024;
     private long maxTotalSizeBytes = 50L * 1024 * 1024;
     private String gitUsername = "x-access-token";
@@ -48,6 +49,14 @@ public class SourceImportProperties {
 
     public void setMaxJavaFiles(int maxJavaFiles) {
         this.maxJavaFiles = maxJavaFiles;
+    }
+
+    public int getMaxConfigFiles() {
+        return maxConfigFiles;
+    }
+
+    public void setMaxConfigFiles(int maxConfigFiles) {
+        this.maxConfigFiles = maxConfigFiles;
     }
 
     public long getMaxFileSizeBytes() {

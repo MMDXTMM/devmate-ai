@@ -110,7 +110,10 @@ watch(
           >
             <b>{{ document.fileName }}</b>
             <span>{{ document.filePath }}</span>
-            <small>{{ document.chunkCount }} 个符号</small>
+            <small>
+              {{ document.sourceKind === 'CONFIGURATION' ? '配置' : '源码' }} ·
+              {{ document.chunkCount }} 个{{ document.sourceKind === 'CONFIGURATION' ? '配置项' : '符号' }}
+            </small>
           </button>
         </aside>
         <div class="source-symbols">
@@ -135,6 +138,7 @@ watch(
                   <small>第 {{ reference.startLine }} 行</small>
                   <span v-if="reference.targetSymbolName" class="resolved-reference">
                     → {{ reference.targetSymbolName }}
+                    <small v-if="reference.targetFilePath">（{{ reference.targetFilePath }}）</small>
                   </span>
                 </li>
               </ul>
