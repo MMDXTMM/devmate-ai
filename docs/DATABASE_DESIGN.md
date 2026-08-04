@@ -80,18 +80,20 @@ erDiagram
 - `content_hash`：判断文件内容是否变化，用于增量更新。
 - `path_hash`：文件路径的 SHA-256，用于建立定长唯一索引；完整路径仍保存在 `file_path`。
 - `revision`：文件所属的 Git 提交或导入版本。
-- `status`：`PENDING`、`PARSING`、`INDEXED`、`FAILED`。
+- `package_name`：Java 文件的包名，由 AST 解析得到。
+- `status`：当前结构解析使用 `PARSED`；完成向量索引后使用 `INDEXED`，失败使用 `FAILED`。
 - `(project_id, path_hash, revision)` 唯一，防止同一版本重复导入，同时避免 `utf8mb4` 长路径超过 MySQL 的索引长度限制。
 
 ### 3.5 `knowledge_chunk`
 
 RAG 的最小检索单元。
 
-- `chunk_type`：`CLASS`、`METHOD`、`DOCUMENT_SECTION` 等。
+- `chunk_type`：当前 Java 解析使用 `CLASS`、`CONSTRUCTOR`、`METHOD`，后续文档使用 `DOCUMENT_SECTION`。
 - `symbol_name`：类名、方法签名或文档标题。
 - `start_line`、`end_line`：用于回答时给出源码位置。
 - `content_hash`：去重和增量索引。
 - `vector_id`：向量数据库中的记录 ID。
+- `metadata_json`：保存注解等可扩展符号元数据，避免每增加一种 AST 属性就修改表结构。
 - `project_id` 是有意保留的冗余字段，用于高频项目隔离过滤，避免每次检索都连接文档表。
 
 ### 3.6 `index_task`
@@ -144,9 +146,9 @@ RAG 的最小检索单元。
 - MQ 消息表：先完成同步闭环；接入可靠消息时再根据方案设计 Outbox。
 - 微服务独立数据库：当前是模块化单体，过早分库会增加事务和联调成本。
 
-## 5. 代码审查阶段计划增加的表
+## 5. 代码审查表
 
-以下表已经进入设计计划，但在代码审查字段和状态流转完成评审前不创建迁移，避免先建表后反复修改。
+V4 已增加 Diff 任务和覆盖清单；Finding 与反馈仍在后续迁移中创建。
 
 ### `code_review_task`
 
@@ -158,6 +160,17 @@ RAG 的最小检索单元。
 - 任务状态和失败原因
 - 变更文件数、问题数和执行耗时
 - 使用的模型、Prompt 版本和规则集版本
+
+当前 V4 先落地 Diff 阶段所需字段：关联索引任务、基准/目标 revision、状态和覆盖计数。模型与规则版本在 AI 审查迁移中补充。
+
+### `code_review_file`
+
+保存每个变更文件的可审计覆盖结果：
+
+- 新旧路径与 `ADD/MODIFY/DELETE/RENAME/COPY`
+- 新增、删除行数和目标版本行区间
+- `FULL/PARTIAL/SKIPPED` 覆盖状态
+- 映射到的 AST 符号和跳过原因
 
 ### `code_review_finding`
 
@@ -188,12 +201,14 @@ erDiagram
     APP_USER ||--o{ CODE_REVIEW_FEEDBACK : submits
 ```
 
-这些表预计在代码审查 MVP 开始前通过新的 Flyway 迁移创建，不修改已经执行的 V1、V2。
+`code_review_finding` 和 `code_review_feedback` 将在静态分析、AI审查字段稳定后通过新迁移创建。
 
 ## 6. 数据库版本管理
 
 - `V1__initialize_core_schema.sql`：初始项目表。
 - `V2__add_agent_knowledge_schema.sql`：用户、权限、知识库、会话、Bug、AI 和 Tool 审计表。
-- 已执行的迁移文件不再修改；后续每次变更新增 `V3`、`V4` 等脚本。
+- `V3__add_java_structure_metadata.sql`：Java 包名和符号扩展元数据。
+- `V4__add_code_review_diff_schema.sql`：Diff任务与文件覆盖清单。
+- 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

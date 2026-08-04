@@ -69,4 +69,103 @@ describe('projectApi', () => {
       '无法连接后端服务，请确认 Spring Boot 已启动',
     )
   })
+
+  it('starts a source import for the selected project', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588306000',
+        projectId: '2084116785588305922',
+        taskType: 'FULL',
+        status: 'SUCCEEDED',
+        totalFiles: 12,
+        processedFiles: 12,
+        failedFiles: 0,
+      },
+      timestamp: '2026-08-03T00:00:00Z',
+    }))
+
+    const task = await projectApi.importSource('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/imports',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(task.totalFiles).toBe(12)
+  })
+
+  it('loads source documents and symbols with string ids', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        message: 'success',
+        data: [{
+          id: '2084116785588307000',
+          fileName: 'ReviewService.java',
+          filePath: 'src/main/java/ReviewService.java',
+          status: 'PARSED',
+          chunkCount: 2,
+        }],
+        timestamp: '2026-08-04T00:00:00Z',
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        message: 'success',
+        data: [{
+          id: '2084116785588307001',
+          documentId: '2084116785588307000',
+          chunkType: 'CLASS',
+          symbolName: 'com.example.ReviewService',
+          annotations: ['Service'],
+          startLine: 3,
+          endLine: 20,
+        }],
+        timestamp: '2026-08-04T00:00:00Z',
+      }))
+
+    const documents = await projectApi.listSourceDocuments('2084116785588305922')
+    const symbols = await projectApi.listSourceSymbols(
+      '2084116785588305922',
+      documents[0].id,
+    )
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/projects/2084116785588305922/sources',
+      expect.any(Object),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/projects/2084116785588305922/sources/2084116785588307000/symbols',
+      expect.any(Object),
+    )
+    expect(symbols[0].id).toBe('2084116785588307001')
+  })
+
+  it('creates a review diff coverage report', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588308000',
+        projectId: '2084116785588305922',
+        status: 'SUCCEEDED',
+        changedFiles: 3,
+        fullyMappedFiles: 1,
+        partiallyMappedFiles: 1,
+        skippedFiles: 1,
+        files: [],
+      },
+      timestamp: '2026-08-04T00:00:00Z',
+    }))
+
+    const result = await projectApi.createReviewDiff('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/review-diffs',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    )
+    expect(result.changedFiles).toBe(3)
+  })
 })

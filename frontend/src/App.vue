@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import ProjectFormModal from './components/ProjectFormModal.vue'
+import SourceStructureModal from './components/SourceStructureModal.vue'
+import DiffReportModal from './components/DiffReportModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
 
@@ -13,6 +15,9 @@ const editingProject = ref<Project | null>(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 const deletingId = ref<string | null>(null)
+const importingId = ref<string | null>(null)
+const sourceProject = ref<Project | null>(null)
+const diffProject = ref<Project | null>(null)
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
 const rangeText = computed(() => {
@@ -102,6 +107,24 @@ async function removeProject(project: Project) {
     showError(error)
   } finally {
     deletingId.value = null
+  }
+}
+
+async function importSource(project: Project) {
+  if (project.sourceType !== 'GIT') {
+    showError(new ApiError('当前版本只支持导入 Git 项目'))
+    return
+  }
+  importingId.value = project.id
+  try {
+    const task = await projectApi.importSource(project.id)
+    showSuccess(`源码导入成功：发现 ${task.totalFiles} 个 Java 文件`)
+    await loadProjects(pageData.value.page)
+  } catch (error) {
+    showError(error)
+    await loadProjects(pageData.value.page)
+  } finally {
+    importingId.value = null
   }
 }
 
@@ -204,8 +227,26 @@ onMounted(() => loadProjects())
                 <td><span class="status" :class="project.status.toLowerCase()"><i></i>{{ statusLabel[project.status] }}</span></td>
                 <td class="muted">{{ formatDate(project.updatedAt) }}</td>
                 <td class="row-actions">
-                  <button type="button" @click="openEdit(project)">编辑</button>
-                  <button class="danger" type="button" :disabled="deletingId === project.id" @click="removeProject(project)">
+                  <button
+                    class="import"
+                    type="button"
+                    :disabled="project.sourceType !== 'GIT' || importingId === project.id || deletingId === project.id"
+                    @click="importSource(project)"
+                  >
+                    {{ importingId === project.id ? '导入中' : project.status === 'READY' ? '重新导入' : '导入源码' }}
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    @click="sourceProject = project"
+                  >结构</button>
+                  <button
+                    type="button"
+                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    @click="diffProject = project"
+                  >Diff</button>
+                  <button type="button" :disabled="importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
+                  <button class="danger" type="button" :disabled="deletingId === project.id || importingId === project.id" @click="removeProject(project)">
                     {{ deletingId === project.id ? '删除中' : '删除' }}
                   </button>
                 </td>
@@ -230,6 +271,18 @@ onMounted(() => loadProjects())
       :saving="saving"
       @close="modalOpen = false"
       @submit="saveProject"
+    />
+    <SourceStructureModal
+      :open="sourceProject !== null"
+      :project-id="sourceProject?.id"
+      :project-name="sourceProject?.name"
+      @close="sourceProject = null"
+    />
+    <DiffReportModal
+      :open="diffProject !== null"
+      :project-id="diffProject?.id"
+      :project-name="diffProject?.name"
+      @close="diffProject = null"
     />
   </div>
 </template>

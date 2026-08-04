@@ -21,9 +21,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {
         ErrorCode errorCode = exception.getErrorCode();
-        HttpStatus status = errorCode == ErrorCode.RESOURCE_NOT_FOUND
-                ? HttpStatus.NOT_FOUND
-                : HttpStatus.BAD_REQUEST;
+        HttpStatus status = switch (errorCode) {
+            case RESOURCE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
+            default -> HttpStatus.BAD_REQUEST;
+        };
         return ResponseEntity.status(status)
                 .body(ApiResponse.failure(errorCode.getCode(), exception.getMessage()));
     }
@@ -62,4 +64,3 @@ public class GlobalExceptionHandler {
                 ));
     }
 }
-
