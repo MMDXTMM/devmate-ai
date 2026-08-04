@@ -97,7 +97,11 @@ public class GitDiffAnalyzer {
                 List<Edit> edits = formatter.toFileHeader(entry).toEditList();
                 int additions = edits.stream().mapToInt(edit -> edit.getEndB() - edit.getBeginB()).sum();
                 int deletions = edits.stream().mapToInt(edit -> edit.getEndA() - edit.getBeginA()).sum();
-                List<LineRange> ranges = edits.stream()
+                List<LineRange> baseRanges = edits.stream()
+                        .filter(edit -> edit.getEndA() > edit.getBeginA())
+                        .map(edit -> new LineRange(edit.getBeginA() + 1, edit.getEndA()))
+                        .toList();
+                List<LineRange> targetRanges = edits.stream()
                         .filter(edit -> edit.getEndB() > edit.getBeginB())
                         .map(edit -> new LineRange(edit.getBeginB() + 1, edit.getEndB()))
                         .toList();
@@ -107,7 +111,8 @@ public class GitDiffAnalyzer {
                         entry.getChangeType().name(),
                         additions,
                         deletions,
-                        ranges
+                        baseRanges,
+                        targetRanges
                 ));
             }
             return result;

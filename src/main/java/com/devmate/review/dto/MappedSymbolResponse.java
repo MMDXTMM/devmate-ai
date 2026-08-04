@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 public record MappedSymbolResponse(
         @JsonSerialize(using = ToStringSerializer.class) Long chunkId,
+        String revisionSide,
         String chunkType,
         String symbolName,
         Integer startLine,

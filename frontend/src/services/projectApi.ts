@@ -8,6 +8,7 @@ import type {
   SourceDocument,
   SourceSymbol,
   ReviewDiff,
+  StaticAnalysis,
 } from '../types/project'
 
 export class ApiError extends Error {
@@ -108,5 +109,15 @@ export const projectApi = {
 
   latestReviewDiff(id: string): Promise<ReviewDiff> {
     return request(`/api/projects/${encodeURIComponent(id)}/review-diffs/latest`)
+  },
+
+  createStaticAnalysis(id: string): Promise<StaticAnalysis> {
+    return request(`/api/projects/${encodeURIComponent(id)}/static-analyses`, {
+      method: 'POST',
+    })
+  },
+
+  latestStaticAnalysis(id: string): Promise<StaticAnalysis> {
+    return request(`/api/projects/${encodeURIComponent(id)}/static-analyses/latest`)
   },
 }

@@ -96,6 +96,7 @@ public class ReviewDiffStateService {
             file.setCoverageStatus(mapped.coverageStatus());
             file.setAdditions(mapped.changedFile().additions());
             file.setDeletions(mapped.changedFile().deletions());
+            file.setBaseChangedLinesJson(writeJson(mapped.changedFile().baseLineRanges()));
             file.setChangedLinesJson(writeJson(mapped.changedFile().targetLineRanges()));
             file.setMappedSymbolsJson(writeJson(mapped.mappedSymbols()));
             file.setSkipReason(mapped.skipReason());
@@ -159,6 +160,7 @@ public class ReviewDiffStateService {
         return new ReviewFileResponse(
                 file.getId(), file.getOldPath(), file.getNewPath(), file.getChangeType(),
                 file.getCoverageStatus(), file.getAdditions(), file.getDeletions(),
+                readJson(file.getBaseChangedLinesJson(), new TypeReference<>() {}),
                 readJson(file.getChangedLinesJson(), new TypeReference<>() {}),
                 readJson(file.getMappedSymbolsJson(), new TypeReference<>() {}),
                 file.getSkipReason()
@@ -179,7 +181,7 @@ public class ReviewDiffStateService {
 
     private <T> T readJson(String value, TypeReference<T> type) {
         try {
-            return objectMapper.readValue(value, type);
+            return objectMapper.readValue(StringUtils.hasText(value) ? value : "[]", type);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("读取Diff覆盖信息失败", exception);
         }

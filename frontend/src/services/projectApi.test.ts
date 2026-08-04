@@ -168,4 +168,31 @@ describe('projectApi', () => {
     )
     expect(result.changedFiles).toBe(3)
   })
+
+  it('starts deterministic static analysis for the latest diff', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588309000',
+        projectId: '2084116785588305922',
+        reviewTaskId: '2084116785588308000',
+        toolName: 'PMD',
+        toolVersion: '7.26.0',
+        status: 'SUCCEEDED',
+        analyzedFiles: 1,
+        findingCount: 1,
+        findings: [],
+      },
+      timestamp: '2026-08-04T00:00:00Z',
+    }))
+
+    const result = await projectApi.createStaticAnalysis('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/static-analyses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(result.toolName).toBe('PMD')
+  })
 })

@@ -65,8 +65,8 @@ class ReviewDiffControllerTest {
                 .andExpect(jsonPath("$.data.id").isString())
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.changedFiles").value(3))
-                .andExpect(jsonPath("$.data.fullyMappedFiles").value(1))
-                .andExpect(jsonPath("$.data.skippedFiles").value(2))
+                .andExpect(jsonPath("$.data.fullyMappedFiles").value(2))
+                .andExpect(jsonPath("$.data.skippedFiles").value(1))
                 .andExpect(jsonPath("$.data.files.length()").value(3));
 
         CodeReviewTask task = taskMapper.selectOne(Wrappers.lambdaQuery(CodeReviewTask.class)
@@ -82,6 +82,14 @@ class ReviewDiffControllerTest {
                 .last("LIMIT 1"));
         assertThat(appFile.getCoverageStatus()).isEqualTo("FULL");
         assertThat(appFile.getMappedSymbolsJson()).contains("com.example.App#run()");
+        assertThat(appFile.getBaseChangedLinesJson()).isNotBlank();
+
+        CodeReviewFile deletedFile = fileMapper.selectOne(Wrappers.lambdaQuery(CodeReviewFile.class)
+                .eq(CodeReviewFile::getReviewTaskId, task.getId())
+                .eq(CodeReviewFile::getOldPath, "src/main/java/com/example/Old.java")
+                .last("LIMIT 1"));
+        assertThat(deletedFile.getCoverageStatus()).isEqualTo("FULL");
+        assertThat(deletedFile.getMappedSymbolsJson()).contains("BASE", "com.example.Old");
 
         mockMvc.perform(get("/api/projects/{projectId}/review-diffs/latest", project.id()))
                 .andExpect(status().isOk())

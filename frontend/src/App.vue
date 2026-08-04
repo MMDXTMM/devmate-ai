@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import ProjectFormModal from './components/ProjectFormModal.vue'
 import SourceStructureModal from './components/SourceStructureModal.vue'
 import DiffReportModal from './components/DiffReportModal.vue'
+import StaticAnalysisModal from './components/StaticAnalysisModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
 
@@ -18,6 +19,7 @@ const deletingId = ref<string | null>(null)
 const importingId = ref<string | null>(null)
 const sourceProject = ref<Project | null>(null)
 const diffProject = ref<Project | null>(null)
+const analysisProject = ref<Project | null>(null)
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
 const rangeText = computed(() => {
@@ -245,6 +247,11 @@ onMounted(() => loadProjects())
                     :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
                     @click="diffProject = project"
                   >Diff</button>
+                  <button
+                    type="button"
+                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    @click="analysisProject = project"
+                  >静态分析</button>
                   <button type="button" :disabled="importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
                   <button class="danger" type="button" :disabled="deletingId === project.id || importingId === project.id" @click="removeProject(project)">
                     {{ deletingId === project.id ? '删除中' : '删除' }}
@@ -283,6 +290,12 @@ onMounted(() => loadProjects())
       :project-id="diffProject?.id"
       :project-name="diffProject?.name"
       @close="diffProject = null"
+    />
+    <StaticAnalysisModal
+      :open="analysisProject !== null"
+      :project-id="analysisProject?.id"
+      :project-name="analysisProject?.name"
+      @close="analysisProject = null"
     />
   </div>
 </template>

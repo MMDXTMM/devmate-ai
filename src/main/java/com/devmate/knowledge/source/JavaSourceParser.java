@@ -14,9 +14,11 @@ import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
+import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
@@ -31,6 +33,16 @@ import java.util.List;
 public class JavaSourceParser {
 
     public ParsedSourceFile parse(ScannedSourceFile sourceFile) {
+        try {
+            String source = Files.readString(sourceFile.sourcePath(), StandardCharsets.UTF_8);
+            ParsedSourceContent parsed = parseContent(sourceFile.relativePath(), source);
+            return new ParsedSourceFile(sourceFile, parsed.packageName(), parsed.chunks());
+        } catch (IOException exception) {
+            throw new SourceImportException("读取Java源码失败：" + sourceFile.relativePath(), exception);
+        }
+    }
+
+    public ParsedSourceContent parseContent(String relativePath, String source) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             throw new SourceImportException("Java源码解析需要使用JDK运行应用");
@@ -40,14 +52,13 @@ public class JavaSourceParser {
         try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(
                 diagnostics, null, StandardCharsets.UTF_8
         )) {
-            Iterable<? extends JavaFileObject> units = fileManager.getJavaFileObjects(sourceFile.sourcePath());
+            JavaFileObject sourceObject = new StringSourceFileObject(source);
             JavacTask task = (JavacTask) compiler.getTask(
-                    null, fileManager, diagnostics, List.of("-proc:none"), null, units
+                    null, fileManager, diagnostics, List.of("-proc:none"), null, List.of(sourceObject)
             );
-            CompilationUnitTree unit = firstUnit(task.parse(), sourceFile.relativePath());
-            rejectSyntaxErrors(diagnostics, sourceFile.relativePath());
+            CompilationUnitTree unit = firstUnit(task.parse(), relativePath);
+            rejectSyntaxErrors(diagnostics, relativePath);
 
-            String source = Files.readString(sourceFile.sourcePath(), StandardCharsets.UTF_8);
             String packageName = unit.getPackageName() == null ? "" : unit.getPackageName().toString();
             Trees trees = Trees.instance(task);
             ChunkScanner scanner = new ChunkScanner(
@@ -57,13 +68,28 @@ public class JavaSourceParser {
                     packageName
             );
             scanner.scan(unit, null);
-            return new ParsedSourceFile(sourceFile, packageName, scanner.chunks());
+            return new ParsedSourceContent(packageName, scanner.chunks());
         } catch (IOException exception) {
-            throw new SourceImportException("读取Java源码失败：" + sourceFile.relativePath(), exception);
+            throw new SourceImportException("解析Java源码失败：" + relativePath, exception);
         } catch (SourceImportException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            throw new SourceImportException("解析Java源码失败：" + sourceFile.relativePath(), exception);
+            throw new SourceImportException("解析Java源码失败：" + relativePath, exception);
+        }
+    }
+
+    private static final class StringSourceFileObject extends SimpleJavaFileObject {
+
+        private final String source;
+
+        private StringSourceFileObject(String source) {
+            super(URI.create("string:///DevMateSource.java"), Kind.SOURCE);
+            this.source = source;
+        }
+
+        @Override
+        public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+            return source;
         }
     }
 

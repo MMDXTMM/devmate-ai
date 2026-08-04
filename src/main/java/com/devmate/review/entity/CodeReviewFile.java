@@ -17,6 +17,7 @@ public class CodeReviewFile {
     private String coverageStatus;
     private Integer additions;
     private Integer deletions;
+    private String baseChangedLinesJson;
     private String changedLinesJson;
     private String mappedSymbolsJson;
     private String skipReason;
@@ -40,6 +41,8 @@ public class CodeReviewFile {
     public void setAdditions(Integer additions) { this.additions = additions; }
     public Integer getDeletions() { return deletions; }
     public void setDeletions(Integer deletions) { this.deletions = deletions; }
+    public String getBaseChangedLinesJson() { return baseChangedLinesJson; }
+    public void setBaseChangedLinesJson(String baseChangedLinesJson) { this.baseChangedLinesJson = baseChangedLinesJson; }
     public String getChangedLinesJson() { return changedLinesJson; }
     public void setChangedLinesJson(String changedLinesJson) { this.changedLinesJson = changedLinesJson; }
     public String getMappedSymbolsJson() { return mappedSymbolsJson; }

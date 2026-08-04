@@ -58,9 +58,12 @@ class GitDiffAnalyzerTest {
         assertThat(result.targetRevision()).isEqualTo(target);
         assertThat(files).containsOnlyKeys("App.java", "Old.java", "application.yml");
         assertThat(files.get("App.java").changeType()).isEqualTo("MODIFY");
+        assertThat(files.get("App.java").baseLineRanges()).isNotEmpty();
         assertThat(files.get("App.java").targetLineRanges()).isNotEmpty();
         assertThat(files.get("Old.java").changeType()).isEqualTo("DELETE");
         assertThat(files.get("Old.java").newPath()).isNull();
+        assertThat(files.get("Old.java").baseLineRanges()).isNotEmpty();
+        assertThat(files.get("Old.java").targetLineRanges()).isEmpty();
         assertThat(files.get("application.yml").changeType()).isEqualTo("ADD");
     }
 
@@ -105,6 +108,37 @@ class GitDiffAnalyzerTest {
             assertThat(file.changeType()).isEqualTo("RENAME");
             assertThat(file.oldPath()).isEqualTo("OldName.java");
             assertThat(file.newPath()).isEqualTo("NewName.java");
+        });
+    }
+
+    @Test
+    void detectsSimilarJavaFileRenameWithContentChanges() throws Exception {
+        try (Git git = Git.init().setDirectory(tempDir.toFile()).call()) {
+            configureUser(git);
+            StringBuilder source = new StringBuilder("class SimilarService {\n");
+            for (int index = 0; index < 30; index++) {
+                source.append("    void method").append(index).append("() {}\n");
+            }
+            source.append("}\n");
+            Files.writeString(tempDir.resolve("OriginalService.java"), source);
+            git.add().addFilepattern(".").call();
+            git.commit().setMessage("base").call();
+
+            String changed = source.toString().replace("void method15() {}", "void method15() { System.out.println(15); }");
+            Files.writeString(tempDir.resolve("RenamedService.java"), changed);
+            git.add().addFilepattern("RenamedService.java").call();
+            git.rm().addFilepattern("OriginalService.java").call();
+            git.commit().setMessage("rename and edit").call();
+        }
+
+        GitDiffResult result = analyzer.analyze(tempDir, null, null);
+
+        assertThat(result.files()).singleElement().satisfies(file -> {
+            assertThat(file.changeType()).isEqualTo("RENAME");
+            assertThat(file.oldPath()).isEqualTo("OriginalService.java");
+            assertThat(file.newPath()).isEqualTo("RenamedService.java");
+            assertThat(file.baseLineRanges()).isNotEmpty();
+            assertThat(file.targetLineRanges()).isNotEmpty();
         });
     }
 

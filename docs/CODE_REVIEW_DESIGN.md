@@ -58,6 +58,8 @@ RAG 检索调用方、被调用方、配置、SQL、规范和测试
 
 当前 Diff MVP 已落地，具体实现与覆盖状态见 [Git Diff 与覆盖清单](GIT_DIFF.md)。
 
+确定性静态分析 MVP 已接入 PMD，并统一持久化为 Finding，具体边界见 [确定性静态分析](STATIC_ANALYSIS.md)。
+
 ## 4. 审查结果模型
 
 每条 Finding 至少包含：

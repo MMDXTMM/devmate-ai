@@ -53,3 +53,6 @@ devmate:
     max-total-size-bytes: 52428800
     git-username: ${DEVMATE_GIT_USERNAME:x-access-token}
     git-token: ${DEVMATE_GIT_TOKEN:}
+  analysis:
+    timeout-seconds: 30
+    max-files: 200

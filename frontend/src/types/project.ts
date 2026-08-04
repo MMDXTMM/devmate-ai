@@ -70,7 +70,8 @@ export interface LineRange {
 }
 
 export interface MappedSymbol {
-  chunkId: string
+  chunkId?: string
+  revisionSide: 'BASE' | 'TARGET'
   chunkType: SourceSymbolType
   symbolName: string
   startLine: number
@@ -87,6 +88,7 @@ export interface ReviewFile {
   coverageStatus: CoverageStatus
   additions: number
   deletions: number
+  baseChangedLines: LineRange[]
   changedLines: LineRange[]
   mappedSymbols: MappedSymbol[]
   skipReason?: string
@@ -106,6 +108,36 @@ export interface ReviewDiff {
   createdAt: string
   finishedAt?: string
   files: ReviewFile[]
+}
+
+export type FindingSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+
+export interface StaticFinding {
+  id: string
+  source: 'STATIC'
+  ruleId: string
+  category: string
+  severity: FindingSeverity
+  filePath: string
+  startLine: number
+  endLine: number
+  message: string
+  evidence: string
+}
+
+export interface StaticAnalysis {
+  id: string
+  projectId: string
+  reviewTaskId: string
+  toolName: string
+  toolVersion: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  analyzedFiles: number
+  findingCount: number
+  errorMessage?: string
+  createdAt: string
+  finishedAt?: string
+  findings: StaticFinding[]
 }
 
 export interface ProjectQuery {
