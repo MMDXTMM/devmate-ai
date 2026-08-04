@@ -31,6 +31,10 @@ erDiagram
     PROJECT ||--o{ CONVERSATION : scopes
     CONVERSATION ||--o{ CONVERSATION_MESSAGE : contains
     PROJECT ||--o{ BUG_ANALYSIS : diagnoses
+    PROJECT ||--o{ CODE_REVIEW_TASK : reviews
+    CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FILE : covers
+    CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : analyzes
+    STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
     CONVERSATION o|--o{ BUG_ANALYSIS : relates_to
     CONVERSATION o|--o{ AI_INVOCATION_LOG : produces
     AI_INVOCATION_LOG ||--o{ TOOL_CALL_LOG : invokes
@@ -148,7 +152,7 @@ RAG 的最小检索单元。
 
 ## 5. 代码审查表
 
-V4 已增加 Diff 任务和覆盖清单；Finding 与反馈仍在后续迁移中创建。
+V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加静态分析任务和第一版统一 Finding。反馈表将在评测阶段创建。
 
 ### `code_review_task`
 
@@ -168,18 +172,27 @@ V4 已增加 Diff 任务和覆盖清单；Finding 与反馈仍在后续迁移中
 保存每个变更文件的可审计覆盖结果：
 
 - 新旧路径与 `ADD/MODIFY/DELETE/RENAME/COPY`
-- 新增、删除行数和目标版本行区间
+- 新增、删除行数，以及基准和目标版本行区间
 - `FULL/PARTIAL/SKIPPED` 覆盖状态
 - 映射到的 AST 符号和跳过原因
 
-### `code_review_finding`
+### `static_analysis_task`
+
+保存一次确定性工具执行：
+
+- 关联项目和 Diff 审查任务；
+- 保存工具名称、版本、状态、分析文件数和问题数；
+- 外部执行失败时保存脱敏错误和完成时间。
+
+### `review_finding`
 
 保存一条结构化审查问题：
 
 - 文件、起止行号和代码符号
+- `path_hash`：对长路径建立定长索引，避免 `utf8mb4` 索引长度超限
 - 问题分类、严重程度和置信度
 - 标题、证据、风险场景、建议和验证方法
-- 来源：静态分析、LLM 或混合结论
+- 来源：当前为 `STATIC`，后续扩展 `LLM` 或 `HYBRID`
 - 去重指纹和当前处理状态
 
 ### `code_review_feedback`
@@ -196,12 +209,13 @@ V4 已增加 Diff 任务和覆盖清单；Finding 与反馈仍在后续迁移中
 erDiagram
     PROJECT ||--o{ CODE_REVIEW_TASK : has
     APP_USER ||--o{ CODE_REVIEW_TASK : creates
-    CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FINDING : produces
-    CODE_REVIEW_FINDING ||--o{ CODE_REVIEW_FEEDBACK : receives
+    CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : runs
+    STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
+    REVIEW_FINDING ||--o{ CODE_REVIEW_FEEDBACK : receives
     APP_USER ||--o{ CODE_REVIEW_FEEDBACK : submits
 ```
 
-`code_review_finding` 和 `code_review_feedback` 将在静态分析、AI审查字段稳定后通过新迁移创建。
+`review_finding` 已在 V6 创建；`code_review_feedback` 将在审查反馈与评测阶段通过新迁移创建。
 
 ## 6. 数据库版本管理
 
@@ -209,6 +223,8 @@ erDiagram
 - `V2__add_agent_knowledge_schema.sql`：用户、权限、知识库、会话、Bug、AI 和 Tool 审计表。
 - `V3__add_java_structure_metadata.sql`：Java 包名和符号扩展元数据。
 - `V4__add_code_review_diff_schema.sql`：Diff任务与文件覆盖清单。
+- `V5__add_base_diff_line_ranges.sql`：保存基准版本删除行区间。
+- `V6__add_static_analysis_schema.sql`：静态分析任务与统一 Finding。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

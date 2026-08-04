@@ -175,6 +175,28 @@ tbody tr:hover { background: #fbfcfb; }
 .mapped-symbols span { padding: 4px 6px; border-radius: 5px; color: var(--green); background: #edf6f0; font: 400 8px 'DM Mono', monospace; }
 .skip-reason { display: block; margin-top: 8px; color: var(--muted); font-size: 9px; }
 
+.analysis-modal { width: min(900px, 100%); }
+.analysis-summary { padding: 16px 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; border-bottom: 1px solid var(--line); background: #fafbfa; }
+.analysis-summary span { padding: 11px 12px; border-radius: 8px; background: #fff; }
+.analysis-summary small, .analysis-summary b { display: block; }
+.analysis-summary small { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.analysis-summary b { margin-top: 5px; font: 600 12px 'DM Mono', monospace; }
+.state-box.compact { min-height: 230px; padding: 24px; }
+.state-box.compact h3 { margin: 0; color: var(--ink); font-size: 16px; }
+.finding-list { max-height: 520px; padding: 16px 22px 22px; overflow-y: auto; }
+.finding-card { padding: 15px; border: 1px solid var(--line); border-radius: 10px; }
+.finding-card + .finding-card { margin-top: 10px; }
+.finding-head { display: flex; align-items: center; gap: 8px; }
+.finding-head b { font: 600 11px 'DM Mono', monospace; }
+.finding-head > span:last-child { margin-left: auto; color: var(--muted); font-size: 9px; }
+.severity { padding: 3px 6px; border-radius: 5px; font-size: 8px; font-weight: 800; }
+.severity.low { color: #286344; background: #e9f5ed; }
+.severity.medium { color: #8c6418; background: #fff4d8; }
+.severity.high, .severity.critical { color: #932f28; background: #ffebe8; }
+.finding-card code { display: block; margin-top: 10px; color: var(--green); overflow-wrap: anywhere; font: 500 9px 'DM Mono', monospace; }
+.finding-card p { margin: 9px 0 5px; font-size: 12px; line-height: 1.55; }
+.finding-card small { color: var(--muted); font-size: 9px; }
+
 @media (max-width: 850px) {
   .app-shell { display: block; }
   .sidebar { position: static; width: 100%; height: auto; padding: 17px 20px; flex-direction: row; align-items: center; }
@@ -196,4 +218,5 @@ tbody tr:hover { background: #fbfcfb; }
   .source-browser { grid-template-columns: 1fr; }
   .source-files { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--line); }
   .diff-summary { grid-template-columns: repeat(2, 1fr); }
+  .analysis-summary { grid-template-columns: 1fr; }
 }
