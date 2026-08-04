@@ -21,9 +21,11 @@ POST /api/projects/{projectId}/review-diffs
         ↓
 默认比较 HEAD^ 与 HEAD，或使用请求中的提交哈希
         ↓
-JGit 识别 ADD/MODIFY/DELETE/RENAME/COPY 和 Edit 行区间
+JGit 识别 ADD/MODIFY/DELETE/RENAME/COPY 和基准/目标 Edit 行区间
         ↓
-目标版本 Java 变更行与 knowledge_chunk 起止行求交集
+目标版本新增行与 knowledge_chunk 起止行求交集
+        ↓
+基准版本删除行从 Git 对象读取源码并在内存解析 AST
         ↓ 短事务
 保存 code_review_file 覆盖清单并完成任务
 ```
@@ -32,18 +34,19 @@ JGit 识别 ADD/MODIFY/DELETE/RENAME/COPY 和 Edit 行区间
 
 ## 覆盖状态
 
-- `FULL`：目标版本所有新增/修改行都映射到至少一个 AST 符号，且没有待映射删除行。
-- `PARTIAL`：只映射了部分行、目标版本缺少结构数据，或包含尚未映射的删除行。
-- `SKIPPED`：当前阶段不处理的非 Java 文件，或者目标版本中已经不存在的删除文件。
+- `FULL`：目标版本新增/修改行和基准版本删除行都已映射到 AST 符号；纯路径 Rename 没有代码行变化时也视为完整覆盖。
+- `PARTIAL`：只映射了部分行、目标版本缺少结构数据，或基准版本源码对象不可用。
+- `SKIPPED`：当前阶段不处理的非 Java 文件。
 
 `SKIPPED` 不等于忽略。每个变更文件都会写入覆盖清单并记录原因，避免“静默漏审后返回成功”。
 
 ## 当前边界
 
 - Git导入深度从 1 提升为 50，用于读取近期提交历史；更早提交需要重新获取或增加深度。
-- 目标版本新增和修改行已经可以映射到当前 AST 符号。
-- 纯删除行还没有解析基准版本 AST，因此明确标记为 `PARTIAL/SKIPPED`。
-- JGit 已启用 Rename 检测并覆盖完全重命名用例；复杂大文件的相似度重命名仍需加入固定测试集。
+- 目标版本新增和修改行映射到持久化知识块，证据侧标记为 `TARGET`。
+- 删除行读取基准提交中的 Git Blob 并在内存解析，证据侧标记为 `BASE`；不会把旧源码重复持久化。
+- JGit 已启用 Rename 检测，并覆盖完全重命名和带内容修改的相似度重命名用例。
+- Git Blob 读取沿用单文件大小限制，避免旧版本大文件绕过导入安全边界。
 - 当前输出是覆盖报告，不是静态分析结论或 AI Finding。
 
 ## 接口

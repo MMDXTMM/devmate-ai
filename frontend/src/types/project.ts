@@ -70,7 +70,8 @@ export interface LineRange {
 }
 
 export interface MappedSymbol {
-  chunkId: string
+  chunkId?: string
+  revisionSide: 'BASE' | 'TARGET'
   chunkType: SourceSymbolType
   symbolName: string
   startLine: number
@@ -87,6 +88,7 @@ export interface ReviewFile {
   coverageStatus: CoverageStatus
   additions: number
   deletions: number
+  baseChangedLines: LineRange[]
   changedLines: LineRange[]
   mappedSymbols: MappedSymbol[]
   skipReason?: string

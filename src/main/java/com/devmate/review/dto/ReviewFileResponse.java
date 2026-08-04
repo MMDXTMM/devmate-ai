@@ -14,6 +14,7 @@ public record ReviewFileResponse(
         String coverageStatus,
         Integer additions,
         Integer deletions,
+        List<LineRange> baseChangedLines,
         List<LineRange> changedLines,
         List<MappedSymbolResponse> mappedSymbols,
         String skipReason

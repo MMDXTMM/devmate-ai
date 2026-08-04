@@ -81,7 +81,11 @@ watch(
             </div>
             <p class="diff-count"><b>+{{ file.additions }}</b><i>-{{ file.deletions }}</i></p>
             <p v-if="file.mappedSymbols.length" class="mapped-symbols">
-              <span v-for="symbol in file.mappedSymbols" :key="symbol.chunkId">
+              <span
+                v-for="symbol in file.mappedSymbols"
+                :key="`${symbol.revisionSide}:${symbol.chunkId || symbol.symbolName}:${symbol.startLine}`"
+              >
+                {{ symbol.revisionSide === 'BASE' ? '基准' : '目标' }} ·
                 {{ symbol.symbolName }} · {{ symbol.startLine }}–{{ symbol.endLine }}行
               </span>
             </p>

@@ -46,7 +46,13 @@ public class ReviewDiffService {
                     request.targetRevision()
             );
             List<MappedReviewFile> mappedFiles = diff.files().stream()
-                    .map(file -> symbolMapper.map(projectId, diff.targetRevision(), file))
+                    .map(file -> symbolMapper.map(
+                            projectId,
+                            repositoryRoot,
+                            diff.baseRevision(),
+                            diff.targetRevision(),
+                            file
+                    ))
                     .toList();
             return stateService.complete(context, diff, mappedFiles);
         } catch (RuntimeException exception) {

@@ -8,9 +8,11 @@ public record GitChangedFile(
         String changeType,
         int additions,
         int deletions,
+        List<LineRange> baseLineRanges,
         List<LineRange> targetLineRanges
 ) {
     public GitChangedFile {
+        baseLineRanges = List.copyOf(baseLineRanges);
         targetLineRanges = List.copyOf(targetLineRanges);
     }
 }
