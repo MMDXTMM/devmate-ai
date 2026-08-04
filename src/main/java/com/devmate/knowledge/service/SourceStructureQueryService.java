@@ -121,11 +121,16 @@ public class SourceStructureQueryService {
                         return null;
                     }
                     KnowledgeDocument document = documents.get(source.getDocumentId());
+                    KnowledgeChunk target = chunks.get(reference.getTargetChunkId());
+                    KnowledgeDocument targetDocument = target == null
+                            ? null
+                            : documents.get(target.getDocumentId());
                     return SourceReferenceResponse.from(
                             reference,
                             source,
                             document == null ? null : document.getFilePath(),
-                            chunks.get(reference.getTargetChunkId())
+                            target,
+                            targetDocument == null ? null : targetDocument.getFilePath()
                     );
                 })
                 .filter(Objects::nonNull)

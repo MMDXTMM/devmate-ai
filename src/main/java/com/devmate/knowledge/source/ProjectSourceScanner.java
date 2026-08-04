@@ -4,8 +4,8 @@ import com.devmate.knowledge.config.SourceImportProperties;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
@@ -13,12 +13,14 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Component
-public class JavaSourceScanner {
+public class ProjectSourceScanner {
 
     private static final Set<String> IGNORED_DIRECTORIES = Set.of(
             ".git", ".idea", "target", "build", "out", "node_modules"
@@ -26,7 +28,7 @@ public class JavaSourceScanner {
 
     private final SourceImportProperties properties;
 
-    public JavaSourceScanner(SourceImportProperties properties) {
+    public ProjectSourceScanner(SourceImportProperties properties) {
         this.properties = properties;
     }
 
@@ -35,6 +37,7 @@ public class JavaSourceScanner {
             Path realRoot = repositoryRoot.toRealPath();
             List<ScannedSourceFile> files = new ArrayList<>();
             long[] totalSize = {0};
+            Map<SourceFileType, Integer> counts = new EnumMap<>(SourceFileType.class);
 
             Files.walkFileTree(realRoot, new SimpleFileVisitor<>() {
                 @Override
@@ -48,44 +51,51 @@ public class JavaSourceScanner {
 
                 @Override
                 public FileVisitResult visitFile(Path path, BasicFileAttributes attributes) throws IOException {
-                    if (isJavaSource(path)) {
-                        addSourceFile(realRoot, path, files, totalSize);
-                    }
+                    SourceFileType.from(path).ifPresent(type -> {
+                        try {
+                            addSourceFile(realRoot, path, type, files, counts, totalSize);
+                        } catch (IOException exception) {
+                            throw new SourceScanIOException(exception);
+                        }
+                    });
                     return FileVisitResult.CONTINUE;
                 }
             });
             return files;
+        } catch (SourceScanIOException exception) {
+            throw new SourceImportException("读取项目源码失败", exception.getCause());
         } catch (IOException exception) {
             throw new SourceImportException("读取Git仓库文件失败", exception);
         }
     }
 
-    private boolean isJavaSource(Path path) {
-        return Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
-                && path.getFileName().toString().endsWith(".java");
-    }
-
     private void addSourceFile(
             Path realRoot,
             Path path,
+            SourceFileType type,
             List<ScannedSourceFile> files,
+            Map<SourceFileType, Integer> counts,
             long[] totalSize
     ) throws IOException {
         Path realFile = path.toRealPath(LinkOption.NOFOLLOW_LINKS);
-        if (!realFile.startsWith(realRoot)) {
+        if (!realFile.startsWith(realRoot) || Files.isSymbolicLink(path)) {
             throw new SourceImportException("检测到仓库外部文件，已终止导入");
         }
 
         long size = Files.size(realFile);
         if (size > properties.getMaxFileSizeBytes()) {
-            throw new SourceImportException("Java文件超过大小限制：" + realRoot.relativize(realFile));
+            throw new SourceImportException("文件超过大小限制：" + realRoot.relativize(realFile));
         }
         totalSize[0] += size;
         if (totalSize[0] > properties.getMaxTotalSizeBytes()) {
-            throw new SourceImportException("Java源码总大小超过限制");
+            throw new SourceImportException("待分析文件总大小超过限制");
         }
-        if (files.size() >= properties.getMaxJavaFiles()) {
+        int typeCount = counts.merge(type, 1, Integer::sum);
+        if (type == SourceFileType.JAVA && typeCount > properties.getMaxJavaFiles()) {
             throw new SourceImportException("Java文件数量超过限制");
+        }
+        if (type != SourceFileType.JAVA && configurationFileCount(counts) > properties.getMaxConfigFiles()) {
+            throw new SourceImportException("配置文件数量超过限制");
         }
 
         byte[] content = Files.readAllBytes(realFile);
@@ -95,6 +105,7 @@ public class JavaSourceScanner {
         files.add(new ScannedSourceFile(
                 realFile.getFileName().toString(),
                 relativePath,
+                type,
                 sha256(relativePath.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
                 sha256(content),
                 size,
@@ -102,11 +113,27 @@ public class JavaSourceScanner {
         ));
     }
 
+    private int configurationFileCount(Map<SourceFileType, Integer> counts) {
+        return counts.getOrDefault(SourceFileType.YAML, 0)
+                + counts.getOrDefault(SourceFileType.PROPERTIES, 0);
+    }
+
     private String sha256(byte[] value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("当前JDK不支持SHA-256", exception);
+        }
+    }
+
+    private static final class SourceScanIOException extends RuntimeException {
+        private SourceScanIOException(IOException cause) {
+            super(cause);
+        }
+
+        @Override
+        public synchronized IOException getCause() {
+            return (IOException) super.getCause();
         }
     }
 }

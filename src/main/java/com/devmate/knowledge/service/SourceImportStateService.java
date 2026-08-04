@@ -192,11 +192,13 @@ public class SourceImportStateService {
             document.setProjectId(projectId);
             document.setCreatedAt(now);
         }
-        document.setSourceKind("SOURCE_CODE");
+        document.setSourceKind(file.fileType().name().equals("JAVA")
+                ? "SOURCE_CODE"
+                : "CONFIGURATION");
         document.setFileName(file.fileName());
         document.setFilePath(file.relativePath());
         document.setPathHash(file.pathHash());
-        document.setFileType("JAVA");
+        document.setFileType(file.fileType().name());
         document.setContentHash(file.contentHash());
         document.setRevision(revision);
         document.setPackageName(parsedFile.packageName());
@@ -228,16 +230,13 @@ public class SourceImportStateService {
             chunk.setChunkIndex(parsedChunk.chunkIndex());
             chunk.setChunkType(parsedChunk.chunkType());
             chunk.setSymbolName(parsedChunk.symbolName());
-            chunk.setLanguage("JAVA");
+            chunk.setLanguage(document.getFileType());
             chunk.setContent(parsedChunk.content());
             chunk.setContentHash(parsedChunk.contentHash());
             chunk.setStartLine(parsedChunk.startLine());
             chunk.setEndLine(parsedChunk.endLine());
             chunk.setRevision(revision);
-            chunk.setMetadataJson(writeMetadata(
-                    parsedChunk.annotations(),
-                    parsedChunk.parameterCount()
-            ));
+            chunk.setMetadataJson(writeMetadata(parsedChunk.metadata()));
             chunk.setCreatedAt(now);
             chunkMapper.insert(chunk);
         }
@@ -277,28 +276,78 @@ public class SourceImportStateService {
                 if (sourceChunk == null) {
                     continue;
                 }
-                KnowledgeChunk targetChunk = resolveSameTypeTarget(
+                List<KnowledgeChunk> targetChunks = resolveTargets(
                         parsedReference,
                         sourceChunk,
                         chunksBySymbol,
                         parsedChunksBySymbol
                 );
-                CodeReference reference = new CodeReference();
-                reference.setProjectId(projectId);
-                reference.setSourceChunkId(sourceChunk.getId());
-                reference.setTargetChunkId(targetChunk == null ? null : targetChunk.getId());
-                reference.setRevision(revision);
-                reference.setReferenceKind(parsedReference.referenceKind());
-                reference.setReferenceName(parsedReference.referenceName());
-                reference.setQualifier(parsedReference.qualifier());
-                reference.setArgumentCount(parsedReference.argumentCount());
-                reference.setStartLine(parsedReference.startLine());
-                reference.setEndLine(parsedReference.endLine());
-                reference.setMetadataJson(parsedReference.metadataJson());
-                reference.setCreatedAt(now);
-                referenceMapper.insert(reference);
+                if (targetChunks.isEmpty()) {
+                    insertReference(projectId, revision, parsedReference, sourceChunk, null, now);
+                    continue;
+                }
+                for (KnowledgeChunk targetChunk : targetChunks) {
+                    insertReference(projectId, revision, parsedReference, sourceChunk, targetChunk, now);
+                }
             }
         }
+    }
+
+    private void insertReference(
+            Long projectId,
+            String revision,
+            ParsedCodeReference parsedReference,
+            KnowledgeChunk sourceChunk,
+            KnowledgeChunk targetChunk,
+            LocalDateTime now
+    ) {
+        CodeReference reference = new CodeReference();
+        reference.setProjectId(projectId);
+        reference.setSourceChunkId(sourceChunk.getId());
+        reference.setTargetChunkId(targetChunk == null ? null : targetChunk.getId());
+        reference.setRevision(revision);
+        reference.setReferenceKind(parsedReference.referenceKind());
+        reference.setReferenceName(parsedReference.referenceName());
+        reference.setQualifier(parsedReference.qualifier());
+        reference.setArgumentCount(parsedReference.argumentCount());
+        reference.setStartLine(parsedReference.startLine());
+        reference.setEndLine(parsedReference.endLine());
+        reference.setMetadataJson(parsedReference.metadataJson());
+        reference.setCreatedAt(now);
+        referenceMapper.insert(reference);
+    }
+
+    private List<KnowledgeChunk> resolveTargets(
+            ParsedCodeReference reference,
+            KnowledgeChunk sourceChunk,
+            Map<String, List<KnowledgeChunk>> chunksBySymbol,
+            Map<String, ParsedSourceChunk> parsedChunksBySymbol
+    ) {
+        if ("CONFIG_KEY".equals(reference.referenceKind())) {
+            return configurationChunks(chunksBySymbol.get(reference.referenceName()));
+        }
+        if ("CONFIG_PREFIX".equals(reference.referenceKind())) {
+            String prefix = reference.referenceName();
+            return chunksBySymbol.entrySet().stream()
+                    .filter(entry -> entry.getKey().equals(prefix)
+                            || entry.getKey().startsWith(prefix + ".")
+                            || entry.getKey().startsWith(prefix + "["))
+                    .flatMap(entry -> configurationChunks(entry.getValue()).stream())
+                    .toList();
+        }
+        KnowledgeChunk target = resolveSameTypeTarget(
+                reference, sourceChunk, chunksBySymbol, parsedChunksBySymbol
+        );
+        return target == null ? List.of() : List.of(target);
+    }
+
+    private List<KnowledgeChunk> configurationChunks(List<KnowledgeChunk> chunks) {
+        if (chunks == null) {
+            return List.of();
+        }
+        return chunks.stream()
+                .filter(chunk -> "CONFIG_PROPERTY".equals(chunk.getChunkType()))
+                .toList();
     }
 
     private KnowledgeChunk resolveSameTypeTarget(
@@ -341,9 +390,9 @@ public class SourceImportStateService {
         return chunks != null && chunks.size() == 1 ? chunks.getFirst() : null;
     }
 
-    private String writeMetadata(List<String> annotations, Integer parameterCount) {
+    private String writeMetadata(Map<String, Object> metadata) {
         try {
-            return objectMapper.writeValueAsString(new ChunkMetadata(annotations, parameterCount));
+            return objectMapper.writeValueAsString(metadata);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("序列化源码符号元数据失败", exception);
         }
@@ -363,8 +412,5 @@ public class SourceImportStateService {
         }
         String trimmed = value.trim();
         return trimmed.length() <= 1000 ? trimmed : trimmed.substring(0, 1000);
-    }
-
-    private record ChunkMetadata(List<String> annotations, Integer parameterCount) {
     }
 }

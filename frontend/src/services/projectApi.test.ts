@@ -104,6 +104,8 @@ describe('projectApi', () => {
           id: '2084116785588307000',
           fileName: 'ReviewService.java',
           filePath: 'src/main/java/ReviewService.java',
+          sourceKind: 'SOURCE_CODE',
+          fileType: 'JAVA',
           status: 'PARSED',
           chunkCount: 2,
         }],
@@ -181,6 +183,7 @@ describe('projectApi', () => {
         sourceSymbolName: 'com.example.ReviewService#review()',
         targetChunkId: '2084116785588307002',
         targetSymbolName: 'com.example.ReviewService#validate()',
+        targetFilePath: 'src/main/java/ReviewService.java',
         startLine: 12,
         endLine: 12,
         resolved: true,
@@ -195,6 +198,7 @@ describe('projectApi', () => {
       expect.any(Object),
     )
     expect(references[0].targetSymbolName).toBe('com.example.ReviewService#validate()')
+    expect(references[0].targetFilePath).toBe('src/main/java/ReviewService.java')
   })
 
   it('starts deterministic static analysis for the latest diff', async () => {

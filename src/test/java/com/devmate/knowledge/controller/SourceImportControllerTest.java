@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -241,6 +242,71 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data[0].sourceSymbolName").value("com.example.App#run()"))
                 .andExpect(jsonPath("$.data[0].targetSymbolName").value("com.example.App#helper()"))
                 .andExpect(jsonPath("$.data[0].resolved").value(true));
+    }
+
+    @Test
+    void importsConfigurationDefinitionsAndLinksJavaReferencesWithoutPersistingSecrets() throws Exception {
+        ProjectResponse project = createGitProject("configuration-context");
+        given(gitSourceClient.cloneRepository(anyString(), eq("main"), any(Path.class)))
+                .willAnswer(invocation -> {
+                    Path target = invocation.getArgument(2);
+                    Files.createDirectories(target.resolve("src/main/java/com/example"));
+                    Files.createDirectories(target.resolve("src/main/resources"));
+                    Files.writeString(target.resolve("src/main/java/com/example/ReviewProperties.java"), """
+                            package com.example;
+                            import org.springframework.beans.factory.annotation.Value;
+                            import org.springframework.boot.context.properties.ConfigurationProperties;
+                            @ConfigurationProperties(prefix = "review")
+                            class ReviewProperties {
+                                @Value("${review.limit:20}")
+                                private int limit;
+                            }
+                            """);
+                    Files.writeString(target.resolve("src/main/resources/application.yml"), """
+                            review:
+                              limit: 50
+                              mode: strict
+                            datasource:
+                              password: should-never-be-stored
+                            """);
+                    return new GitCloneResult(target, REVISION);
+                });
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalFiles").value(2));
+
+        KnowledgeDocument configuration = documentMapper.selectOne(
+                Wrappers.lambdaQuery(KnowledgeDocument.class)
+                        .eq(KnowledgeDocument::getProjectId, project.id())
+                        .eq(KnowledgeDocument::getFileName, "application.yml")
+                        .last("LIMIT 1")
+        );
+        assertThat(configuration.getSourceKind()).isEqualTo("CONFIGURATION");
+        assertThat(configuration.getFileType()).isEqualTo("YAML");
+
+        KnowledgeChunk password = chunkMapper.selectOne(
+                Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getProjectId, project.id())
+                        .eq(KnowledgeChunk::getSymbolName, "datasource.password")
+                        .last("LIMIT 1")
+        );
+        assertThat(password.getChunkType()).isEqualTo("CONFIG_PROPERTY");
+        assertThat(password.getContent()).isEqualTo("datasource.password = <redacted>");
+        assertThat(password.getContent()).doesNotContain("should-never-be-stored");
+
+        assertThat(referenceMapper.selectList(Wrappers.lambdaQuery(CodeReference.class)
+                .eq(CodeReference::getProjectId, project.id())
+                .in(CodeReference::getReferenceKind, "CONFIG_KEY", "CONFIG_PREFIX")))
+                .hasSize(3)
+                .allSatisfy(reference -> assertThat(reference.getTargetChunkId()).isNotNull());
+
+        mockMvc.perform(get("/api/projects/{projectId}/sources/references", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.referenceKind == 'CONFIG_KEY')].targetSymbolName")
+                        .value(hasItem("review.limit")))
+                .andExpect(jsonPath("$.data[?(@.referenceKind == 'CONFIG_KEY')].targetFilePath")
+                        .value(hasItem("src/main/resources/application.yml")));
     }
 
     @Test

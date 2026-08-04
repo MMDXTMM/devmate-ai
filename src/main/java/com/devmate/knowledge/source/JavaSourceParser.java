@@ -34,10 +34,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Deque;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -377,11 +379,26 @@ public class JavaSourceParser {
                     symbolName,
                     annotations.stream().map(annotation -> annotation.getAnnotationType().toString()).toList(),
                     tree instanceof MethodTree methodTree ? methodTree.getParameters().size() : null,
+                    metadata(annotations, tree),
                     content,
                     sha256(content),
                     startLine,
                     endLine
             ));
+        }
+
+        private Map<String, Object> metadata(
+                List<? extends AnnotationTree> annotations,
+                com.sun.source.tree.Tree tree
+        ) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("annotations", annotations.stream()
+                    .map(annotation -> annotation.getAnnotationType().toString())
+                    .toList());
+            if (tree instanceof MethodTree methodTree) {
+                metadata.put("parameterCount", methodTree.getParameters().size());
+            }
+            return metadata;
         }
 
         private String qualifyType(String simpleName) {

@@ -49,6 +49,7 @@ devmate:
     clone-timeout-seconds: 60
     clone-depth: 50
     max-java-files: 1000
+    max-config-files: 100
     max-file-size-bytes: 1048576
     max-total-size-bytes: 52428800
     git-username: ${DEVMATE_GIT_USERNAME:x-access-token}

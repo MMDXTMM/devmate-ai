@@ -16,6 +16,7 @@ public record SourceReferenceResponse(
         String sourceFilePath,
         @JsonSerialize(using = ToStringSerializer.class) Long targetChunkId,
         String targetSymbolName,
+        String targetFilePath,
         Integer startLine,
         Integer endLine,
         boolean resolved
@@ -24,7 +25,8 @@ public record SourceReferenceResponse(
             CodeReference reference,
             KnowledgeChunk sourceChunk,
             String sourceFilePath,
-            KnowledgeChunk targetChunk
+            KnowledgeChunk targetChunk,
+            String targetFilePath
     ) {
         return new SourceReferenceResponse(
                 reference.getId(),
@@ -37,6 +39,7 @@ public record SourceReferenceResponse(
                 sourceFilePath,
                 targetChunk == null ? null : targetChunk.getId(),
                 targetChunk == null ? null : targetChunk.getSymbolName(),
+                targetFilePath,
                 reference.getStartLine(),
                 reference.getEndLine(),
                 targetChunk != null

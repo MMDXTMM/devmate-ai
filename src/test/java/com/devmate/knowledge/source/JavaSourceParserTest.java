@@ -127,6 +127,7 @@ class JavaSourceParserTest {
         return new ScannedSourceFile(
                 path.getFileName().toString(),
                 path.getFileName().toString(),
+                SourceFileType.JAVA,
                 "path-hash",
                 Integer.toHexString(content.hashCode()),
                 content.getBytes(StandardCharsets.UTF_8).length,
