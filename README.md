@@ -2,7 +2,7 @@
 
 DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
-当前已经完成基础工程、第一版数据库和 **项目管理基础 CRUD 闭环**。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST 解析和 **Git Diff 覆盖报告 MVP**。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
 
 ## 当前已具备
 
@@ -15,7 +15,14 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - H2 零配置开发模式
 - 统一接口响应与全局异常处理
 - 项目创建、详情、分页筛选、修改和逻辑删除接口
+- HTTPS Git 仓库校验、指定分支浅克隆和 Java 文件安全扫描
+- 通过进程环境变量安全读取私有 GitHub 仓库，凭证不持久化
+- 导入任务状态、Git revision 与源码文件元数据持久化
+- 基于 JDK AST 解析类、构造器、方法、注解和准确源码行号
+- `knowledge_chunk` 符号持久化与源码结构查询接口
 - 独立 Vue 3 + TypeScript 项目管理前端
+- Vue 源码文件与符号结构浏览器
+- JGit 提交差异分析、变更行到 AST 符号映射和逐文件覆盖报告
 - 健康检查接口及基础测试
 
 ## 快速启动
@@ -86,14 +93,20 @@ cp src/main/resources/application-local.yml.example \
 
 ## 文档
 
+- [开发贡献检查清单](CONTRIBUTING.md)
+- [工程开发与运维规范](docs/ENGINEERING_STANDARDS.md)
+- [运维手册](docs/OPERATIONS_RUNBOOK.md)
 - [项目总设计](docs/PROJECT_BLUEPRINT.md)
 - [分阶段开发路线](docs/DEVELOPMENT_ROADMAP.md)
 - [面试导向学习与开发路线](docs/LEARNING_ROADMAP.md)
 - [本地开发与多端同步](docs/LOCAL_DEVELOPMENT.md)
 - [数据库设计](docs/DATABASE_DESIGN.md)
 - [项目管理模块](docs/PROJECT_MANAGEMENT.md)
+- [Git 源码导入闭环](docs/SOURCE_IMPORT.md)
+- [Git Diff 与覆盖清单](docs/GIT_DIFF.md)
 - [前端开发与联调](docs/FRONTEND_DEVELOPMENT.md)
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
+- [同类开源项目对比与路线优化](docs/OPEN_SOURCE_COMPARISON.md)
 - [AI 辅助开发与项目归属规范](docs/AI_COLLABORATION_GUIDE.md)
 - [项目决策与变更日志](docs/PROJECT_LOG.md)
 - [架构决策记录](docs/ARCHITECTURE_DECISIONS.md)

@@ -1,9 +1,13 @@
 import type {
   ApiResponse,
+  IndexTask,
   PageData,
   Project,
   ProjectForm,
   ProjectQuery,
+  SourceDocument,
+  SourceSymbol,
+  ReviewDiff,
 } from '../types/project'
 
 export class ApiError extends Error {
@@ -73,5 +77,36 @@ export const projectApi = {
     return request(`/api/projects/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     })
+  },
+
+  importSource(id: string): Promise<IndexTask> {
+    return request(`/api/projects/${encodeURIComponent(id)}/imports`, {
+      method: 'POST',
+    })
+  },
+
+  latestImport(id: string): Promise<IndexTask> {
+    return request(`/api/projects/${encodeURIComponent(id)}/imports/latest`)
+  },
+
+  listSourceDocuments(id: string): Promise<SourceDocument[]> {
+    return request(`/api/projects/${encodeURIComponent(id)}/sources`)
+  },
+
+  listSourceSymbols(projectId: string, documentId: string): Promise<SourceSymbol[]> {
+    return request(
+      `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(documentId)}/symbols`,
+    )
+  },
+
+  createReviewDiff(id: string): Promise<ReviewDiff> {
+    return request(`/api/projects/${encodeURIComponent(id)}/review-diffs`, {
+      method: 'POST',
+      body: '{}',
+    })
+  },
+
+  latestReviewDiff(id: string): Promise<ReviewDiff> {
+    return request(`/api/projects/${encodeURIComponent(id)}/review-diffs/latest`)
   },
 }

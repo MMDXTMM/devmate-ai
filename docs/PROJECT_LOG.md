@@ -2,6 +2,71 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-04：完成 Git Diff 覆盖报告 MVP
+
+- Git克隆深度从 1 调整为 50，为近期提交比较保留历史对象。
+- 使用JGit识别文件变化与目标行区间，不执行仓库命令或脚本。
+- 新增V4迁移，持久化Diff任务与逐文件覆盖清单。
+- 将目标版本变更行映射到AST类和方法，输出 `FULL/PARTIAL/SKIPPED`。
+- 删除和非Java文件也记录原因，不允许静默漏审。
+- 新增创建、最近报告接口及Vue Diff报告界面。
+- 后端39个测试、前端9个测试和生产构建通过，V4已在本机MySQL验证。
+- 下一步补齐删除行的基准版本映射和复杂Rename用例，再进入确定性静态分析。
+
+## 2026-08-04：完成 Java 源码结构化解析
+
+- 使用 JDK Compiler Tree API 解析 Java，不执行目标仓库代码，也不增加第三方解析器依赖。
+- 解析 package、类、嵌套类、构造器、方法、注解和准确起止行。
+- 新增 Flyway V3，为文件增加包名，为 Chunk 增加可扩展 JSON 元数据。
+- 导入完成事务同步写入 `knowledge_document` 和 `knowledge_chunk`；重复 revision 不重复积累 Chunk。
+- 新增文件和符号查询接口，Vue 增加源码结构浏览器。
+- 将本地和默认日志收紧到 INFO，避免 SQL 参数日志泄露私有源码。
+- 后端 33 个测试、前端 8 个测试和生产构建通过，V3 已在本机 MySQL 验证。
+- 下一阶段进入 Git Diff、覆盖清单和变更行到 AST 符号映射。
+
+## 2026-08-04：建立统一开发与运维规范
+
+- 新增根目录 `AGENTS.md`，约束后续人工和 AI 开发的模块、事务、安全、测试与文档行为。
+- 新增 `CONTRIBUTING.md`，统一分支、提交前检查和 PR 描述要求。
+- 新增 `.editorconfig`，统一 Java、Vue、TypeScript、YAML 和 Markdown 基础格式。
+- 新增工程规范，覆盖模块边界、API、事务、数据库、日志、外部调用、AI、前端、测试和 Definition of Done。
+- 新增运维手册，记录启动、健康检查、正常停止、常见故障、备份、密钥轮换和回滚流程。
+- 决定继续使用 Spring Boot 模块化单体和轻量规范，不引入与代码审查主线无关的后台脚手架或自研通用框架。
+
+## 2026-08-03：支持私有 GitHub 仓库只读导入
+
+- 确认首次真实导入失败是因为目标 GitHub 仓库为 Private，匿名 HTTPS 无权克隆。
+- 增加 `DEVMATE_GIT_USERNAME` 与 `DEVMATE_GIT_TOKEN` 环境变量配置。
+- JGit 仅在 Token 存在时注入 CredentialsProvider，公开仓库继续支持匿名克隆。
+- 凭证不进入项目表、任务表、日志、异常信息或 Git 配置文件。
+- 开发阶段推荐 Fine-grained Token，仅选择目标仓库并授予 Contents Read-only。
+- 多用户生产版本仍计划迁移到 GitHub App Installation Token，避免共享个人 Token。
+- 已使用本机 GitHub CLI 钥匙串凭证完成真实私有仓库验收：克隆 `MMDXTMM/devmate-ai` 的 `main` 分支成功，revision 为 `7caad90855ffa5b94f85e2c55c9924904a30a204`，发现并持久化 31 个 Java 文件，项目最终进入 `READY`，任务进入 `SUCCEEDED`。
+
+## 2026-08-03：根据同类开源项目调整为 Diff-first 路线
+
+- 对比 Alibaba Open Code Review、PR-Agent、Vercel OpenReview 和 Calimero AI Code Reviewer。
+- 保留“确定性静态分析 + RAG + LLM”的混合架构，不改成纯 Agent。
+- 将 Git Diff、覆盖清单和精确位置映射提前到通用 RAG 之前。
+- 每次审查必须展示完整、部分和跳过文件，禁止静默漏审后返回成功。
+- Diff 只限定范围，模型判断前必须补充完整方法/文件和必要依赖上下文。
+- 真实行号由 AST 和 Diff 映射，模型只引用 symbol/chunk 和证据。
+- 增加项目级规则匹配、Token 裁剪记录和不可信仓库 Prompt 边界。
+- MVP 暂不采用多 Agent、自动修复和自动提交；先用固定评测集验证单 Agent。
+- 详细依据记录在 `OPEN_SOURCE_COMPARISON.md`。
+
+## 2026-08-03：完成第一版 Git 源码导入闭环
+
+- 使用 JGit 按项目默认分支执行浅克隆，不通过 Shell 拼接执行 Git 命令。
+- Git 地址仅允许 HTTPS，并拒绝本机、私有 IP 字面量和 URL 内嵌凭证。
+- 扫描器只读取普通 Java 文件，忽略构建产物和开发工具目录，并限制文件数量与容量。
+- 每次导入创建 `index_task`，成功或失败都会更新任务与项目状态。
+- 将文件路径、路径哈希、内容哈希和 revision 写入 `knowledge_document`，相同 revision 重复导入不重复建档。
+- 网络和文件操作不占用长数据库事务，采用准备、完成、失败三个短事务形成最终一致闭环。
+- Vue 项目列表增加“导入源码/重新导入”操作和结果提示。
+- 当前只支持无需认证的 HTTPS 仓库；私有仓库凭证与异步大仓库导入留待后续阶段。
+- 下一次开发进入 Java 结构化解析与 `knowledge_chunk` 生成。
+
 ## 2026-08-03：增加面试导向学习路线
 
 - 将学习内容与 10 个开发里程碑一一对应。

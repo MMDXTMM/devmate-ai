@@ -68,3 +68,9 @@ cd devmate-ai
 ```
 
 如果使用 MySQL，两台电脑分别创建 `devmate` 数据库并维护自己的 `application-local.yml`。
+
+## 私有 Git 仓库凭证
+
+源码导入需要访问私有仓库时，在启动 Spring Boot 的同一个终端会话中设置 `DEVMATE_GIT_USERNAME` 和 `DEVMATE_GIT_TOKEN`。Token 只存在于当前进程环境，不写入数据库。
+
+每台电脑需要分别配置自己的凭证。不要通过 Git、聊天记录或共享配置同步 Token。详细操作见 [Git 源码导入闭环](SOURCE_IMPORT.md#私有-github-仓库)。
