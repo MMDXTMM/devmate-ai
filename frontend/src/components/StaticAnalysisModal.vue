@@ -15,6 +15,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 
 const severityLabel: Record<FindingSeverity, string> = {
+  INFO: '提示',
   LOW: '低',
   MEDIUM: '中',
   HIGH: '高',

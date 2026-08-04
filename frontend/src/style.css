@@ -196,12 +196,33 @@ tbody tr:hover { background: #fbfcfb; }
 .finding-head b { font: 600 11px 'DM Mono', monospace; }
 .finding-head > span:last-child { margin-left: auto; color: var(--muted); font-size: 9px; }
 .severity { padding: 3px 6px; border-radius: 5px; font-size: 8px; font-weight: 800; }
+.severity.info { color: #365c7d; background: #eaf3fb; }
 .severity.low { color: #286344; background: #e9f5ed; }
 .severity.medium { color: #8c6418; background: #fff4d8; }
 .severity.high, .severity.critical { color: #932f28; background: #ffebe8; }
 .finding-card code { display: block; margin-top: 10px; color: var(--green); overflow-wrap: anywhere; font: 500 9px 'DM Mono', monospace; }
 .finding-card p { margin: 9px 0 5px; font-size: 12px; line-height: 1.55; }
 .finding-card small { color: var(--muted); font-size: 9px; }
+
+.ai-review-modal { width: min(980px, 100%); }
+.ai-review-intro { padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); background: #f4f8f5; }
+.ai-review-intro b { font-size: 12px; }
+.ai-review-intro p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.ai-review-intro .button { flex: 0 0 auto; }
+.ai-review-summary { padding: 16px 22px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; border-bottom: 1px solid var(--line); background: #fafbfa; }
+.ai-review-summary span { padding: 11px 12px; border-radius: 8px; background: #fff; }
+.ai-review-summary small, .ai-review-summary b { display: block; }
+.ai-review-summary small { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.ai-review-summary b { margin-top: 5px; font: 600 11px 'DM Mono', monospace; overflow-wrap: anywhere; }
+.ai-review-button { color: var(--green) !important; border-color: #b8d5c4 !important; }
+.conclusion { padding: 3px 6px; border-radius: 5px; color: var(--muted); background: #f0f2f0; font-size: 8px; font-weight: 700; }
+.conclusion.fact { color: #286344; background: #e9f5ed; }
+.conclusion.needs_verification { color: #8c6418; background: #fff4d8; }
+.ai-finding-card h3 { margin: 11px 0 0; font-size: 14px; }
+.ai-finding-card dl { margin: 13px 0 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.ai-finding-card dl div { padding: 10px; border-radius: 7px; background: #f8faf8; }
+.ai-finding-card dt { color: var(--muted); font-size: 9px; font-weight: 700; }
+.ai-finding-card dd { margin: 4px 0 0; font-size: 11px; line-height: 1.55; }
 
 .retrieval-modal { width: min(980px, 100%); }
 .retrieval-form { padding: 18px 22px; border-bottom: 1px solid var(--line); background: #fafbfa; }
@@ -255,5 +276,7 @@ tbody tr:hover { background: #fbfcfb; }
   .source-files { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--line); }
   .diff-summary { grid-template-columns: repeat(2, 1fr); }
   .analysis-summary { grid-template-columns: 1fr; }
+  .ai-review-intro { align-items: stretch; flex-direction: column; }
+  .ai-review-summary, .ai-finding-card dl { grid-template-columns: 1fr; }
   .retrieval-controls, .retrieval-summary { grid-template-columns: 1fr 1fr; }
 }

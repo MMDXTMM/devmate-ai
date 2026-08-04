@@ -5,6 +5,7 @@ import SourceStructureModal from './components/SourceStructureModal.vue'
 import DiffReportModal from './components/DiffReportModal.vue'
 import StaticAnalysisModal from './components/StaticAnalysisModal.vue'
 import RetrievalModal from './components/RetrievalModal.vue'
+import AiReviewModal from './components/AiReviewModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
 
@@ -23,6 +24,7 @@ const sourceProject = ref<Project | null>(null)
 const diffProject = ref<Project | null>(null)
 const analysisProject = ref<Project | null>(null)
 const retrievalProject = ref<Project | null>(null)
+const aiReviewProject = ref<Project | null>(null)
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
 const rangeText = computed(() => {
@@ -277,6 +279,12 @@ onMounted(() => loadProjects())
                     :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
                     @click="retrievalProject = project"
                   >检索</button>
+                  <button
+                    class="ai-review-button"
+                    type="button"
+                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    @click="aiReviewProject = project"
+                  >AI审查</button>
                   <button type="button" :disabled="importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
                   <button class="danger" type="button" :disabled="deletingId === project.id || importingId === project.id" @click="removeProject(project)">
                     {{ deletingId === project.id ? '删除中' : '删除' }}
@@ -327,6 +335,12 @@ onMounted(() => loadProjects())
       :project-id="retrievalProject?.id"
       :project-name="retrievalProject?.name"
       @close="retrievalProject = null"
+    />
+    <AiReviewModal
+      :open="aiReviewProject !== null"
+      :project-id="aiReviewProject?.id"
+      :project-name="aiReviewProject?.name"
+      @close="aiReviewProject = null"
     />
   </div>
 </template>

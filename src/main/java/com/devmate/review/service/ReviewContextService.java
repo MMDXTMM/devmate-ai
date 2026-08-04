@@ -17,7 +17,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashSet;
@@ -46,7 +45,6 @@ public class ReviewContextService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional(readOnly = true)
     public RetrievalSearchResponse retrieveLatest(Long projectId, ReviewContextRequest request) {
         projectService.getProject(projectId);
         CodeReviewTask task = taskMapper.selectOne(Wrappers.lambdaQuery(CodeReviewTask.class)
@@ -56,6 +54,18 @@ public class ReviewContextService {
                 .last("LIMIT 1"));
         if (task == null) {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先成功生成Git Diff");
+        }
+
+        return retrieveForTask(projectId, task, request);
+    }
+
+    RetrievalSearchResponse retrieveForTask(
+            Long projectId,
+            CodeReviewTask task,
+            ReviewContextRequest request
+    ) {
+        if (task == null || !projectId.equals(task.getProjectId()) || !"SUCCEEDED".equals(task.getStatus())) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "AI审查引用的Git Diff无效");
         }
 
         List<CodeReviewFile> files = fileMapper.selectList(Wrappers.lambdaQuery(CodeReviewFile.class)
