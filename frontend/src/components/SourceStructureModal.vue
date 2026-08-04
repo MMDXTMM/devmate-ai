@@ -56,7 +56,20 @@ function referenceLabel(kind: SourceReference['referenceKind']) {
     DATA_ACCESS: '数据访问',
     CONFIG_KEY: '配置键',
     CONFIG_PREFIX: '配置前缀',
+    DATABASE_TABLE: '数据库表',
   }[kind]
+}
+
+function documentKindLabel(document: SourceDocument) {
+  return {
+    SOURCE_CODE: '源码',
+    CONFIGURATION: '配置',
+    DATABASE_SCHEMA: '数据库结构',
+  }[document.sourceKind]
+}
+
+function documentItemLabel(document: SourceDocument) {
+  return document.sourceKind === 'SOURCE_CODE' ? '符号' : '结构项'
 }
 
 async function selectDocument(documentId: string) {
@@ -111,8 +124,8 @@ watch(
             <b>{{ document.fileName }}</b>
             <span>{{ document.filePath }}</span>
             <small>
-              {{ document.sourceKind === 'CONFIGURATION' ? '配置' : '源码' }} ·
-              {{ document.chunkCount }} 个{{ document.sourceKind === 'CONFIGURATION' ? '配置项' : '符号' }}
+              {{ documentKindLabel(document) }} ·
+              {{ document.chunkCount }} 个{{ documentItemLabel(document) }}
             </small>
           </button>
         </aside>
@@ -126,6 +139,7 @@ watch(
                 <code>{{ symbol.symbolName }}</code>
               </div>
               <small>第 {{ symbol.startLine }}–{{ symbol.endLine }} 行</small>
+              <p v-if="symbol.summary" class="source-summary">{{ symbol.summary }}</p>
               <p v-if="symbol.annotations.length">
                 <span v-for="annotation in symbol.annotations" :key="annotation">@{{ annotation }}</span>
               </p>

@@ -252,10 +252,12 @@ class SourceImportControllerTest {
                     Path target = invocation.getArgument(2);
                     Files.createDirectories(target.resolve("src/main/java/com/example"));
                     Files.createDirectories(target.resolve("src/main/resources"));
+                    Files.createDirectories(target.resolve("src/main/resources/db/migration"));
                     Files.writeString(target.resolve("src/main/java/com/example/ReviewProperties.java"), """
                             package com.example;
                             import org.springframework.beans.factory.annotation.Value;
                             import org.springframework.boot.context.properties.ConfigurationProperties;
+                            @TableName("review_task")
                             @ConfigurationProperties(prefix = "review")
                             class ReviewProperties {
                                 @Value("${review.limit:20}")
@@ -269,12 +271,20 @@ class SourceImportControllerTest {
                             datasource:
                               password: should-never-be-stored
                             """);
+                    Files.writeString(target.resolve("src/main/resources/db/migration/V1__review.sql"), """
+                            CREATE TABLE review_task (
+                                id BIGINT NOT NULL,
+                                review_limit INT NOT NULL,
+                                PRIMARY KEY (id)
+                            );
+                            CREATE INDEX idx_review_task_limit ON review_task (review_limit);
+                            """);
                     return new GitCloneResult(target, REVISION);
                 });
 
         mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalFiles").value(2));
+                .andExpect(jsonPath("$.data.totalFiles").value(3));
 
         KnowledgeDocument configuration = documentMapper.selectOne(
                 Wrappers.lambdaQuery(KnowledgeDocument.class)
@@ -301,12 +311,46 @@ class SourceImportControllerTest {
                 .hasSize(3)
                 .allSatisfy(reference -> assertThat(reference.getTargetChunkId()).isNotNull());
 
+        KnowledgeDocument databaseSchema = documentMapper.selectOne(
+                Wrappers.lambdaQuery(KnowledgeDocument.class)
+                        .eq(KnowledgeDocument::getProjectId, project.id())
+                        .eq(KnowledgeDocument::getFileName, "V1__review.sql")
+                        .last("LIMIT 1")
+        );
+        assertThat(databaseSchema.getSourceKind()).isEqualTo("DATABASE_SCHEMA");
+        assertThat(databaseSchema.getFileType()).isEqualTo("SQL");
+        assertThat(chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                .eq(KnowledgeChunk::getDocumentId, databaseSchema.getId())))
+                .extracting(KnowledgeChunk::getSymbolName)
+                .contains("review_task", "review_task.id", "review_task.review_limit",
+                        "review_task#idx_review_task_limit");
+        assertThat(referenceMapper.selectList(Wrappers.lambdaQuery(CodeReference.class)
+                .eq(CodeReference::getProjectId, project.id())
+                .eq(CodeReference::getReferenceKind, "DATABASE_TABLE")))
+                .singleElement()
+                .satisfies(reference -> assertThat(reference.getTargetChunkId()).isNotNull());
+
+        mockMvc.perform(get(
+                        "/api/projects/{projectId}/sources/{documentId}/symbols",
+                        project.id(),
+                        databaseSchema.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.chunkType == 'DATABASE_TABLE')].symbolName")
+                        .value(hasItem("review_task")))
+                .andExpect(jsonPath("$.data[?(@.chunkType == 'DATABASE_TABLE')].summary")
+                        .value(hasItem("table review_task (columns: id, review_limit)")));
+
         mockMvc.perform(get("/api/projects/{projectId}/sources/references", project.id()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.referenceKind == 'CONFIG_KEY')].targetSymbolName")
                         .value(hasItem("review.limit")))
                 .andExpect(jsonPath("$.data[?(@.referenceKind == 'CONFIG_KEY')].targetFilePath")
-                        .value(hasItem("src/main/resources/application.yml")));
+                        .value(hasItem("src/main/resources/application.yml")))
+                .andExpect(jsonPath("$.data[?(@.referenceKind == 'DATABASE_TABLE')].targetSymbolName")
+                        .value(hasItem("review_task")))
+                .andExpect(jsonPath("$.data[?(@.referenceKind == 'DATABASE_TABLE')].targetFilePath")
+                        .value(hasItem("src/main/resources/db/migration/V1__review.sql")));
     }
 
     @Test

@@ -42,6 +42,7 @@ public class ConfigurationFileParser {
                 case YAML -> parseYaml(sourceFile.relativePath(), content);
                 case PROPERTIES -> parseProperties(sourceFile.relativePath(), content);
                 case JAVA -> throw new IllegalArgumentException("Java源码应由JavaSourceParser解析");
+                case SQL -> throw new IllegalArgumentException("SQL迁移应由DatabaseSchemaParser解析");
             };
             return new ParsedSourceFile(sourceFile, "", chunks, List.of());
         } catch (IOException exception) {

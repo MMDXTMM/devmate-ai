@@ -4,6 +4,7 @@ import ProjectFormModal from './components/ProjectFormModal.vue'
 import SourceStructureModal from './components/SourceStructureModal.vue'
 import DiffReportModal from './components/DiffReportModal.vue'
 import StaticAnalysisModal from './components/StaticAnalysisModal.vue'
+import RetrievalModal from './components/RetrievalModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
 
@@ -17,9 +18,11 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const deletingId = ref<string | null>(null)
 const importingId = ref<string | null>(null)
+const embeddingId = ref<string | null>(null)
 const sourceProject = ref<Project | null>(null)
 const diffProject = ref<Project | null>(null)
 const analysisProject = ref<Project | null>(null)
+const retrievalProject = ref<Project | null>(null)
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
 const rangeText = computed(() => {
@@ -130,6 +133,18 @@ async function importSource(project: Project) {
   }
 }
 
+async function indexEmbeddings(project: Project) {
+  embeddingId.value = project.id
+  try {
+    const task = await projectApi.indexEmbeddings(project.id)
+    showSuccess(`向量索引完成：新增 ${task.processedChunks}，复用 ${task.skippedChunks} 个 Chunk`)
+  } catch (error) {
+    showError(error)
+  } finally {
+    embeddingId.value = null
+  }
+}
+
 function resetFilters() {
   query.name = ''
   query.status = ''
@@ -180,7 +195,7 @@ onMounted(() => loadProjects())
       <section class="summary-grid" aria-label="项目概览">
         <article><small>项目总数</small><strong>{{ pageData.total }}</strong><span>已接入的代码仓库</span></article>
         <article><small>当前页</small><strong>{{ pageData.page }}<i>/{{ Math.max(pageData.pages, 1) }}</i></strong><span>{{ rangeText }}</span></article>
-        <article class="accent-card"><small>下一能力</small><strong>Code Review</strong><span>源码导入与静态分析</span></article>
+        <article class="accent-card"><small>当前能力</small><strong>Hybrid RAG</strong><span>关键词、向量、关系图与预算裁剪</span></article>
       </section>
 
       <section class="panel">
@@ -252,6 +267,16 @@ onMounted(() => loadProjects())
                     :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
                     @click="analysisProject = project"
                   >静态分析</button>
+                  <button
+                    type="button"
+                    :disabled="project.status !== 'READY' || embeddingId === project.id || importingId === project.id || deletingId === project.id"
+                    @click="indexEmbeddings(project)"
+                  >{{ embeddingId === project.id ? '向量化中' : '向量化' }}</button>
+                  <button
+                    type="button"
+                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    @click="retrievalProject = project"
+                  >检索</button>
                   <button type="button" :disabled="importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
                   <button class="danger" type="button" :disabled="deletingId === project.id || importingId === project.id" @click="removeProject(project)">
                     {{ deletingId === project.id ? '删除中' : '删除' }}
@@ -296,6 +321,12 @@ onMounted(() => loadProjects())
       :project-id="analysisProject?.id"
       :project-name="analysisProject?.name"
       @close="analysisProject = null"
+    />
+    <RetrievalModal
+      :open="retrievalProject !== null"
+      :project-id="retrievalProject?.id"
+      :project-name="retrievalProject?.name"
+      @close="retrievalProject = null"
     />
   </div>
 </template>

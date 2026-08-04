@@ -15,7 +15,7 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。向量本体后续由 Elasticsearch 或专用向量数据库保存；MySQL 的 `knowledge_chunk.vector_id` 只保存外部向量记录标识。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。
 
 ## 2. 表关系
 
@@ -35,6 +35,11 @@ erDiagram
     CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FILE : covers
     CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : analyzes
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
+    PROJECT ||--o{ RETRIEVAL_EVALUATION_CASE : defines
+    PROJECT ||--o{ RETRIEVAL_EVALUATION_RUN : evaluates
+    PROJECT ||--o{ EMBEDDING_INDEX_TASK : builds
+    PROJECT ||--o{ EMBEDDING_VECTOR : isolates
+    KNOWLEDGE_CHUNK ||--o{ EMBEDDING_VECTOR : embeds
     CONVERSATION o|--o{ BUG_ANALYSIS : relates_to
     CONVERSATION o|--o{ AI_INVOCATION_LOG : produces
     AI_INVOCATION_LOG ||--o{ TOOL_CALL_LOG : invokes
@@ -80,7 +85,7 @@ erDiagram
 
 保存源码文件或技术文档的元数据，不在这里保存文件本体。
 
-- `source_kind`：`SOURCE_CODE`、`README`、`TECH_DOC`、`API_DOC`。
+- `source_kind`：当前使用 `SOURCE_CODE`、`CONFIGURATION`、`DATABASE_SCHEMA`，后续文档扩展 `README`、`TECH_DOC`、`API_DOC`。
 - `content_hash`：判断文件内容是否变化，用于增量更新。
 - `path_hash`：文件路径的 SHA-256，用于建立定长唯一索引；完整路径仍保存在 `file_path`。
 - `revision`：文件所属的 Git 提交或导入版本。
@@ -92,8 +97,8 @@ erDiagram
 
 RAG 的最小检索单元。
 
-- `chunk_type`：当前 Java 解析使用 `CLASS`、`CONSTRUCTOR`、`METHOD`，后续文档使用 `DOCUMENT_SECTION`。
-- `symbol_name`：类名、方法签名或文档标题。
+- `chunk_type`：Java 使用 `CLASS/CONSTRUCTOR/METHOD`，配置使用 `CONFIG_PROPERTY`，数据库上下文使用 `DATABASE_TABLE/COLUMN/INDEX/CONSTRAINT/CHANGE`。
+- `symbol_name`：类名、方法签名、配置键或规范化数据库对象名。
 - `start_line`、`end_line`：用于回答时给出源码位置。
 - `content_hash`：去重和增量索引。
 - `vector_id`：向量数据库中的记录 ID。
@@ -109,7 +114,18 @@ RAG 的最小检索单元。
 - 文件计数用于展示进度。
 - 后续接入 RabbitMQ 时，任务 ID 同时作为幂等依据之一。
 
-### 3.7 `conversation` 与 `conversation_message`
+### 3.7 `embedding_vector` 与 `embedding_index_task`
+
+V9 增加可替换的向量索引实现：
+
+- `embedding_vector` 绑定项目、Chunk、revision、provider、模型、维度与内容哈希。
+- 复合唯一约束防止相同 Chunk 和模型版本重复写入。
+- `vector_json` 仅用于小规模开发与测试；Java 侧设置扫描上限并明确返回是否截断。
+- `embedding_index_task` 保存索引总数、成功、跳过、失败和脱敏错误，支持失败后续建。
+- 远端模型调用不处于数据库长事务；每个批次保存使用独立短事务。
+- 新 revision 或模型版本不会复用不兼容向量。
+
+### 3.8 `conversation` 与 `conversation_message`
 
 会话和消息分表，而不是把一次问答放在同一行：
 
@@ -118,7 +134,7 @@ RAG 的最小检索单元。
 - `(conversation_id, sequence_no)` 保证消息顺序唯一。
 - Token 字段记录在 AI 回复消息上，便于按会话统计。
 
-### 3.8 `bug_analysis`
+### 3.9 `bug_analysis`
 
 保存一次可独立查看的 Bug 诊断任务和结果。
 
@@ -127,7 +143,7 @@ RAG 的最小检索单元。
 - `severity`：`UNKNOWN`、`LOW`、`MEDIUM`、`HIGH`、`CRITICAL`。
 - 可关联产生本次分析的会话。
 
-### 3.9 `ai_invocation_log`
+### 3.10 `ai_invocation_log`
 
 记录一次模型调用的运行指标和错误信息。
 
@@ -135,7 +151,7 @@ RAG 的最小检索单元。
 - `trace_id` 串联一次用户请求中的模型和工具调用。
 - Token、耗时、模型和状态支持后续性能与成本分析。
 
-### 3.10 `tool_call_log`
+### 3.11 `tool_call_log`
 
 记录 Agent 每次工具选择和执行结果。
 
@@ -143,9 +159,19 @@ RAG 的最小检索单元。
 - 通过 `invocation_id` 还原一次 Agent 请求的工具调用链。
 - 可统计各工具的成功率和延迟。
 
+### 3.12 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
+
+V8 增加可复现的检索评测：
+
+- 用例固定 `dataset_version`、问题、预期文件、可选预期符号和 `top_k`；
+- 同一项目、数据集版本和用例名称唯一，防止重复样本改变指标权重；
+- 运行记录绑定项目 revision 和检索配置版本；
+- 保存宏平均 Recall@K、Precision@K、HitRate@K、MRR 和不含源码正文的逐用例结果；
+- 未在当前 revision 建立索引的预期项单独标记，不混入有效用例指标。
+
 ## 4. 为什么暂时不建这些表
 
-- 向量表：向量维度和索引由目标向量存储管理。
+- 专用向量库 Schema：当前通过适配层使用 MySQL 小规模验证，替换为目标向量存储时再按其索引能力设计。
 - Redis 会话表：Redis 是缓存，不是事实数据源。
 - MQ 消息表：先完成同步闭环；接入可靠消息时再根据方案设计 Outbox。
 - 微服务独立数据库：当前是模块化单体，过早分库会增加事务和联调成本。
@@ -223,7 +249,7 @@ erDiagram
 
 - `source_chunk_id`：引用所属的类或方法；
 - `target_chunk_id`：能够唯一解析时关联目标方法，无法证明时为空；
-- `reference_kind`：方法调用、数据访问、配置键或配置前缀；
+- `reference_kind`：方法调用、数据访问、配置键/前缀或实体到数据库表的映射；
 - `reference_name/qualifier/argument_count`：解析和展示所需的调用事实；
 - `start_line/end_line`：由 AST 得到的真实源码位置；
 - `revision`：关系只能在相同项目版本内使用。
@@ -239,6 +265,7 @@ erDiagram
 - `V5__add_base_diff_line_ranges.sql`：保存基准版本删除行区间。
 - `V6__add_static_analysis_schema.sql`：静态分析任务与统一 Finding。
 - `V7__add_code_reference_graph.sql`：方法调用、配置与数据访问关系图。
+- `V8__add_retrieval_evaluation_schema.sql`：固定检索评测用例、运行版本和质量指标。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

@@ -77,6 +77,9 @@ public class ProjectSourceScanner {
             Map<SourceFileType, Integer> counts,
             long[] totalSize
     ) throws IOException {
+        if (type == SourceFileType.SQL && !isMigrationSql(realRoot, path)) {
+            return;
+        }
         Path realFile = path.toRealPath(LinkOption.NOFOLLOW_LINKS);
         if (!realFile.startsWith(realRoot) || Files.isSymbolicLink(path)) {
             throw new SourceImportException("检测到仓库外部文件，已终止导入");
@@ -97,6 +100,9 @@ public class ProjectSourceScanner {
         if (type != SourceFileType.JAVA && configurationFileCount(counts) > properties.getMaxConfigFiles()) {
             throw new SourceImportException("配置文件数量超过限制");
         }
+        if (type == SourceFileType.SQL && typeCount > properties.getMaxSchemaFiles()) {
+            throw new SourceImportException("数据库迁移文件数量超过限制");
+        }
 
         byte[] content = Files.readAllBytes(realFile);
         String relativePath = realRoot.relativize(realFile)
@@ -116,6 +122,18 @@ public class ProjectSourceScanner {
     private int configurationFileCount(Map<SourceFileType, Integer> counts) {
         return counts.getOrDefault(SourceFileType.YAML, 0)
                 + counts.getOrDefault(SourceFileType.PROPERTIES, 0);
+    }
+
+    private boolean isMigrationSql(Path root, Path path) {
+        String relativePath = root.relativize(path).toString()
+                .replace(root.getFileSystem().getSeparator(), "/")
+                .toLowerCase(java.util.Locale.ROOT);
+        return relativePath.startsWith("db/migration/")
+                || relativePath.contains("/db/migration/")
+                || relativePath.startsWith("migrations/")
+                || relativePath.contains("/migrations/")
+                || relativePath.startsWith("database/migrations/")
+                || relativePath.contains("/database/migrations/");
     }
 
     private String sha256(byte[] value) {

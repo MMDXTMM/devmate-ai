@@ -144,6 +144,12 @@ public class JavaSourceParser {
         private static final Pattern CONFIGURATION_PREFIX = Pattern.compile(
                 "(?:prefix\\s*=\\s*)?[\\\"']([^\\\"']+)[\\\"']"
         );
+        private static final Pattern MYBATIS_TABLE = Pattern.compile(
+                "(?:value\\s*=\\s*)?[\\\"']([^\\\"']+)[\\\"']"
+        );
+        private static final Pattern JPA_TABLE = Pattern.compile(
+                "name\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']"
+        );
 
         private final CompilationUnitTree unit;
         private final SourcePositions positions;
@@ -311,9 +317,27 @@ public class JavaSourceParser {
                         addReference("CONFIG_PREFIX", matcher.group(1), null, null, tree,
                                 "{\"source\":\"ConfigurationProperties\"}");
                     }
+                } else if (simpleName(annotationName).equals("TableName")) {
+                    addDatabaseTableReference(tree, MYBATIS_TABLE, "MyBatisPlusTableName");
+                } else if (simpleName(annotationName).equals("Table")) {
+                    addDatabaseTableReference(tree, JPA_TABLE, "JpaTable");
                 }
             }
             return super.visitAnnotation(tree, unused);
+        }
+
+        private void addDatabaseTableReference(AnnotationTree tree, Pattern pattern, String source) {
+            Matcher matcher = pattern.matcher(tree.toString());
+            if (matcher.find()) {
+                addReference(
+                        "DATABASE_TABLE",
+                        matcher.group(1).replace("`", "").toLowerCase(Locale.ROOT),
+                        null,
+                        null,
+                        tree,
+                        "{\"source\":\"" + source + "\"}"
+                );
+            }
         }
 
         private void addReference(

@@ -10,6 +10,7 @@
 - `DATA_ACCESS`：按 `Mapper/Repository/Dao/JdbcTemplate/EntityManager` 命名约定识别的数据访问入口；
 - `CONFIG_KEY`：`@Value("${...}")` 引用的配置键；
 - `CONFIG_PREFIX`：`@ConfigurationProperties` 使用的配置前缀。
+- `DATABASE_TABLE`：`@TableName` 或 JPA `@Table(name=...)` 声明的表映射。
 
 这些记录是审查上下文，不等同于缺陷。项目级规则或后续 LLM 必须结合变更范围和其他证据才能输出 Finding。当前已基于它们实现事务自调用、循环数据访问和锁内数据访问三条首批规则。
 
@@ -21,7 +22,8 @@ Java 源码
   → 在所属符号内提取调用/配置/数据访问引用
   → 保存所有 knowledge_chunk
   → 用“同一类型 + 方法名 + 参数数量”解析唯一目标
-  → Java 精确配置键/前缀关联到脱敏配置 Chunk
+  → Java 配置引用关联到脱敏配置 Chunk
+  → Java 实体映射关联到迁移 SQL 表定义
   → 保存 code_reference
   → API/前端展示证据
 ```
@@ -53,6 +55,8 @@ GET /api/projects/{projectId}/sources/references
 
 配置引用允许一对多：同一键可能在多个 Profile 或 YAML 文档中定义。接口同时返回目标符号和目标文件路径，前端不把候选定义错误地展示成唯一运行时值。详细安全边界见 [配置上下文解析与关联](CONFIGURATION_CONTEXT.md)。
 
+数据库关系来自 Git 中的迁移事实，不连接或执行目标数据库。当前保留表、列、索引与约束摘要，但不宣称已经还原线上最终 Schema。详细边界见 [数据库结构上下文](DATABASE_CONTEXT.md)。
+
 ## 5. 面试需要掌握
 
 - AST 提取“调用表达式”和类型分析得到“真实调用目标”不是一回事。
@@ -61,3 +65,4 @@ GET /api/projects/{projectId}/sources/references
 - 为什么数据访问命名识别只能作为上下文事实，而不能直接判定性能缺陷。
 - 为什么 `target_chunk_id` 允许为空，以及这如何降低误报。
 - 为什么配置引用可能有多个目标，以及静态分析为什么无法确定 Spring 最终生效值。
+- 为什么迁移事实、实体映射和线上最终 Schema 必须区分。

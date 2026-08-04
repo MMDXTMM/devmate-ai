@@ -192,9 +192,11 @@ public class SourceImportStateService {
             document.setProjectId(projectId);
             document.setCreatedAt(now);
         }
-        document.setSourceKind(file.fileType().name().equals("JAVA")
-                ? "SOURCE_CODE"
-                : "CONFIGURATION");
+        document.setSourceKind(switch (file.fileType()) {
+            case JAVA -> "SOURCE_CODE";
+            case YAML, PROPERTIES -> "CONFIGURATION";
+            case SQL -> "DATABASE_SCHEMA";
+        });
         document.setFileName(file.fileName());
         document.setFilePath(file.relativePath());
         document.setPathHash(file.pathHash());
@@ -335,6 +337,9 @@ public class SourceImportStateService {
                     .flatMap(entry -> configurationChunks(entry.getValue()).stream())
                     .toList();
         }
+        if ("DATABASE_TABLE".equals(reference.referenceKind())) {
+            return databaseTableChunks(chunksBySymbol.get(reference.referenceName()));
+        }
         KnowledgeChunk target = resolveSameTypeTarget(
                 reference, sourceChunk, chunksBySymbol, parsedChunksBySymbol
         );
@@ -347,6 +352,15 @@ public class SourceImportStateService {
         }
         return chunks.stream()
                 .filter(chunk -> "CONFIG_PROPERTY".equals(chunk.getChunkType()))
+                .toList();
+    }
+
+    private List<KnowledgeChunk> databaseTableChunks(List<KnowledgeChunk> chunks) {
+        if (chunks == null) {
+            return List.of();
+        }
+        return chunks.stream()
+                .filter(chunk -> "DATABASE_TABLE".equals(chunk.getChunkType()))
                 .toList();
     }
 

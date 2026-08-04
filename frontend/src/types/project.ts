@@ -25,6 +25,24 @@ export interface ProjectForm {
 
 export type IndexTaskStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
 
+export interface EmbeddingIndexTask {
+  id: string
+  projectId: string
+  revision: string
+  provider: string
+  modelName: string
+  dimensions: number
+  status: IndexTaskStatus
+  totalChunks: number
+  processedChunks: number
+  skippedChunks: number
+  failedChunks: number
+  errorMessage?: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+
 export interface IndexTask {
   id: string
   projectId: string
@@ -44,21 +62,31 @@ export interface SourceDocument {
   id: string
   fileName: string
   filePath: string
-  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION'
-  fileType: 'JAVA' | 'YAML' | 'PROPERTIES'
+  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA'
+  fileType: 'JAVA' | 'YAML' | 'PROPERTIES' | 'SQL'
   packageName?: string
   revision: string
   status: 'PARSED' | 'FAILED'
   chunkCount: number
 }
 
-export type SourceSymbolType = 'CLASS' | 'CONSTRUCTOR' | 'METHOD' | 'CONFIG_PROPERTY'
+export type SourceSymbolType =
+  | 'CLASS'
+  | 'CONSTRUCTOR'
+  | 'METHOD'
+  | 'CONFIG_PROPERTY'
+  | 'DATABASE_TABLE'
+  | 'DATABASE_COLUMN'
+  | 'DATABASE_INDEX'
+  | 'DATABASE_CONSTRAINT'
+  | 'DATABASE_CHANGE'
 
 export interface SourceSymbol {
   id: string
   documentId: string
   chunkType: SourceSymbolType
   symbolName: string
+  summary?: string
   annotations: string[]
   startLine: number
   endLine: number
@@ -66,7 +94,12 @@ export interface SourceSymbol {
   revision: string
 }
 
-export type SourceReferenceKind = 'METHOD_CALL' | 'DATA_ACCESS' | 'CONFIG_KEY' | 'CONFIG_PREFIX'
+export type SourceReferenceKind =
+  | 'METHOD_CALL'
+  | 'DATA_ACCESS'
+  | 'CONFIG_KEY'
+  | 'CONFIG_PREFIX'
+  | 'DATABASE_TABLE'
 
 export interface SourceReference {
   id: string
@@ -159,6 +192,65 @@ export interface StaticAnalysis {
   createdAt: string
   finishedAt?: string
   findings: StaticFinding[]
+}
+
+export type RetrievalTrimReason = 'DUPLICATE_CONTENT' | 'TOKEN_BUDGET' | 'TOP_K'
+export type RetrievalMode = 'LEXICAL' | 'VECTOR' | 'HYBRID'
+
+export interface RetrievalHit {
+  chunkId: string
+  documentId: string
+  filePath: string
+  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA'
+  chunkType: SourceSymbolType
+  symbolName?: string
+  startLine?: number
+  endLine?: number
+  score: number
+  estimatedTokens: number
+  reasons: string[]
+  excerpt: string
+}
+
+export interface RetrievalTrimmed {
+  chunkId: string
+  filePath: string
+  symbolName?: string
+  estimatedTokens: number
+  reason: RetrievalTrimReason
+}
+
+export interface RetrievalSearch {
+  projectId: string
+  revision: string
+  query: string
+  configVersion: string
+  requestedMode: RetrievalMode
+  executedMode: RetrievalMode | 'LEXICAL_FALLBACK'
+  embeddingProvider: string
+  embeddingModel: string
+  vectorIndexAvailable: boolean
+  vectorCandidateCount: number
+  vectorLimitReached: boolean
+  degradationReason?: string
+  candidateCount: number
+  candidateLimitReached: boolean
+  referenceLimitReached: boolean
+  topK: number
+  tokenBudget: number
+  usedTokens: number
+  selectedCount: number
+  trimmedCount: number
+  omittedTrimmedDetails: number
+  hits: RetrievalHit[]
+  trimmed: RetrievalTrimmed[]
+}
+
+export interface RetrievalSearchForm {
+  query: string
+  topK: number
+  tokenBudget: number
+  retrievalMode: RetrievalMode
 }
 
 export interface ProjectQuery {

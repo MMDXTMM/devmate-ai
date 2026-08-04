@@ -82,6 +82,7 @@ class JavaSourceParserTest {
         String content = """
                 package com.example.review;
 
+                @TableName("review_task")
                 @ConfigurationProperties(prefix = "review")
                 class ReviewService {
                     @Value("${review.limit:10}")
@@ -103,7 +104,17 @@ class JavaSourceParserTest {
 
         assertThat(parsed.references())
                 .extracting(ParsedCodeReference::referenceKind)
-                .containsExactly("CONFIG_PREFIX", "CONFIG_KEY", "METHOD_CALL", "METHOD_CALL", "DATA_ACCESS");
+                .containsExactly(
+                        "DATABASE_TABLE", "CONFIG_PREFIX", "CONFIG_KEY",
+                        "METHOD_CALL", "METHOD_CALL", "DATA_ACCESS"
+                );
+        assertThat(parsed.references())
+                .filteredOn(reference -> reference.referenceKind().equals("DATABASE_TABLE"))
+                .singleElement()
+                .satisfies(reference -> {
+                    assertThat(reference.referenceName()).isEqualTo("review_task");
+                    assertThat(reference.metadataJson()).contains("MyBatisPlusTableName");
+                });
         assertThat(parsed.references())
                 .filteredOn(reference -> reference.referenceKind().equals("CONFIG_KEY"))
                 .singleElement()
@@ -117,9 +128,26 @@ class JavaSourceParserTest {
                 .satisfies(reference -> {
                     assertThat(reference.referenceName()).isEqualTo("selectById");
                     assertThat(reference.qualifier()).isEqualTo("userMapper");
-                    assertThat(reference.startLine()).isEqualTo(12);
+                    assertThat(reference.startLine()).isEqualTo(13);
                     assertThat(reference.metadataJson()).contains("\"loopDepth\":1");
                     assertThat(reference.metadataJson()).contains("\"synchronizedDepth\":1");
+                });
+    }
+
+    @Test
+    void extractsJpaTableNameWithoutConfusingSchemaAttribute() {
+        ParsedSourceContent parsed = parser.parseContent("AuditLog.java", """
+                package com.example;
+                @jakarta.persistence.Table(schema = "audit", name = "audit_log")
+                class AuditLog {}
+                """);
+
+        assertThat(parsed.references())
+                .singleElement()
+                .satisfies(reference -> {
+                    assertThat(reference.referenceKind()).isEqualTo("DATABASE_TABLE");
+                    assertThat(reference.referenceName()).isEqualTo("audit_log");
+                    assertThat(reference.metadataJson()).contains("JpaTable");
                 });
     }
 
