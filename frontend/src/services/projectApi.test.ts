@@ -228,6 +228,39 @@ describe('projectApi', () => {
     expect(result.toolName).toBe('PMD')
   })
 
+  it('starts an evidence-grounded AI review without sending credentials', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588311000',
+        projectId: '2084116785588305922',
+        reviewTaskId: '2084116785588308000',
+        staticAnalysisTaskId: '2084116785588309000',
+        invocationId: '2084116785588311001',
+        provider: 'DASHSCOPE',
+        modelName: 'qwen-plus',
+        status: 'SUCCEEDED',
+        contextChunks: 8,
+        findingCount: 1,
+        rejectedFindings: 0,
+        totalTokens: 1200,
+        latencyMs: 800,
+        findings: [],
+      },
+      timestamp: '2026-08-04T00:00:00Z',
+    }))
+
+    const result = await projectApi.createAiReview('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/ai-reviews',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('body')
+    expect(result.modelName).toBe('qwen-plus')
+  })
+
   it('searches version-isolated context with an explicit token budget', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       code: 0,

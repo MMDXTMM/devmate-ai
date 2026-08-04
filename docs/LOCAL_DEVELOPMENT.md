@@ -74,3 +74,14 @@ cd devmate-ai
 源码导入需要访问私有仓库时，在启动 Spring Boot 的同一个终端会话中设置 `DEVMATE_GIT_USERNAME` 和 `DEVMATE_GIT_TOKEN`。Token 只存在于当前进程环境，不写入数据库。
 
 每台电脑需要分别配置自己的凭证。不要通过 Git、聊天记录或共享配置同步 Token。详细操作见 [Git 源码导入闭环](SOURCE_IMPORT.md#私有-github-仓库)。
+
+## AI 审查模型密钥
+
+需要执行真实 AI 审查时，在启动后端的同一终端设置：
+
+```bash
+export DASHSCOPE_API_KEY='<your-key>'
+./mvnw spring-boot:run
+```
+
+该密钥同时可供配置为 DashScope 的 Embedding 与 AI Review Provider 使用。开发和自动化测试不提交、不持久化密钥；没有密钥时普通接口可用，AI 审查会返回可读错误并保存 FAILED 状态。

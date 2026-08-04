@@ -13,6 +13,7 @@ import type {
   StaticAnalysis,
   RetrievalSearch,
   RetrievalSearchForm,
+  AiReview,
 } from '../types/project'
 
 export class ApiError extends Error {
@@ -137,6 +138,16 @@ export const projectApi = {
 
   latestStaticAnalysis(id: string): Promise<StaticAnalysis> {
     return request(`/api/projects/${encodeURIComponent(id)}/static-analyses/latest`)
+  },
+
+  createAiReview(id: string): Promise<AiReview> {
+    return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews`, {
+      method: 'POST',
+    })
+  },
+
+  latestAiReview(id: string): Promise<AiReview> {
+    return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews/latest`)
   },
 
   searchRetrieval(id: string, form: RetrievalSearchForm): Promise<RetrievalSearch> {

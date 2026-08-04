@@ -164,7 +164,7 @@ export interface ReviewDiff {
   files: ReviewFile[]
 }
 
-export type FindingSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+export type FindingSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
 export interface StaticFinding {
   id: string
@@ -192,6 +192,52 @@ export interface StaticAnalysis {
   createdAt: string
   finishedAt?: string
   findings: StaticFinding[]
+}
+
+export type AiConclusionType = 'FACT' | 'INFERENCE' | 'NEEDS_VERIFICATION'
+
+export interface AiReviewFinding {
+  id: string
+  chunkId: string
+  source: 'LLM'
+  category: string
+  severity: FindingSeverity
+  conclusionType: AiConclusionType
+  confidence: number
+  filePath: string
+  startLine: number
+  endLine: number
+  title: string
+  evidence: string
+  riskScenario: string
+  suggestion: string
+  verification: string
+}
+
+export interface AiReview {
+  id: string
+  projectId: string
+  reviewTaskId: string
+  staticAnalysisTaskId: string
+  invocationId: string
+  revision: string
+  provider: string
+  modelName: string
+  promptVersion: string
+  retrievalConfigVersion?: string
+  retrievalMode?: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  contextChunks: number
+  findingCount: number
+  rejectedFindings: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  latencyMs: number
+  errorMessage?: string
+  createdAt: string
+  finishedAt?: string
+  findings: AiReviewFinding[]
 }
 
 export type RetrievalTrimReason = 'DUPLICATE_CONTENT' | 'TOKEN_BUDGET' | 'TOP_K'

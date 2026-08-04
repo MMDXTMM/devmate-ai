@@ -15,7 +15,7 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。
 
 ## 2. 表关系
 
@@ -35,6 +35,11 @@ erDiagram
     CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FILE : covers
     CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : analyzes
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
+    CODE_REVIEW_TASK ||--o{ AI_REVIEW_TASK : reviews
+    STATIC_ANALYSIS_TASK ||--o{ AI_REVIEW_TASK : grounds
+    AI_INVOCATION_LOG ||--o| AI_REVIEW_TASK : executes
+    AI_REVIEW_TASK ||--o{ REVIEW_FINDING : produces
+    KNOWLEDGE_CHUNK ||--o{ REVIEW_FINDING : evidences
     PROJECT ||--o{ RETRIEVAL_EVALUATION_CASE : defines
     PROJECT ||--o{ RETRIEVAL_EVALUATION_RUN : evaluates
     PROJECT ||--o{ EMBEDDING_INDEX_TASK : builds
@@ -150,6 +155,7 @@ V9 增加可替换的向量索引实现：
 - 不保存完整 Prompt 和模型回答，避免敏感源码被重复写入审计表。
 - `trace_id` 串联一次用户请求中的模型和工具调用。
 - Token、耗时、模型和状态支持后续性能与成本分析。
+- V10 增加 `prompt_version` 和 `request_hash`，用于复现配置与比对请求，但不保存完整 Prompt。
 
 ### 3.11 `tool_call_log`
 
@@ -178,7 +184,7 @@ V8 增加可复现的检索评测：
 
 ## 5. 代码审查表
 
-V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加静态分析任务和第一版统一 Finding。反馈表将在评测阶段创建。
+V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加静态分析任务和第一版统一 Finding；V10 增加 AI 审查任务和语义 Finding 字段。反馈表将在评测阶段创建。
 
 ### `code_review_task`
 
@@ -210,6 +216,16 @@ V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加�
 - 保存工具名称、版本、状态、分析文件数和问题数；
 - 外部执行失败时保存脱敏错误和完成时间。
 
+### `ai_review_task`
+
+保存一次独立的模型审查执行：
+
+- 固定 `review_task_id`、`static_analysis_task_id` 和目标 revision，防止执行期间被新提交切换上下文；
+- 保存 provider、model、Prompt 版本、检索配置和实际检索模式；
+- `running_key` 只在 RUNNING 状态存在，唯一键承担同一 Diff 并发幂等保护；完成、失败或超时回收时由显式 SQL 置空；
+- 保存上下文 Chunk、有效 Finding、拒绝 Finding 和脱敏错误计数；
+- 通过 `invocation_id` 关联 Token、耗时和错误类别。
+
 ### `review_finding`
 
 保存一条结构化审查问题：
@@ -218,8 +234,10 @@ V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加�
 - `path_hash`：对长路径建立定长索引，避免 `utf8mb4` 索引长度超限
 - 问题分类、严重程度和置信度
 - 标题、证据、风险场景、建议和验证方法
-- 来源：当前为 `STATIC`，后续扩展 `LLM` 或 `HYBRID`
+- 来源：`STATIC` 或 `LLM`；后续工具和模型共同确认时可扩展 `HYBRID`
 - 去重指纹和当前处理状态
+- AI Finding 额外绑定 `ai_review_task_id/chunk_id`，并保存事实/推断/待验证、置信度、风险场景、建议和验证方法；
+- 模型只提供 Chunk 引用，文件和行号来自服务端证据元数据。
 
 ### `code_review_feedback`
 
@@ -237,6 +255,8 @@ erDiagram
     APP_USER ||--o{ CODE_REVIEW_TASK : creates
     CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : runs
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
+    CODE_REVIEW_TASK ||--o{ AI_REVIEW_TASK : runs
+    AI_REVIEW_TASK ||--o{ REVIEW_FINDING : produces
     REVIEW_FINDING ||--o{ CODE_REVIEW_FEEDBACK : receives
     APP_USER ||--o{ CODE_REVIEW_FEEDBACK : submits
 ```
@@ -266,6 +286,8 @@ erDiagram
 - `V6__add_static_analysis_schema.sql`：静态分析任务与统一 Finding。
 - `V7__add_code_reference_graph.sql`：方法调用、配置与数据访问关系图。
 - `V8__add_retrieval_evaluation_schema.sql`：固定检索评测用例、运行版本和质量指标。
+- `V9__add_embedding_vector_schema.sql`：向量索引任务、模型版本隔离和开发阶段向量存储。
+- `V10__add_ai_review_schema.sql`：AI 审查任务、调用版本审计和结构化语义 Finding。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。
