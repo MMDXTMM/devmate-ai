@@ -142,6 +142,7 @@ tbody tr:hover { background: #fbfcfb; }
 .source-symbols code { min-width: 0; overflow-wrap: anywhere; font: 500 11px 'DM Mono', monospace; }
 .source-symbols small { display: block; margin-top: 8px; color: var(--muted); font: 400 9px 'DM Mono', monospace; }
 .source-symbols p { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0 0; }
+.source-symbols .source-summary { display: block; color: var(--muted); font: 400 9px 'DM Mono', monospace; overflow-wrap: anywhere; }
 .source-symbols p span, .symbol-type { padding: 3px 6px; border-radius: 5px; color: var(--green); background: #edf6f0; font: 500 8px 'DM Mono', monospace; }
 .symbol-type { flex: 0 0 auto; color: #fff; background: var(--green); }
 .source-references { display: grid; gap: 6px; margin: 10px 0 0; padding: 9px; list-style: none; border: 1px solid var(--line); border-radius: 7px; background: #fafbfa; }

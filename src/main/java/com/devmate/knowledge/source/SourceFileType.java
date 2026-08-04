@@ -7,7 +7,8 @@ import java.util.Optional;
 public enum SourceFileType {
     JAVA,
     YAML,
-    PROPERTIES;
+    PROPERTIES,
+    SQL;
 
     public static Optional<SourceFileType> from(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
@@ -19,6 +20,9 @@ public enum SourceFileType {
         }
         if (name.endsWith(".properties")) {
             return Optional.of(PROPERTIES);
+        }
+        if (name.endsWith(".sql")) {
+            return Optional.of(SQL);
         }
         return Optional.empty();
     }

@@ -44,21 +44,31 @@ export interface SourceDocument {
   id: string
   fileName: string
   filePath: string
-  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION'
-  fileType: 'JAVA' | 'YAML' | 'PROPERTIES'
+  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA'
+  fileType: 'JAVA' | 'YAML' | 'PROPERTIES' | 'SQL'
   packageName?: string
   revision: string
   status: 'PARSED' | 'FAILED'
   chunkCount: number
 }
 
-export type SourceSymbolType = 'CLASS' | 'CONSTRUCTOR' | 'METHOD' | 'CONFIG_PROPERTY'
+export type SourceSymbolType =
+  | 'CLASS'
+  | 'CONSTRUCTOR'
+  | 'METHOD'
+  | 'CONFIG_PROPERTY'
+  | 'DATABASE_TABLE'
+  | 'DATABASE_COLUMN'
+  | 'DATABASE_INDEX'
+  | 'DATABASE_CONSTRAINT'
+  | 'DATABASE_CHANGE'
 
 export interface SourceSymbol {
   id: string
   documentId: string
   chunkType: SourceSymbolType
   symbolName: string
+  summary?: string
   annotations: string[]
   startLine: number
   endLine: number
@@ -66,7 +76,12 @@ export interface SourceSymbol {
   revision: string
 }
 
-export type SourceReferenceKind = 'METHOD_CALL' | 'DATA_ACCESS' | 'CONFIG_KEY' | 'CONFIG_PREFIX'
+export type SourceReferenceKind =
+  | 'METHOD_CALL'
+  | 'DATA_ACCESS'
+  | 'CONFIG_KEY'
+  | 'CONFIG_PREFIX'
+  | 'DATABASE_TABLE'
 
 export interface SourceReference {
   id: string

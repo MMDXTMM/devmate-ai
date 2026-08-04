@@ -11,6 +11,7 @@ public record SourceSymbolResponse(
         @JsonSerialize(using = ToStringSerializer.class) Long documentId,
         String chunkType,
         String symbolName,
+        String summary,
         List<String> annotations,
         Integer startLine,
         Integer endLine,
@@ -23,11 +24,19 @@ public record SourceSymbolResponse(
                 chunk.getDocumentId(),
                 chunk.getChunkType(),
                 chunk.getSymbolName(),
+                safeSummary(chunk),
                 List.copyOf(annotations),
                 chunk.getStartLine(),
                 chunk.getEndLine(),
                 chunk.getContentHash(),
                 chunk.getRevision()
         );
+    }
+
+    private static String safeSummary(KnowledgeChunk chunk) {
+        return chunk.getChunkType().startsWith("CONFIG_")
+                || chunk.getChunkType().startsWith("DATABASE_")
+                ? chunk.getContent()
+                : null;
     }
 }

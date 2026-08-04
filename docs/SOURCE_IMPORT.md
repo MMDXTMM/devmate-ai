@@ -16,9 +16,9 @@ index_task = RUNNING
         ↓
 JGit 浅克隆指定分支到独立任务目录
         ↓
-扫描 Java、YAML、Properties 并应用分类数量、单文件和总容量限制
+扫描 Java、YAML、Properties 和迁移目录 SQL，并应用分类数量、单文件和总容量限制
         ↓
-使用 JDK AST 解析 Java；安全展平 YAML/Properties 配置键
+使用 JDK AST 解析 Java；安全展平 YAML/Properties；限时解析 SQL DDL
         ↓
 计算路径/内容哈希并写入 knowledge_document、knowledge_chunk、code_reference
         ↓
@@ -31,9 +31,9 @@ index_task = SUCCEEDED，project = READY
 
 - `project`：保存仓库地址、默认分支、当前已导入 revision 和项目级状态。
 - `index_task`：每次导入生成一条任务记录，用于追踪开始、结束、文件数和失败原因。
-- `knowledge_document`：每个 Java 或配置文件对应一条文档元数据，记录类型、路径、哈希、状态和 revision。
-- `knowledge_chunk`：保存类、构造器、方法或展平配置项，包含符号名、脱敏内容、哈希和起止行。
-- `code_reference`：保存方法调用、数据访问和 Java 到配置定义的关系。
+- `knowledge_document`：每个 Java、配置或 SQL 迁移文件对应一条文档元数据，记录类型、路径、哈希、状态和 revision。
+- `knowledge_chunk`：保存类、方法、配置项或数据库表/列/索引，包含符号名、安全摘要、哈希和起止行。
+- `code_reference`：保存方法调用、数据访问以及 Java 到配置/数据库定义的关系。
 
 同一项目、同一路径、同一 revision 重复导入时使用已有文档记录，不重复插入。这是第一版幂等边界。
 
@@ -51,10 +51,11 @@ index_task = SUCCEEDED，project = READY
 
 - 当前只允许 `https://` Git 地址，拒绝 URL 用户信息。
 - 拒绝 localhost、`.local` 和私有 IP 字面量，降低 SSRF 风险。
-- 只扫描普通 `.java`、`.yml`、`.yaml`、`.properties` 文件，不跟随符号链接。
+- 只扫描普通 `.java`、`.yml`、`.yaml`、`.properties` 和迁移目录 `.sql` 文件，不跟随符号链接。
 - 忽略 `.git`、`.idea`、`target`、`build`、`out` 和 `node_modules`。
 - 对文件数量、单文件大小和总扫描容量设置上限。
 - 配置值不进入数据库；敏感键只保存 `<redacted>`，防止后续向量化或 Prompt 泄密。
+- SQL 只保存 DDL 结构摘要，忽略 DML、默认值和原始正文，也绝不执行目标迁移。
 - 每个任务使用独立工作目录，防止项目路径互相覆盖。
 - 默认日志为 INFO，避免 MyBatis 把完整源码 Chunk 作为 SQL 参数打印到日志。
 

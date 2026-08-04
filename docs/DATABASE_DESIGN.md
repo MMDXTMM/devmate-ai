@@ -80,7 +80,7 @@ erDiagram
 
 保存源码文件或技术文档的元数据，不在这里保存文件本体。
 
-- `source_kind`：`SOURCE_CODE`、`README`、`TECH_DOC`、`API_DOC`。
+- `source_kind`：当前使用 `SOURCE_CODE`、`CONFIGURATION`、`DATABASE_SCHEMA`，后续文档扩展 `README`、`TECH_DOC`、`API_DOC`。
 - `content_hash`：判断文件内容是否变化，用于增量更新。
 - `path_hash`：文件路径的 SHA-256，用于建立定长唯一索引；完整路径仍保存在 `file_path`。
 - `revision`：文件所属的 Git 提交或导入版本。
@@ -92,8 +92,8 @@ erDiagram
 
 RAG 的最小检索单元。
 
-- `chunk_type`：当前 Java 解析使用 `CLASS`、`CONSTRUCTOR`、`METHOD`，后续文档使用 `DOCUMENT_SECTION`。
-- `symbol_name`：类名、方法签名或文档标题。
+- `chunk_type`：Java 使用 `CLASS/CONSTRUCTOR/METHOD`，配置使用 `CONFIG_PROPERTY`，数据库上下文使用 `DATABASE_TABLE/COLUMN/INDEX/CONSTRAINT/CHANGE`。
+- `symbol_name`：类名、方法签名、配置键或规范化数据库对象名。
 - `start_line`、`end_line`：用于回答时给出源码位置。
 - `content_hash`：去重和增量索引。
 - `vector_id`：向量数据库中的记录 ID。
@@ -223,7 +223,7 @@ erDiagram
 
 - `source_chunk_id`：引用所属的类或方法；
 - `target_chunk_id`：能够唯一解析时关联目标方法，无法证明时为空；
-- `reference_kind`：方法调用、数据访问、配置键或配置前缀；
+- `reference_kind`：方法调用、数据访问、配置键/前缀或实体到数据库表的映射；
 - `reference_name/qualifier/argument_count`：解析和展示所需的调用事实；
 - `start_line/end_line`：由 AST 得到的真实源码位置；
 - `revision`：关系只能在相同项目版本内使用。
