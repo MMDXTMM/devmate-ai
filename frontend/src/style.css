@@ -144,6 +144,11 @@ tbody tr:hover { background: #fbfcfb; }
 .source-symbols p { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0 0; }
 .source-symbols p span, .symbol-type { padding: 3px 6px; border-radius: 5px; color: var(--green); background: #edf6f0; font: 500 8px 'DM Mono', monospace; }
 .symbol-type { flex: 0 0 auto; color: #fff; background: var(--green); }
+.source-references { display: grid; gap: 6px; margin: 10px 0 0; padding: 9px; list-style: none; border: 1px solid var(--line); border-radius: 7px; background: #fafbfa; }
+.source-references li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.source-references li small { display: inline; margin: 0; }
+.reference-kind { padding: 3px 6px; border-radius: 999px; color: var(--green); background: #e5f1e9; font: 600 8px 'DM Mono', monospace; }
+.resolved-reference { color: #258050; font: 500 8px 'DM Mono', monospace; overflow-wrap: anywhere; }
 .source-loading, .source-empty { min-height: 250px; padding: 30px; display: grid; place-items: center; align-content: center; color: var(--muted); font-size: 12px; text-align: center; }
 .source-empty b, .source-empty span { display: block; }
 .source-empty b { color: var(--ink); font-size: 14px; }

@@ -2,7 +2,7 @@
 
 DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
-当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST 解析、Git Diff 覆盖报告和 **PMD 确定性静态分析 MVP**。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST 解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**和第一版代码上下文关系图。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
 
 ## 当前已具备
 
@@ -20,10 +20,12 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - 导入任务状态、Git revision 与源码文件元数据持久化
 - 基于 JDK AST 解析类、构造器、方法、注解和准确源码行号
 - `knowledge_chunk` 符号持久化与源码结构查询接口
+- 方法调用、配置键和数据访问入口提取，以及保守的同类方法目标解析
 - 独立 Vue 3 + TypeScript 项目管理前端
 - Vue 源码文件与符号结构浏览器
 - JGit 提交差异分析、变更行到 AST 符号映射和逐文件覆盖报告
 - PMD 受控规则执行、Diff 行过滤、统一 Finding、去重和前端问题展示
+- 事务自调用、循环数据访问和同步锁内 IO 的项目级风险规则
 - 健康检查接口及基础测试
 
 ## 快速启动
@@ -106,6 +108,7 @@ cp src/main/resources/application-local.yml.example \
 - [Git 源码导入闭环](docs/SOURCE_IMPORT.md)
 - [Git Diff 与覆盖清单](docs/GIT_DIFF.md)
 - [确定性静态分析](docs/STATIC_ANALYSIS.md)
+- [代码上下文关系图](docs/CODE_CONTEXT_GRAPH.md)
 - [前端开发与联调](docs/FRONTEND_DEVELOPMENT.md)
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
 - [同类开源项目对比与路线优化](docs/OPEN_SOURCE_COMPARISON.md)

@@ -7,6 +7,7 @@ public record StaticAnalysisContext(
         Long analysisTaskId,
         Long reviewTaskId,
         Long indexTaskId,
+        String targetRevision,
         List<StaticAnalysisFileContext> files
 ) {
     public StaticAnalysisContext {

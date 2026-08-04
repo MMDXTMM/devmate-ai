@@ -20,12 +20,17 @@ class DatabaseSchemaTest {
             "project_member",
             "knowledge_document",
             "knowledge_chunk",
+            "code_reference",
             "index_task",
             "conversation",
             "conversation_message",
             "bug_analysis",
             "ai_invocation_log",
-            "tool_call_log"
+            "tool_call_log",
+            "code_review_task",
+            "code_review_file",
+            "static_analysis_task",
+            "review_finding"
     );
 
     @Autowired

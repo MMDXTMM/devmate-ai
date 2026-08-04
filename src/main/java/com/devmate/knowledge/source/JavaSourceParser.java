@@ -3,7 +3,15 @@ package com.devmate.knowledge.source;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.DoWhileLoopTree;
+import com.sun.source.tree.EnhancedForLoopTree;
+import com.sun.source.tree.ForLoopTree;
+import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.SynchronizedTree;
+import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePathScanner;
@@ -17,6 +25,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import javax.lang.model.element.Modifier;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -28,6 +37,9 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class JavaSourceParser {
@@ -36,7 +48,12 @@ public class JavaSourceParser {
         try {
             String source = Files.readString(sourceFile.sourcePath(), StandardCharsets.UTF_8);
             ParsedSourceContent parsed = parseContent(sourceFile.relativePath(), source);
-            return new ParsedSourceFile(sourceFile, parsed.packageName(), parsed.chunks());
+            return new ParsedSourceFile(
+                    sourceFile,
+                    parsed.packageName(),
+                    parsed.chunks(),
+                    parsed.references()
+            );
         } catch (IOException exception) {
             throw new SourceImportException("读取Java源码失败：" + sourceFile.relativePath(), exception);
         }
@@ -68,7 +85,7 @@ public class JavaSourceParser {
                     packageName
             );
             scanner.scan(unit, null);
-            return new ParsedSourceContent(packageName, scanner.chunks());
+            return new ParsedSourceContent(packageName, scanner.chunks(), scanner.references());
         } catch (IOException exception) {
             throw new SourceImportException("解析Java源码失败：" + relativePath, exception);
         } catch (SourceImportException exception) {
@@ -121,12 +138,21 @@ public class JavaSourceParser {
 
     private static final class ChunkScanner extends TreePathScanner<Void, Void> {
 
+        private static final Pattern VALUE_KEY = Pattern.compile("\\$\\{([^}:]+)");
+        private static final Pattern CONFIGURATION_PREFIX = Pattern.compile(
+                "(?:prefix\\s*=\\s*)?[\\\"']([^\\\"']+)[\\\"']"
+        );
+
         private final CompilationUnitTree unit;
         private final SourcePositions positions;
         private final String source;
         private final String packageName;
         private final Deque<String> typeNames = new ArrayDeque<>();
+        private final Deque<String> sourceSymbols = new ArrayDeque<>();
         private final List<ParsedSourceChunk> chunks = new ArrayList<>();
+        private final List<ParsedCodeReference> references = new ArrayList<>();
+        private int loopDepth;
+        private int synchronizedDepth;
 
         private ChunkScanner(
                 CompilationUnitTree unit,
@@ -149,9 +175,11 @@ public class JavaSourceParser {
             String qualifiedName = qualifyType(simpleName);
             addChunk("CLASS", qualifiedName, tree.getModifiers().getAnnotations(), tree);
             typeNames.addLast(simpleName);
+            sourceSymbols.addLast(qualifiedName);
             try {
                 return super.visitClass(tree, unused);
             } finally {
+                sourceSymbols.removeLast();
                 typeNames.removeLast();
             }
         }
@@ -174,7 +202,159 @@ public class JavaSourceParser {
                     tree.getModifiers().getAnnotations(),
                     tree
             );
-            return super.visitMethod(tree, unused);
+            sourceSymbols.addLast(symbolName);
+            boolean synchronizedMethod = tree.getModifiers().getFlags().contains(Modifier.SYNCHRONIZED);
+            if (synchronizedMethod) {
+                synchronizedDepth++;
+            }
+            try {
+                return super.visitMethod(tree, unused);
+            } finally {
+                if (synchronizedMethod) {
+                    synchronizedDepth--;
+                }
+                sourceSymbols.removeLast();
+            }
+        }
+
+        @Override
+        public Void visitForLoop(ForLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitForLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitEnhancedForLoop(EnhancedForLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitEnhancedForLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitWhileLoop(WhileLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitWhileLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitDoWhileLoop(DoWhileLoopTree tree, Void unused) {
+            return visitLoop(() -> super.visitDoWhileLoop(tree, unused));
+        }
+
+        @Override
+        public Void visitSynchronized(SynchronizedTree tree, Void unused) {
+            synchronizedDepth++;
+            try {
+                return super.visitSynchronized(tree, unused);
+            } finally {
+                synchronizedDepth--;
+            }
+        }
+
+        @Override
+        public Void visitMethodInvocation(MethodInvocationTree tree, Void unused) {
+            if (!sourceSymbols.isEmpty()) {
+                String methodName;
+                String qualifier = null;
+                if (tree.getMethodSelect() instanceof IdentifierTree identifier) {
+                    methodName = identifier.getName().toString();
+                } else if (tree.getMethodSelect() instanceof MemberSelectTree memberSelect) {
+                    methodName = memberSelect.getIdentifier().toString();
+                    qualifier = memberSelect.getExpression().toString();
+                } else {
+                    methodName = tree.getMethodSelect().toString();
+                }
+                addReference(
+                        "METHOD_CALL",
+                        methodName,
+                        qualifier,
+                        tree.getArguments().size(),
+                        tree,
+                        null
+                );
+                if (isDataAccessQualifier(qualifier)) {
+                    addReference(
+                            "DATA_ACCESS",
+                            methodName,
+                            qualifier,
+                            tree.getArguments().size(),
+                            tree,
+                            "{\"classification\":\"NAMING_CONVENTION\","
+                                    + "\"loopDepth\":" + loopDepth + ","
+                                    + "\"synchronizedDepth\":" + synchronizedDepth + "}"
+                    );
+                }
+            }
+            return super.visitMethodInvocation(tree, unused);
+        }
+
+        private Void visitLoop(java.util.function.Supplier<Void> scanner) {
+            loopDepth++;
+            try {
+                return scanner.get();
+            } finally {
+                loopDepth--;
+            }
+        }
+
+        @Override
+        public Void visitAnnotation(AnnotationTree tree, Void unused) {
+            if (!sourceSymbols.isEmpty()) {
+                String annotationName = tree.getAnnotationType().toString();
+                if (simpleName(annotationName).equals("Value")) {
+                    Matcher matcher = VALUE_KEY.matcher(tree.toString());
+                    while (matcher.find()) {
+                        addReference("CONFIG_KEY", matcher.group(1), null, null, tree,
+                                "{\"source\":\"Value\"}");
+                    }
+                } else if (simpleName(annotationName).equals("ConfigurationProperties")) {
+                    Matcher matcher = CONFIGURATION_PREFIX.matcher(tree.toString());
+                    if (matcher.find()) {
+                        addReference("CONFIG_PREFIX", matcher.group(1), null, null, tree,
+                                "{\"source\":\"ConfigurationProperties\"}");
+                    }
+                }
+            }
+            return super.visitAnnotation(tree, unused);
+        }
+
+        private void addReference(
+                String kind,
+                String name,
+                String qualifier,
+                Integer argumentCount,
+                com.sun.source.tree.Tree tree,
+                String metadataJson
+        ) {
+            long start = positions.getStartPosition(unit, tree);
+            long end = positions.getEndPosition(unit, tree);
+            if (start < 0 || end <= start) {
+                return;
+            }
+            references.add(new ParsedCodeReference(
+                    sourceSymbols.getLast(),
+                    kind,
+                    name,
+                    qualifier,
+                    argumentCount,
+                    (int) unit.getLineMap().getLineNumber(start),
+                    (int) unit.getLineMap().getLineNumber(Math.max(start, end - 1)),
+                    metadataJson
+            ));
+        }
+
+        private boolean isDataAccessQualifier(String qualifier) {
+            if (qualifier == null || qualifier.isBlank()) {
+                return false;
+            }
+            String candidate = qualifier.substring(qualifier.lastIndexOf('.') + 1)
+                    .toLowerCase(Locale.ROOT);
+            return candidate.endsWith("mapper")
+                    || candidate.endsWith("repository")
+                    || candidate.endsWith("dao")
+                    || candidate.equals("jdbctemplate")
+                    || candidate.equals("entitymanager");
+        }
+
+        private String simpleName(String qualifiedName) {
+            int separator = qualifiedName.lastIndexOf('.');
+            return separator < 0 ? qualifiedName : qualifiedName.substring(separator + 1);
         }
 
         private void addChunk(
@@ -196,6 +376,7 @@ public class JavaSourceParser {
                     chunkType,
                     symbolName,
                     annotations.stream().map(annotation -> annotation.getAnnotationType().toString()).toList(),
+                    tree instanceof MethodTree methodTree ? methodTree.getParameters().size() : null,
                     content,
                     sha256(content),
                     startLine,
@@ -231,6 +412,10 @@ public class JavaSourceParser {
 
         private List<ParsedSourceChunk> chunks() {
             return List.copyOf(chunks);
+        }
+
+        private List<ParsedCodeReference> references() {
+            return List.copyOf(references);
         }
     }
 }
