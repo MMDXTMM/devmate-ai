@@ -77,6 +77,52 @@ class JavaSourceParserTest {
                 .hasMessageContaining("第1行");
     }
 
+    @Test
+    void extractsMethodConfigurationAndDataAccessReferences() {
+        String content = """
+                package com.example.review;
+
+                @ConfigurationProperties(prefix = "review")
+                class ReviewService {
+                    @Value("${review.limit:10}")
+                    private int limit;
+                    private UserMapper userMapper;
+
+                    synchronized void review() {
+                        validate();
+                        for (int index = 0; index < 1; index++) {
+                            userMapper.selectById(1L);
+                        }
+                    }
+
+                    void validate() {}
+                }
+                """;
+
+        ParsedSourceContent parsed = parser.parseContent("ReviewService.java", content);
+
+        assertThat(parsed.references())
+                .extracting(ParsedCodeReference::referenceKind)
+                .containsExactly("CONFIG_PREFIX", "CONFIG_KEY", "METHOD_CALL", "METHOD_CALL", "DATA_ACCESS");
+        assertThat(parsed.references())
+                .filteredOn(reference -> reference.referenceKind().equals("CONFIG_KEY"))
+                .singleElement()
+                .satisfies(reference -> {
+                    assertThat(reference.referenceName()).isEqualTo("review.limit");
+                    assertThat(reference.sourceSymbolName()).isEqualTo("com.example.review.ReviewService");
+                });
+        assertThat(parsed.references())
+                .filteredOn(reference -> reference.referenceKind().equals("DATA_ACCESS"))
+                .singleElement()
+                .satisfies(reference -> {
+                    assertThat(reference.referenceName()).isEqualTo("selectById");
+                    assertThat(reference.qualifier()).isEqualTo("userMapper");
+                    assertThat(reference.startLine()).isEqualTo(12);
+                    assertThat(reference.metadataJson()).contains("\"loopDepth\":1");
+                    assertThat(reference.metadataJson()).contains("\"synchronizedDepth\":1");
+                });
+    }
+
     private ScannedSourceFile sourceFile(Path path, String content) {
         return new ScannedSourceFile(
                 path.getFileName().toString(),

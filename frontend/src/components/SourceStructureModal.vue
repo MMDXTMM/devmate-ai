@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ApiError, projectApi } from '../services/projectApi'
-import type { SourceDocument, SourceSymbol } from '../types/project'
+import type { SourceDocument, SourceReference, SourceSymbol } from '../types/project'
 
 const props = defineProps<{
   open: boolean
@@ -13,6 +13,7 @@ const emit = defineEmits<{ close: [] }>()
 
 const documents = ref<SourceDocument[]>([])
 const symbols = ref<SourceSymbol[]>([])
+const references = ref<SourceReference[]>([])
 const selectedDocumentId = ref('')
 const loadingDocuments = ref(false)
 const loadingSymbols = ref(false)
@@ -29,7 +30,12 @@ async function loadDocuments() {
   symbols.value = []
   selectedDocumentId.value = ''
   try {
-    documents.value = await projectApi.listSourceDocuments(props.projectId)
+    const [loadedDocuments, loadedReferences] = await Promise.all([
+      projectApi.listSourceDocuments(props.projectId),
+      projectApi.listSourceReferences(props.projectId),
+    ])
+    documents.value = loadedDocuments
+    references.value = loadedReferences
     if (documents.value.length > 0) {
       await selectDocument(documents.value[0].id)
     }
@@ -38,6 +44,19 @@ async function loadDocuments() {
   } finally {
     loadingDocuments.value = false
   }
+}
+
+function referencesFor(symbolId: string) {
+  return references.value.filter((reference) => reference.sourceChunkId === symbolId)
+}
+
+function referenceLabel(kind: SourceReference['referenceKind']) {
+  return {
+    METHOD_CALL: '方法调用',
+    DATA_ACCESS: '数据访问',
+    CONFIG_KEY: '配置键',
+    CONFIG_PREFIX: '配置前缀',
+  }[kind]
 }
 
 async function selectDocument(documentId: string) {
@@ -107,6 +126,18 @@ watch(
               <p v-if="symbol.annotations.length">
                 <span v-for="annotation in symbol.annotations" :key="annotation">@{{ annotation }}</span>
               </p>
+              <ul v-if="referencesFor(symbol.id).length" class="source-references">
+                <li v-for="reference in referencesFor(symbol.id)" :key="reference.id">
+                  <span class="reference-kind">{{ referenceLabel(reference.referenceKind) }}</span>
+                  <code>
+                    {{ reference.qualifier ? `${reference.qualifier}.` : '' }}{{ reference.referenceName }}
+                  </code>
+                  <small>第 {{ reference.startLine }} 行</small>
+                  <span v-if="reference.targetSymbolName" class="resolved-reference">
+                    → {{ reference.targetSymbolName }}
+                  </span>
+                </li>
+              </ul>
             </article>
           </template>
         </div>

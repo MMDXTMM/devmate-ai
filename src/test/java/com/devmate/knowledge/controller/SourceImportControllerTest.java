@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.devmate.knowledge.entity.IndexTask;
 import com.devmate.knowledge.entity.KnowledgeDocument;
 import com.devmate.knowledge.entity.KnowledgeChunk;
+import com.devmate.knowledge.entity.CodeReference;
 import com.devmate.knowledge.mapper.IndexTaskMapper;
 import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
+import com.devmate.knowledge.mapper.CodeReferenceMapper;
 import com.devmate.knowledge.source.GitCloneResult;
 import com.devmate.knowledge.source.GitSourceClient;
 import com.devmate.knowledge.source.SourceImportException;
@@ -59,6 +61,8 @@ class SourceImportControllerTest {
     private KnowledgeDocumentMapper documentMapper;
     @Autowired
     private KnowledgeChunkMapper chunkMapper;
+    @Autowired
+    private CodeReferenceMapper referenceMapper;
 
     @MockitoBean
     private GitSourceClient gitSourceClient;
@@ -88,7 +92,13 @@ class SourceImportControllerTest {
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, project.id()))).isEqualTo(2);
         assertThat(chunkMapper.selectCount(Wrappers.lambdaQuery(KnowledgeChunk.class)
-                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(4);
+                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(5);
+        CodeReference reference = referenceMapper.selectOne(Wrappers.lambdaQuery(CodeReference.class)
+                .eq(CodeReference::getProjectId, project.id())
+                .eq(CodeReference::getReferenceKind, "METHOD_CALL")
+                .last("LIMIT 1"));
+        assertThat(reference.getReferenceName()).isEqualTo("helper");
+        assertThat(reference.getTargetChunkId()).isNotNull();
         assertThat(indexTaskMapper.selectCount(Wrappers.lambdaQuery(IndexTask.class)
                 .eq(IndexTask::getProjectId, project.id())
                 .eq(IndexTask::getStatus, "SUCCEEDED"))).isEqualTo(1);
@@ -107,7 +117,9 @@ class SourceImportControllerTest {
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, project.id()))).isEqualTo(2);
         assertThat(chunkMapper.selectCount(Wrappers.lambdaQuery(KnowledgeChunk.class)
-                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(4);
+                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(5);
+        assertThat(referenceMapper.selectCount(Wrappers.lambdaQuery(CodeReference.class)
+                .eq(CodeReference::getProjectId, project.id()))).isEqualTo(1);
         assertThat(indexTaskMapper.selectCount(Wrappers.lambdaQuery(IndexTask.class)
                 .eq(IndexTask::getProjectId, project.id()))).isEqualTo(2);
     }
@@ -213,13 +225,22 @@ class SourceImportControllerTest {
                         appDocument.getId()
                 ))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data.length()").value(3))
                 .andExpect(jsonPath("$.data[0].chunkType").value("CLASS"))
                 .andExpect(jsonPath("$.data[0].symbolName").value("com.example.App"))
                 .andExpect(jsonPath("$.data[0].annotations[0]").value("Deprecated"))
                 .andExpect(jsonPath("$.data[1].chunkType").value("METHOD"))
                 .andExpect(jsonPath("$.data[1].symbolName").value("com.example.App#run()"))
                 .andExpect(jsonPath("$.data[1].startLine").isNumber());
+
+        mockMvc.perform(get("/api/projects/{projectId}/sources/references", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].referenceKind").value("METHOD_CALL"))
+                .andExpect(jsonPath("$.data[0].referenceName").value("helper"))
+                .andExpect(jsonPath("$.data[0].sourceSymbolName").value("com.example.App#run()"))
+                .andExpect(jsonPath("$.data[0].targetSymbolName").value("com.example.App#helper()"))
+                .andExpect(jsonPath("$.data[0].resolved").value(true));
     }
 
     @Test
@@ -264,7 +285,8 @@ class SourceImportControllerTest {
                             package com.example;
                             @Deprecated
                             class App {
-                                void run() {}
+                                void run() { helper(); }
+                                void helper() {}
                             }
                             """);
                     Files.writeString(target.resolve("src/main/java/com/example/UserService.java"), """

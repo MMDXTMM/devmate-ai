@@ -7,6 +7,7 @@ import type {
   ProjectQuery,
   SourceDocument,
   SourceSymbol,
+  SourceReference,
   ReviewDiff,
   StaticAnalysis,
 } from '../types/project'
@@ -98,6 +99,10 @@ export const projectApi = {
     return request(
       `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(documentId)}/symbols`,
     )
+  },
+
+  listSourceReferences(id: string): Promise<SourceReference[]> {
+    return request(`/api/projects/${encodeURIComponent(id)}/sources/references`)
   },
 
   createReviewDiff(id: string): Promise<ReviewDiff> {
