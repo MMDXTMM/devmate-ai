@@ -176,6 +176,55 @@ export interface StaticAnalysis {
   findings: StaticFinding[]
 }
 
+export type RetrievalTrimReason = 'DUPLICATE_CONTENT' | 'TOKEN_BUDGET' | 'TOP_K'
+
+export interface RetrievalHit {
+  chunkId: string
+  documentId: string
+  filePath: string
+  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA'
+  chunkType: SourceSymbolType
+  symbolName?: string
+  startLine?: number
+  endLine?: number
+  score: number
+  estimatedTokens: number
+  reasons: string[]
+  excerpt: string
+}
+
+export interface RetrievalTrimmed {
+  chunkId: string
+  filePath: string
+  symbolName?: string
+  estimatedTokens: number
+  reason: RetrievalTrimReason
+}
+
+export interface RetrievalSearch {
+  projectId: string
+  revision: string
+  query: string
+  configVersion: string
+  candidateCount: number
+  candidateLimitReached: boolean
+  referenceLimitReached: boolean
+  topK: number
+  tokenBudget: number
+  usedTokens: number
+  selectedCount: number
+  trimmedCount: number
+  omittedTrimmedDetails: number
+  hits: RetrievalHit[]
+  trimmed: RetrievalTrimmed[]
+}
+
+export interface RetrievalSearchForm {
+  query: string
+  topK: number
+  tokenBudget: number
+}
+
 export interface ProjectQuery {
   page: number
   size: number

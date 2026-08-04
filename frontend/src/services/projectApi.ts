@@ -10,6 +10,8 @@ import type {
   SourceReference,
   ReviewDiff,
   StaticAnalysis,
+  RetrievalSearch,
+  RetrievalSearchForm,
 } from '../types/project'
 
 export class ApiError extends Error {
@@ -124,5 +126,19 @@ export const projectApi = {
 
   latestStaticAnalysis(id: string): Promise<StaticAnalysis> {
     return request(`/api/projects/${encodeURIComponent(id)}/static-analyses/latest`)
+  },
+
+  searchRetrieval(id: string, form: RetrievalSearchForm): Promise<RetrievalSearch> {
+    return request(`/api/projects/${encodeURIComponent(id)}/retrieval/search`, {
+      method: 'POST',
+      body: JSON.stringify(form),
+    })
+  },
+
+  retrieveLatestDiffContext(id: string, form: RetrievalSearchForm): Promise<RetrievalSearch> {
+    return request(`/api/projects/${encodeURIComponent(id)}/review-diffs/latest/context`, {
+      method: 'POST',
+      body: JSON.stringify(form),
+    })
   },
 }

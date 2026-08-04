@@ -227,4 +227,44 @@ describe('projectApi', () => {
     )
     expect(result.toolName).toBe('PMD')
   })
+
+  it('searches version-isolated context with an explicit token budget', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        projectId: '2084116785588305922',
+        revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        query: 'transaction boundary',
+        configVersion: 'lexical-graph-v1',
+        candidateCount: 8,
+        candidateLimitReached: false,
+        referenceLimitReached: false,
+        topK: 5,
+        tokenBudget: 2000,
+        usedTokens: 420,
+        selectedCount: 2,
+        trimmedCount: 1,
+        omittedTrimmedDetails: 0,
+        hits: [],
+        trimmed: [],
+      },
+      timestamp: '2026-08-04T00:00:00Z',
+    }))
+
+    const result = await projectApi.searchRetrieval('2084116785588305922', {
+      query: 'transaction boundary',
+      topK: 5,
+      tokenBudget: 2000,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/retrieval/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ query: 'transaction boundary', topK: 5, tokenBudget: 2000 }),
+      }),
+    )
+    expect(result.configVersion).toBe('lexical-graph-v1')
+  })
 })

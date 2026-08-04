@@ -35,6 +35,8 @@ erDiagram
     CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FILE : covers
     CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : analyzes
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
+    PROJECT ||--o{ RETRIEVAL_EVALUATION_CASE : defines
+    PROJECT ||--o{ RETRIEVAL_EVALUATION_RUN : evaluates
     CONVERSATION o|--o{ BUG_ANALYSIS : relates_to
     CONVERSATION o|--o{ AI_INVOCATION_LOG : produces
     AI_INVOCATION_LOG ||--o{ TOOL_CALL_LOG : invokes
@@ -143,6 +145,16 @@ RAG 的最小检索单元。
 - 通过 `invocation_id` 还原一次 Agent 请求的工具调用链。
 - 可统计各工具的成功率和延迟。
 
+### 3.11 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
+
+V8 增加可复现的检索评测：
+
+- 用例固定 `dataset_version`、问题、预期文件、可选预期符号和 `top_k`；
+- 同一项目、数据集版本和用例名称唯一，防止重复样本改变指标权重；
+- 运行记录绑定项目 revision 和检索配置版本；
+- 保存宏平均 Recall@K、Precision@K、HitRate@K、MRR 和不含源码正文的逐用例结果；
+- 未在当前 revision 建立索引的预期项单独标记，不混入有效用例指标。
+
 ## 4. 为什么暂时不建这些表
 
 - 向量表：向量维度和索引由目标向量存储管理。
@@ -239,6 +251,7 @@ erDiagram
 - `V5__add_base_diff_line_ranges.sql`：保存基准版本删除行区间。
 - `V6__add_static_analysis_schema.sql`：静态分析任务与统一 Finding。
 - `V7__add_code_reference_graph.sql`：方法调用、配置与数据访问关系图。
+- `V8__add_retrieval_evaluation_schema.sql`：固定检索评测用例、运行版本和质量指标。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

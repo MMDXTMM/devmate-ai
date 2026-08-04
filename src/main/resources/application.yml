@@ -55,6 +55,15 @@ devmate:
     max-total-size-bytes: 52428800
     git-username: ${DEVMATE_GIT_USERNAME:x-access-token}
     git-token: ${DEVMATE_GIT_TOKEN:}
+  retrieval:
+    config-version: lexical-graph-v1
+    candidate-limit: 1000
+    reference-limit: 5000
+    default-top-k: 8
+    default-token-budget: 4000
+    preview-characters: 800
+    max-trimmed-details: 50
+    max-evaluation-cases: 100
   analysis:
     timeout-seconds: 30
     max-files: 200
