@@ -246,9 +246,13 @@ V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加�
 
 保存开发者对 Finding 的反馈：
 
-- 采纳、驳回、误报或稍后处理
-- 反馈说明和操作用户
-- 用于评测和后续规则、Prompt 优化
+- `project_id/finding_id`：校验项目归属，Finding 删除时级联删除反馈；
+- `feedback_type`：`ACCEPTED/REJECTED/FALSE_POSITIVE/DEFERRED`；
+- `comment`：可选判断依据，最多 1000 字；
+- `created_at/updated_at`：记录首次提交和最近更新；
+- Finding 唯一键保证同一结论当前只有一条最新反馈，接口重复提交执行更新。
+
+当前系统尚未接入认证，V12 不接收客户端提供的 `user_id`，避免伪造操作人。阶段 10 完成认证后，再使用服务端身份增加用户关联和多评审人唯一范围。
 
 计划关系：
 
@@ -260,11 +264,10 @@ erDiagram
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
     CODE_REVIEW_TASK ||--o{ AI_REVIEW_TASK : runs
     AI_REVIEW_TASK ||--o{ REVIEW_FINDING : produces
-    REVIEW_FINDING ||--o{ CODE_REVIEW_FEEDBACK : receives
-    APP_USER ||--o{ CODE_REVIEW_FEEDBACK : submits
+    REVIEW_FINDING ||--o| CODE_REVIEW_FEEDBACK : receives
 ```
 
-`review_finding` 已在 V6 创建；`code_review_feedback` 将在审查反馈与评测阶段通过新迁移创建。
+`review_finding` 已在 V6 创建；`code_review_feedback` 已通过 V12 创建。
 
 ### `code_reference`
 
@@ -292,6 +295,7 @@ erDiagram
 - `V9__add_embedding_vector_schema.sql`：向量索引任务、模型版本隔离和开发阶段向量存储。
 - `V10__add_ai_review_schema.sql`：AI 审查任务、调用版本审计和结构化语义 Finding。
 - `V11__extend_tool_call_audit.sql`：Agent Tool 调用 ID、顺序、参数哈希、错误分类和唯一约束。
+- `V12__add_code_review_feedback.sql`：Finding 最新反馈、项目归属、类型索引和级联清理。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

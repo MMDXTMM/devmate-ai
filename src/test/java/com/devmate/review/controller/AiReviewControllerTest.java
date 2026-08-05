@@ -21,11 +21,13 @@ import com.devmate.project.dto.CreateProjectRequest;
 import com.devmate.project.dto.ProjectResponse;
 import com.devmate.project.service.ProjectService;
 import com.devmate.review.entity.AiReviewTask;
+import com.devmate.review.entity.CodeReviewFeedback;
 import com.devmate.review.entity.CodeReviewFile;
 import com.devmate.review.entity.CodeReviewTask;
 import com.devmate.review.entity.ReviewFinding;
 import com.devmate.review.entity.StaticAnalysisTask;
 import com.devmate.review.mapper.AiReviewTaskMapper;
+import com.devmate.review.mapper.CodeReviewFeedbackMapper;
 import com.devmate.review.mapper.CodeReviewFileMapper;
 import com.devmate.review.mapper.CodeReviewTaskMapper;
 import com.devmate.review.mapper.ReviewFindingMapper;
@@ -51,8 +53,10 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -82,6 +86,8 @@ class AiReviewControllerTest {
     private AiInvocationLogMapper invocationMapper;
     @Autowired
     private ReviewFindingMapper findingMapper;
+    @Autowired
+    private CodeReviewFeedbackMapper feedbackMapper;
     @Autowired
     private AiReviewStateService stateService;
 
@@ -214,6 +220,108 @@ class AiReviewControllerTest {
         assertThat(expired.getRunningKey()).isNull();
         assertThat(invocationMapper.selectById(first.invocationId()).getErrorCode())
                 .isEqualTo("STALE_TASK");
+    }
+
+    @Test
+    void createsAndUpdatesFeedbackAndReturnsItWithLatestReview() throws Exception {
+        Fixture fixture = fixture("ai-review-feedback");
+        AiReviewModel model = modelReturning(finding(String.valueOf(fixture.chunkId())));
+        given(modelRegistry.current()).willReturn(model);
+        given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId()))
+                .andExpect(status().isOk());
+        ReviewFinding finding = latestFinding(fixture.projectId());
+
+        mockMvc.perform(put(
+                        "/api/projects/{projectId}/review-findings/{findingId}/feedback",
+                        fixture.projectId(), finding.getId()
+                ).contentType(APPLICATION_JSON)
+                .content("""
+                        {"feedbackType":"ACCEPTED","comment":"  已通过并发测试验证  "}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").isString())
+                .andExpect(jsonPath("$.data.findingId").value(finding.getId().toString()))
+                .andExpect(jsonPath("$.data.feedbackType").value("ACCEPTED"))
+                .andExpect(jsonPath("$.data.comment").value("已通过并发测试验证"));
+
+        CodeReviewFeedback created = feedbackMapper.selectOne(
+                Wrappers.lambdaQuery(CodeReviewFeedback.class)
+                        .eq(CodeReviewFeedback::getFindingId, finding.getId())
+        );
+        mockMvc.perform(put(
+                        "/api/projects/{projectId}/review-findings/{findingId}/feedback",
+                        fixture.projectId(), finding.getId()
+                ).contentType(APPLICATION_JSON)
+                .content("""
+                        {"feedbackType":"FALSE_POSITIVE","comment":"当前调用方已持有同一把锁"}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(created.getId().toString()))
+                .andExpect(jsonPath("$.data.feedbackType").value("FALSE_POSITIVE"));
+
+        assertThat(feedbackMapper.selectCount(
+                Wrappers.lambdaQuery(CodeReviewFeedback.class)
+                        .eq(CodeReviewFeedback::getFindingId, finding.getId())
+        )).isEqualTo(1);
+        mockMvc.perform(get("/api/projects/{projectId}/ai-reviews/latest", fixture.projectId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.findings[0].feedback.feedbackType")
+                        .value("FALSE_POSITIVE"))
+                .andExpect(jsonPath("$.data.findings[0].feedback.comment")
+                        .value("当前调用方已持有同一把锁"));
+    }
+
+    @Test
+    void rejectsFeedbackWhenFindingBelongsToAnotherProject() throws Exception {
+        Fixture owner = fixture("ai-review-feedback-owner");
+        Fixture other = fixture("ai-review-feedback-other");
+        AiReviewModel model = modelReturning(finding(String.valueOf(owner.chunkId())));
+        given(modelRegistry.current()).willReturn(model);
+        given(retrievalService.search(any(), any())).willReturn(retrieval(owner));
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", owner.projectId()))
+                .andExpect(status().isOk());
+        ReviewFinding finding = latestFinding(owner.projectId());
+
+        mockMvc.perform(put(
+                        "/api/projects/{projectId}/review-findings/{findingId}/feedback",
+                        other.projectId(), finding.getId()
+                ).contentType(APPLICATION_JSON)
+                .content("""
+                        {"feedbackType":"ACCEPTED"}
+                        """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("审查结论不存在"));
+    }
+
+    @Test
+    void rejectsInvalidFeedbackTypeAndOversizedComment() throws Exception {
+        Fixture fixture = fixture("ai-review-feedback-validation");
+        AiReviewModel model = modelReturning(finding(String.valueOf(fixture.chunkId())));
+        given(modelRegistry.current()).willReturn(model);
+        given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId()))
+                .andExpect(status().isOk());
+        ReviewFinding finding = latestFinding(fixture.projectId());
+
+        mockMvc.perform(put(
+                        "/api/projects/{projectId}/review-findings/{findingId}/feedback",
+                        fixture.projectId(), finding.getId()
+                ).contentType(APPLICATION_JSON)
+                .content("""
+                        {"feedbackType":"UNKNOWN"}
+                        """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("请求体格式或枚举值不合法"));
+
+        mockMvc.perform(put(
+                        "/api/projects/{projectId}/review-findings/{findingId}/feedback",
+                        fixture.projectId(), finding.getId()
+                ).contentType(APPLICATION_JSON)
+                .content("{\"feedbackType\":\"ACCEPTED\",\"comment\":\""
+                        + "x".repeat(1001) + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("反馈说明不能超过1000个字符"));
     }
 
     private Fixture fixture(String name) {
@@ -362,6 +470,13 @@ class AiReviewControllerTest {
         return aiReviewTaskMapper.selectOne(Wrappers.lambdaQuery(AiReviewTask.class)
                 .eq(AiReviewTask::getProjectId, projectId)
                 .orderByDesc(AiReviewTask::getCreatedAt)
+                .last("LIMIT 1"));
+    }
+
+    private ReviewFinding latestFinding(Long projectId) {
+        AiReviewTask task = latestTask(projectId);
+        return findingMapper.selectOne(Wrappers.lambdaQuery(ReviewFinding.class)
+                .eq(ReviewFinding::getAiReviewTaskId, task.getId())
                 .last("LIMIT 1"));
     }
 

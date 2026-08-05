@@ -76,6 +76,51 @@ describe('AiReviewModal', () => {
     expect(wrapper.text()).toContain('Agent未获得可验证的代码检索证据')
     expect(wrapper.text()).not.toContain('本次没有通过证据校验的语义风险')
   })
+
+  it('saves a false-positive decision and updates the finding without rerunning the model', async () => {
+    vi.spyOn(projectApi, 'latestAiReview').mockResolvedValue(report())
+    const feedbackSpy = vi.spyOn(projectApi, 'upsertReviewFeedback').mockResolvedValue({
+      id: '9',
+      projectId: '1',
+      findingId: '5',
+      feedbackType: 'FALSE_POSITIVE',
+      comment: '调用方已经持有互斥锁',
+      createdAt: '2026-08-05T00:00:00Z',
+      updatedAt: '2026-08-05T00:00:00Z',
+    })
+    const createSpy = vi.spyOn(projectApi, 'createAiReview').mockResolvedValue(report())
+    const wrapper = mount(AiReviewModal, {
+      props: { open: true, projectId: '1', projectName: 'demo' },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="feedback-comment-5"]').setValue(' 调用方已经持有互斥锁 ')
+    await wrapper.get('[data-testid="feedback-FALSE_POSITIVE-5"]').trigger('click')
+    await flushPromises()
+
+    expect(feedbackSpy).toHaveBeenCalledWith('1', '5', {
+      feedbackType: 'FALSE_POSITIVE',
+      comment: '调用方已经持有互斥锁',
+    })
+    expect(createSpy).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('当前：误报')
+  })
+
+  it('shows a readable error when feedback persistence fails', async () => {
+    vi.spyOn(projectApi, 'latestAiReview').mockResolvedValue(report())
+    vi.spyOn(projectApi, 'upsertReviewFeedback').mockRejectedValue(
+      new ApiError('审查结论不存在', 40400, 404),
+    )
+    const wrapper = mount(AiReviewModal, {
+      props: { open: true, projectId: '1', projectName: 'demo' },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="feedback-ACCEPTED-5"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('审查结论不存在')
+  })
 })
 
 function report(): AiReview {

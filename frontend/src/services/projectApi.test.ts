@@ -286,6 +286,41 @@ describe('projectApi', () => {
     expect(result.promptVersion).toBe('review-agent-v1')
   })
 
+  it('upserts developer feedback for a project-scoped finding', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588312000',
+        projectId: '2084116785588305922',
+        findingId: '2084116785588311002',
+        feedbackType: 'FALSE_POSITIVE',
+        comment: '调用方已经持有互斥锁',
+        createdAt: '2026-08-05T00:00:00Z',
+        updatedAt: '2026-08-05T00:00:00Z',
+      },
+      timestamp: '2026-08-05T00:00:00Z',
+    }))
+
+    const result = await projectApi.upsertReviewFeedback(
+      '2084116785588305922',
+      '2084116785588311002',
+      { feedbackType: 'FALSE_POSITIVE', comment: '调用方已经持有互斥锁' },
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/review-findings/2084116785588311002/feedback',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          feedbackType: 'FALSE_POSITIVE',
+          comment: '调用方已经持有互斥锁',
+        }),
+      }),
+    )
+    expect(result.feedbackType).toBe('FALSE_POSITIVE')
+  })
+
   it('searches version-isolated context with an explicit token budget', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       code: 0,

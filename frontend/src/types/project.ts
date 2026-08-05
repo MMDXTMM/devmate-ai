@@ -195,6 +195,22 @@ export interface StaticAnalysis {
 }
 
 export type AiConclusionType = 'FACT' | 'INFERENCE' | 'NEEDS_VERIFICATION'
+export type ReviewFeedbackType = 'ACCEPTED' | 'REJECTED' | 'FALSE_POSITIVE' | 'DEFERRED'
+
+export interface ReviewFeedback {
+  id: string
+  projectId: string
+  findingId: string
+  feedbackType: ReviewFeedbackType
+  comment?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ReviewFeedbackForm {
+  feedbackType: ReviewFeedbackType
+  comment?: string
+}
 
 export interface AiReviewFinding {
   id: string
@@ -212,6 +228,7 @@ export interface AiReviewFinding {
   riskScenario: string
   suggestion: string
   verification: string
+  feedback?: ReviewFeedback
 }
 
 export interface ToolCall {

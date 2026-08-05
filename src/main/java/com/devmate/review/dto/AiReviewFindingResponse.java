@@ -20,6 +20,7 @@ public record AiReviewFindingResponse(
         String evidence,
         String riskScenario,
         String suggestion,
-        String verification
+        String verification,
+        ReviewFeedbackResponse feedback
 ) {
 }
