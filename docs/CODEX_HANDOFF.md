@@ -2,7 +2,45 @@
 
 更新时间：2026-08-05
 
-本文件用于在 Codex 账号、会话或电脑切换后快速恢复开发上下文。新会话开始时应先阅读根目录 `AGENTS.md`、本文件、`ENGINEERING_STANDARDS.md`、`DEVELOPMENT_ROADMAP.md` 和最近的 `PROJECT_LOG.md`。
+本文件用于在 Codex 账号、会话或电脑切换后快速恢复开发上下文。它记录“现在做到哪里”，可直接复制的启动提示词统一放在 [跨账号启动提示词](ACCOUNT_HANDOFF_PROMPTS.md)。
+
+## 0. 30 秒恢复卡
+
+| 项目 | 当前值 |
+| --- | --- |
+| 本机仓库 | `/Users/dengxintong/Documents/devmate-ai` |
+| 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
+| 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
+| 权威分支 | 远端 `main` |
+| 最近合并 | PR #14，merge commit `e708481aff1136b6353f6ddc29aec0fd9c4acdb3` |
+| 数据库 | Flyway V13；本机 MySQL 已验收 |
+| 测试基线 | 后端 107 项；前端 29 项；Vue 生产构建通过 |
+| 精确暂停点 | 8 个 fixture 分支已发布；尚未创建 8 个 DevMate 评测项目，也未运行真实模型 |
+| 下一小任务 | 导入 8 个真实样本并执行 Diff，核对 candidate revision；禁止调用模型 |
+
+### 状态可信度顺序
+
+恢复上下文时按以下顺序判断，后者不能覆盖前者：
+
+1. 远端 `main`、已合并 PR 和自动化测试结果。
+2. 数据库 Flyway 版本与真实运行结果。
+3. 本文件、相关设计文档和 `PROJECT_LOG.md`。
+4. ChatGPT/Codex 历史对话与人工口述。
+
+如果对话声称“已完成”，但仓库、测试或数据库没有证据，应视为未验证，不继续包装到 README 或简历。
+
+### 新账号首次检查
+
+新账号不要立即改代码，先完成：
+
+```bash
+pwd
+git status -sb
+git log -5 --oneline --decorate
+git fetch origin
+```
+
+然后检查远端 `main`、未合并 PR、工作区修改和最近测试记录。若当前分支已合并，先同步 `main` 再创建 `codex/<task-name>` 分支；不得覆盖未识别的用户修改。
 
 ## 1. 项目定位
 
@@ -113,11 +151,23 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1
 
 ## 7. 新 Codex 会话首条任务建议
 
-可以直接发送：
+完整 Codex、ChatGPT 和紧急精简提示词见 [跨账号启动提示词](ACCOUNT_HANDOFF_PROMPTS.md)。当前阶段最短可用版本：
 
 > 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md、benchmarks/review-fixtures/README.md、manifest.json、revisions.json 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区状态；8 个样本已发布到 `MMDXTMM/devmate-review-benchmark` 的 `case-001` 至 `case-008`。下一小任务只做“真实样本导入与 Diff 验收”：创建 8 个 DevMate 项目、导入对应分支、执行 Diff，并自动核对项目状态、实际 revision、覆盖清单和 revisions.json；先不调用模型。不要改 Prompt、引入 MQ/微服务或把测试指标写进简历。完成后更新文档、运行全量测试并提交独立 PR。
 
-## 8. 验证命令
+## 8. 账号切换前的收尾要求
+
+旧账号结束前必须：
+
+1. 把可验证修改提交到独立分支并推送；能安全合并时完成 PR，否则记录 PR 地址和阻塞原因。
+2. 更新本文件的恢复卡、精确暂停点、测试基线和下一小任务。
+3. 在 `PROJECT_LOG.md` 记录业务、架构或开发顺序变化。
+4. 只记录所需环境变量名称，不写值；不得复制密码、Token、Cookie、API Key 或私有源码。
+5. 写清未完成操作、外部仓库状态、数据库迁移版本、真实验收与 Mock 测试的区别。
+
+新账号开始后必须以仓库证据复核交接，不把旧对话直接当作事实。交接只传递开发上下文，不传递账号订阅、记忆、凭证或权限。
+
+## 9. 验证命令
 
 ```bash
 ./mvnw test
@@ -129,7 +179,7 @@ npm run build
 
 真实 MySQL 验证使用默认 `local` Profile；`application-local.yml` 被 Git 忽略。真实模型测试还需要在进程环境配置 `DASHSCOPE_API_KEY`，当前阶段没有用 Mock 结果冒充真实模型效果。
 
-## 9. 开发经验与踩坑记录
+## 10. 开发经验与踩坑记录
 
 - 单体和微服务不是先进程度之分。先让业务闭环可运行，再根据独立扩容和故障隔离需求拆分。
 - H2 能快速回归，但不能替代 MySQL。V6 曾出现 `utf8mb4` 长索引限制，只有真实 MySQL 才暴露。
