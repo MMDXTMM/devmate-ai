@@ -1,0 +1,125 @@
+{
+  "datasetVersion": "known-defects-v1",
+  "description": "DevMate AI 第一版真实代码审查固定样本",
+  "scenarios": [
+    {
+      "scenarioKey": "concurrency-lost-update",
+      "name": "库存并发丢失更新",
+      "expectationType": "DEFECT",
+      "rationale": "读取、判断和写回库存不是原子操作，并发请求可能基于同一旧值重复扣减。",
+      "defects": [
+        {
+          "caseKey": "concurrency-lost-update",
+          "category": "CONCURRENCY",
+          "filePath": "src/main/java/benchmark/concurrency/InventoryService.java",
+          "startLine": 11,
+          "endLine": 16,
+          "rationale": "目标代码把原子条件更新退化为先查后写，两个线程可同时通过库存判断。"
+        }
+      ]
+    },
+    {
+      "scenarioKey": "transaction-self-invocation",
+      "name": "事务方法同类自调用",
+      "expectationType": "DEFECT",
+      "rationale": "同一个 Bean 内直接调用带事务的方法会绕过 Spring 代理。",
+      "defects": [
+        {
+          "caseKey": "transaction-self-invocation",
+          "category": "TRANSACTION",
+          "filePath": "src/main/java/benchmark/transaction/BatchOrderService.java",
+          "startLine": 7,
+          "endLine": 10,
+          "rationale": "importOrders 通过 this 语义调用 createOrder，REQUIRES_NEW 不会生效。"
+        }
+      ]
+    },
+    {
+      "scenarioKey": "cache-stampede",
+      "name": "热点缓存失效后并发回源",
+      "expectationType": "DEFECT",
+      "rationale": "热点 Key 失效时所有请求都会访问数据库，缺少互斥、逻辑过期或请求合并。",
+      "defects": [
+        {
+          "caseKey": "cache-stampede",
+          "category": "CACHE",
+          "filePath": "src/main/java/benchmark/cache/ProductService.java",
+          "startLine": 13,
+          "endLine": 18,
+          "rationale": "缓存未命中路径没有并发保护，每个请求都同步查询数据库。"
+        }
+      ]
+    },
+    {
+      "scenarioKey": "message-ack-before-persist",
+      "name": "消息先确认后落库",
+      "expectationType": "DEFECT",
+      "rationale": "消息确认早于业务落库，进程在两步之间失败会导致消息永久丢失。",
+      "defects": [
+        {
+          "caseKey": "message-ack-before-persist",
+          "category": "MESSAGE",
+          "filePath": "src/main/java/benchmark/message/PaymentConsumer.java",
+          "startLine": 10,
+          "endLine": 12,
+          "rationale": "ack 在 paymentRepository.save 之前执行，失败后 Broker 不会再次投递。"
+        }
+      ]
+    },
+    {
+      "scenarioKey": "sql-query-in-loop",
+      "name": "循环内逐条查询",
+      "expectationType": "DEFECT",
+      "rationale": "列表长度增长时数据库访问次数线性增加，形成 N+1 查询。",
+      "defects": [
+        {
+          "caseKey": "sql-query-in-loop",
+          "category": "SQL",
+          "filePath": "src/main/java/benchmark/sql/OrderQueryService.java",
+          "startLine": 14,
+          "endLine": 18,
+          "rationale": "对每个订单单独查询用户，应批量读取并按 ID 映射。"
+        }
+      ]
+    },
+    {
+      "scenarioKey": "security-path-traversal",
+      "name": "上传文件路径穿越",
+      "expectationType": "DEFECT",
+      "rationale": "不可信文件名直接参与路径解析，攻击者可使用 ../ 逃逸上传目录。",
+      "defects": [
+        {
+          "caseKey": "security-path-traversal",
+          "category": "SECURITY",
+          "filePath": "src/main/java/benchmark/security/UploadService.java",
+          "startLine": 12,
+          "endLine": 13,
+          "rationale": "resolve 后没有 normalize 与根目录包含关系校验。"
+        }
+      ]
+    },
+    {
+      "scenarioKey": "performance-remote-call-under-lock",
+      "name": "持锁执行远程调用",
+      "expectationType": "DEFECT",
+      "rationale": "慢速网络调用占用 JVM 锁，延迟和故障会串行阻塞所有相同服务请求。",
+      "defects": [
+        {
+          "caseKey": "performance-remote-call-under-lock",
+          "category": "PERFORMANCE",
+          "filePath": "src/main/java/benchmark/performance/PricingService.java",
+          "startLine": 10,
+          "endLine": 12,
+          "rationale": "synchronized 方法内部调用远程客户端，锁范围包含不可控 I/O。"
+        }
+      ]
+    },
+    {
+      "scenarioKey": "clean-batch-query",
+      "name": "批量查询无缺陷对照",
+      "expectationType": "CLEAN",
+      "rationale": "变更把逐条查询替换为一次批量查询，并保持空输入处理和稳定返回。",
+      "defects": []
+    }
+  ]
+}
