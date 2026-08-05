@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ApiError, projectApi } from '../services/projectApi'
-import type { AiConclusionType, AiReview, FindingSeverity } from '../types/project'
+import type {
+  AiConclusionType,
+  AiReview,
+  AiReviewFinding,
+  FindingSeverity,
+  ReviewFeedbackType,
+} from '../types/project'
 
 const props = defineProps<{
   open: boolean
@@ -15,6 +21,9 @@ const loading = ref(false)
 const running = ref(false)
 const runningMode = ref<'fixed' | 'agent' | null>(null)
 const errorMessage = ref('')
+const feedbackErrorMessage = ref('')
+const feedbackSubmittingId = ref<string>()
+const feedbackDrafts = ref<Record<string, string>>({})
 
 const severityLabel: Record<FindingSeverity, string> = {
   INFO: '提示',
@@ -30,13 +39,31 @@ const conclusionLabel: Record<AiConclusionType, string> = {
   NEEDS_VERIFICATION: '待验证',
 }
 
+const feedbackLabel: Record<ReviewFeedbackType, string> = {
+  ACCEPTED: '采纳',
+  REJECTED: '驳回',
+  FALSE_POSITIVE: '误报',
+  DEFERRED: '稍后处理',
+}
+
+const feedbackOptions = Object.entries(feedbackLabel) as [ReviewFeedbackType, string][]
+
+function syncFeedbackDrafts(review: AiReview) {
+  feedbackDrafts.value = Object.fromEntries(
+    review.findings.map((finding) => [finding.id, finding.feedback?.comment || '']),
+  )
+}
+
 async function loadLatest() {
   if (!props.projectId) return
   loading.value = true
   report.value = null
   errorMessage.value = ''
+  feedbackErrorMessage.value = ''
   try {
-    report.value = await projectApi.latestAiReview(props.projectId)
+    const latest = await projectApi.latestAiReview(props.projectId)
+    report.value = latest
+    syncFeedbackDrafts(latest)
   } catch (error) {
     if (!(error instanceof ApiError) || error.code !== 40400) {
       errorMessage.value = error instanceof ApiError ? error.message : '读取AI审查记录失败'
@@ -51,10 +78,13 @@ async function runReview(mode: 'fixed' | 'agent') {
   running.value = true
   runningMode.value = mode
   errorMessage.value = ''
+  feedbackErrorMessage.value = ''
   try {
-    report.value = mode === 'agent'
+    const created = mode === 'agent'
       ? await projectApi.createAgentAiReview(props.projectId)
       : await projectApi.createAiReview(props.projectId)
+    report.value = created
+    syncFeedbackDrafts(created)
   } catch (error) {
     const message = error instanceof ApiError ? error.message : 'AI审查执行失败'
     await loadLatest()
@@ -62,6 +92,30 @@ async function runReview(mode: 'fixed' | 'agent') {
   } finally {
     running.value = false
     runningMode.value = null
+  }
+}
+
+async function submitFeedback(finding: AiReviewFinding, feedbackType: ReviewFeedbackType) {
+  if (!props.projectId) return
+  feedbackSubmittingId.value = finding.id
+  feedbackErrorMessage.value = ''
+  try {
+    const feedback = await projectApi.upsertReviewFeedback(props.projectId, finding.id, {
+      feedbackType,
+      comment: feedbackDrafts.value[finding.id]?.trim() || undefined,
+    })
+    if (report.value) {
+      report.value = {
+        ...report.value,
+        findings: report.value.findings.map((item) => (
+          item.id === finding.id ? { ...item, feedback } : item
+        )),
+      }
+    }
+  } catch (error) {
+    feedbackErrorMessage.value = error instanceof ApiError ? error.message : '保存审查反馈失败'
+  } finally {
+    feedbackSubmittingId.value = undefined
   }
 }
 
@@ -106,6 +160,9 @@ watch(
       </div>
 
       <div v-if="errorMessage" class="notice error" role="alert">{{ errorMessage }}</div>
+      <div v-if="feedbackErrorMessage" class="notice error" role="alert">
+        {{ feedbackErrorMessage }}
+      </div>
       <div v-if="loading" class="source-loading">正在读取最近一次 AI 审查记录…</div>
       <div v-else-if="running" class="source-loading">
         {{ runningMode === 'agent' ? 'Agent 正在选择只读工具并收集代码证据，请勿重复提交…' : '正在检索固定变更上下文并调用模型，请勿重复提交…' }}
@@ -166,6 +223,37 @@ watch(
               <div><dt>修改方向</dt><dd>{{ finding.suggestion }}</dd></div>
               <div><dt>验证方法</dt><dd>{{ finding.verification }}</dd></div>
             </dl>
+            <section class="review-feedback-panel">
+              <div class="review-feedback-title">
+                <div>
+                  <b>人工反馈</b>
+                  <small>用于统计误报并改进规则、检索和 Prompt，不会重新调用模型</small>
+                </div>
+                <span v-if="finding.feedback">
+                  当前：{{ feedbackLabel[finding.feedback.feedbackType] }}
+                </span>
+              </div>
+              <textarea
+                v-model="feedbackDrafts[finding.id]"
+                :data-testid="`feedback-comment-${finding.id}`"
+                maxlength="1000"
+                rows="2"
+                placeholder="可选：说明采纳依据、驳回原因或误报上下文"
+              />
+              <div class="review-feedback-actions">
+                <button
+                  v-for="[feedbackType, label] in feedbackOptions"
+                  :key="feedbackType"
+                  :data-testid="`feedback-${feedbackType}-${finding.id}`"
+                  :class="{ active: finding.feedback?.feedbackType === feedbackType }"
+                  type="button"
+                  :disabled="feedbackSubmittingId === finding.id"
+                  @click="submitFeedback(finding, feedbackType)"
+                >
+                  {{ feedbackSubmittingId === finding.id ? '保存中…' : label }}
+                </button>
+              </div>
+            </section>
           </article>
         </div>
       </template>

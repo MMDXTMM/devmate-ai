@@ -11,12 +11,15 @@ import com.devmate.knowledge.dto.RetrievalSearchResponse;
 import com.devmate.project.mapper.ProjectMapper;
 import com.devmate.review.dto.AiReviewFindingResponse;
 import com.devmate.review.dto.AiReviewResponse;
+import com.devmate.review.dto.ReviewFeedbackResponse;
 import com.devmate.review.dto.ToolCallResponse;
 import com.devmate.review.entity.AiReviewTask;
+import com.devmate.review.entity.CodeReviewFeedback;
 import com.devmate.review.entity.CodeReviewTask;
 import com.devmate.review.entity.ReviewFinding;
 import com.devmate.review.entity.StaticAnalysisTask;
 import com.devmate.review.mapper.AiReviewTaskMapper;
+import com.devmate.review.mapper.CodeReviewFeedbackMapper;
 import com.devmate.review.mapper.CodeReviewTaskMapper;
 import com.devmate.review.mapper.ReviewFindingMapper;
 import com.devmate.review.mapper.StaticAnalysisTaskMapper;
@@ -35,7 +38,10 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class AiReviewStateService {
@@ -46,6 +52,7 @@ public class AiReviewStateService {
     private final ReviewFindingMapper findingMapper;
     private final AiInvocationLogMapper invocationMapper;
     private final AiReviewTaskMapper aiReviewTaskMapper;
+    private final CodeReviewFeedbackMapper feedbackMapper;
     private final ToolCallLogMapper toolCallLogMapper;
     private final AiReviewProperties properties;
 
@@ -56,6 +63,7 @@ public class AiReviewStateService {
             ReviewFindingMapper findingMapper,
             AiInvocationLogMapper invocationMapper,
             AiReviewTaskMapper aiReviewTaskMapper,
+            CodeReviewFeedbackMapper feedbackMapper,
             ToolCallLogMapper toolCallLogMapper,
             AiReviewProperties properties
     ) {
@@ -65,6 +73,7 @@ public class AiReviewStateService {
         this.findingMapper = findingMapper;
         this.invocationMapper = invocationMapper;
         this.aiReviewTaskMapper = aiReviewTaskMapper;
+        this.feedbackMapper = feedbackMapper;
         this.toolCallLogMapper = toolCallLogMapper;
         this.properties = properties;
     }
@@ -276,6 +285,7 @@ public class AiReviewStateService {
             AiInvocationLog invocation,
             List<ReviewFinding> findings
     ) {
+        Map<Long, CodeReviewFeedback> feedbackByFindingId = listFeedbackByFindingId(findings);
         return new AiReviewResponse(
                 task.getId(), task.getProjectId(), task.getReviewTaskId(), task.getStaticAnalysisTaskId(),
                 task.getInvocationId(), task.getRevision(), task.getProvider(), task.getModelName(),
@@ -283,8 +293,29 @@ public class AiReviewStateService {
                 task.getStatus(), task.getContextChunks(), task.getFindingCount(), task.getRejectedFindings(),
                 invocation.getPromptTokens(), invocation.getCompletionTokens(), invocation.getTotalTokens(),
                 invocation.getLatencyMs(), task.getErrorMessage(), task.getCreatedAt(), task.getFinishedAt(),
-                findings.stream().map(this::toFindingResponse).toList(), listToolCalls(task.getInvocationId())
+                findings.stream()
+                        .map(finding -> toFindingResponse(
+                                finding,
+                                feedbackByFindingId.get(finding.getId())
+                        ))
+                        .toList(),
+                listToolCalls(task.getInvocationId())
         );
+    }
+
+    private Map<Long, CodeReviewFeedback> listFeedbackByFindingId(List<ReviewFinding> findings) {
+        if (findings.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> findingIds = findings.stream().map(ReviewFinding::getId).toList();
+        return feedbackMapper.selectList(
+                        Wrappers.lambdaQuery(CodeReviewFeedback.class)
+                                .in(CodeReviewFeedback::getFindingId, findingIds)
+                ).stream()
+                .collect(Collectors.toMap(
+                        CodeReviewFeedback::getFindingId,
+                        Function.identity()
+                ));
     }
 
     private List<ToolCallResponse> listToolCalls(Long invocationId) {
@@ -295,13 +326,17 @@ public class AiReviewStateService {
                 .stream().map(ToolCallResponse::from).toList();
     }
 
-    private AiReviewFindingResponse toFindingResponse(ReviewFinding finding) {
+    private AiReviewFindingResponse toFindingResponse(
+            ReviewFinding finding,
+            CodeReviewFeedback feedback
+    ) {
         return new AiReviewFindingResponse(
                 finding.getId(), finding.getChunkId(), finding.getSource(), finding.getCategory(),
                 finding.getSeverity(), finding.getConclusionType(), finding.getConfidence(),
                 finding.getFilePath(), finding.getStartLine(), finding.getEndLine(), finding.getMessage(),
                 finding.getEvidence(), finding.getRiskScenario(), finding.getSuggestion(),
-                finding.getVerification()
+                finding.getVerification(),
+                feedback == null ? null : ReviewFeedbackResponse.from(feedback)
         );
     }
 

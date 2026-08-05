@@ -32,12 +32,13 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | RAG | 完成工程闭环 | 关键词/关系图基线、固定评测、Embedding、向量与 Hybrid/RRF |
 | AI 审查 | 完成工程闭环 | DashScope JSON 输出、Chunk 白名单、结构化 Finding、任务审计 |
 | Tool Calling Agent | 完成工程闭环 | 四个只读 Tool、Qwen 多轮协议、限制与审计、Vue 调用链 |
+| 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
 
-当前数据库版本为 V11。本机 MySQL 已从 V10 成功迁移到 V11，健康检查为 `UP`，原项目 `2084116785588305922` 保持可读。
+当前数据库版本为 V12。本机 MySQL 已从 V11 成功迁移到 V12，健康检查为 `UP`，原项目 `2084116785588305922` 保持可读。
 
-当前自动化基线：后端 93 项测试通过；前端 21 项测试通过；Vue 生产构建通过。
+当前自动化基线：后端 96 项测试通过；前端 24 项测试通过；Vue 生产构建通过。
 
-## 3. 阶段 7 核心代码入口
+## 3. 当前核心代码入口
 
 - Agent 调度：`src/main/java/com/devmate/agent/service/ReviewAgentOrchestrator.java`
 - Qwen 协议：`src/main/java/com/devmate/agent/model/DashScopeReviewAgentModel.java`
@@ -51,6 +52,10 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - Vue：`frontend/src/components/AiReviewModal.vue`
 - 数据库：`src/main/resources/db/migration/V11__extend_tool_call_audit.sql`
 - 设计说明：`docs/TOOL_CALLING_AGENT.md`
+- 反馈接口：`src/main/java/com/devmate/review/controller/ReviewFeedbackController.java`
+- 反馈业务：`src/main/java/com/devmate/review/service/ReviewFeedbackService.java`
+- 反馈迁移：`src/main/resources/db/migration/V12__add_code_review_feedback.sql`
+- 反馈设计：`docs/REVIEW_FEEDBACK.md`
 
 ## 4. 必须保持的架构边界
 
@@ -64,16 +69,16 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - 不记录或提交数据库密码、Git Token、模型 Key、完整 Prompt 和完整私有源码。
 - 已执行 Flyway 迁移不可修改，只能新增版本。
 
-## 5. 下一阶段：审查反馈与固定评测
+## 5. 下一阶段：固定缺陷集与效果评测
 
 阶段 8 的目标是证明效果，不继续堆框架。建议按以下小任务推进：
 
-1. 设计 V12 `code_review_feedback`，支持采纳、驳回、误报和备注。
-2. 增加 Finding 反馈接口和 Vue 操作，确保项目/Finding 归属校验。
-3. 建立包含已知并发、事务、SQL、安全、性能问题的固定 Java 提交集。
-4. 同一 Diff 分别运行固定流水线和 Agent 路径。
-5. 记录命中、漏报、误报、Token、耗时和工具成功率。
-6. 根据失败案例调整 Tool 描述、检索查询和 Prompt；版本号随变更更新。
+1. 先设计已知缺陷样本、标准答案、Finding 匹配规则和评测运行表，不先写模型调用代码。
+2. 建立包含并发、事务、SQL、安全和性能问题的固定 Java 提交集，同时包含无缺陷对照样本。
+3. 同一项目、revision 和 Diff 分别运行固定流水线与 Agent 路径。
+4. 记录命中、漏报、误报、Token、耗时、工具成功率和失败原因。
+5. 人工复核不能匹配的 Finding，避免用脆弱字符串相等冒充准确率。
+6. 根据失败案例调整 Tool 描述、检索查询和 Prompt；每次变化都更新版本号并重新评测。
 
 阶段 8 完成前不能在简历中宣称准确率，也不能宣称 Agent 优于固定流水线。
 
@@ -81,7 +86,7 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 
 可以直接发送：
 
-> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md 和 docs/PROJECT_LOG.md。检查 main 与未合并 PR 状态，确认工作区干净，然后从阶段 8 的“V12 审查反馈表设计”开始。先说明输入、输出、状态变化、失败路径和测试方案，再修改代码；完成后更新文档、运行后端与前端全量测试、验证真实 MySQL、新建分支并创建草稿 PR。
+> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_FEEDBACK.md 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区状态；审查反馈闭环和 V12 已完成。下一小任务是“已知缺陷固定数据集与评测表设计”：先说明样本格式、标准答案、Finding 匹配方法、输入输出、状态变化、失败路径和测试方案，再修改代码。不要提前引入 MQ、微服务或自动改码；完成后更新文档、运行后端与前端全量测试、验证真实 MySQL，并创建草稿 PR。
 
 ## 7. 验证命令
 
@@ -106,4 +111,6 @@ npm run build
 - Tool JSON Schema 是给模型的说明，不是安全边界；Java 白名单和二次参数校验才可信。
 - Agent 必须限制总步数、重复调用、超时、输出和证据预算，否则容易循环和失控消耗额度。
 - 日志既要能排障又要保护源码；保存哈希、键名、命中数、Token 和耗时，不复制完整内容。
+- `REJECTED` 是产品决策而非事实标签，只有 `FALSE_POSITIVE` 或经过人工标注的标准答案才能进入准确率统计。
+- 认证未完成前不能让客户端自报 `userId`；缺少可靠身份时宁可先做单一最新反馈，也不要保存可伪造的审计主体。
 - AI 可以高效生成模板和测试初稿，但开发者必须主导状态机、事务、安全、评测和技术取舍，并能独立解释和修改核心链路。

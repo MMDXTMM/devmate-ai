@@ -14,6 +14,8 @@ import type {
   RetrievalSearch,
   RetrievalSearchForm,
   AiReview,
+  ReviewFeedback,
+  ReviewFeedbackForm,
 } from '../types/project'
 
 export class ApiError extends Error {
@@ -154,6 +156,20 @@ export const projectApi = {
 
   latestAiReview(id: string): Promise<AiReview> {
     return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews/latest`)
+  },
+
+  upsertReviewFeedback(
+    projectId: string,
+    findingId: string,
+    form: ReviewFeedbackForm,
+  ): Promise<ReviewFeedback> {
+    return request(
+      `/api/projects/${encodeURIComponent(projectId)}/review-findings/${encodeURIComponent(findingId)}/feedback`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(form),
+      },
+    )
   },
 
   searchRetrieval(id: string, form: RetrievalSearchForm): Promise<RetrievalSearch> {

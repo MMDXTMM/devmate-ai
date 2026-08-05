@@ -224,6 +224,17 @@ tbody tr:hover { background: #fbfcfb; }
 .ai-finding-card dl div { padding: 10px; border-radius: 7px; background: #f8faf8; }
 .ai-finding-card dt { color: var(--muted); font-size: 9px; font-weight: 700; }
 .ai-finding-card dd { margin: 4px 0 0; font-size: 11px; line-height: 1.55; }
+.review-feedback-panel { margin-top: 13px; padding: 12px; border: 1px solid #dce6df; border-radius: 9px; background: #fbfdfb; }
+.review-feedback-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.review-feedback-title b, .review-feedback-title small { display: block; }
+.review-feedback-title b { font-size: 11px; }
+.review-feedback-title small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.review-feedback-title > span { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; color: var(--green); background: #e9f5ed; font-size: 9px; font-weight: 700; }
+.review-feedback-panel textarea { width: 100%; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; outline: 0; resize: vertical; background: #fff; font-size: 11px; }
+.review-feedback-panel textarea:focus { border-color: #719982; box-shadow: 0 0 0 3px rgba(27,105,70,.08); }
+.review-feedback-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.review-feedback-actions button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: #fff; font-size: 9px; font-weight: 700; }
+.review-feedback-actions button:hover:not(:disabled), .review-feedback-actions button.active { border-color: var(--green); color: var(--green); background: #edf6f0; }
 .tool-call-panel { border-bottom: 1px solid var(--line); background: #fff; }
 .tool-call-title { padding: 14px 22px 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .tool-call-title b, .tool-call-title small { display: block; }
