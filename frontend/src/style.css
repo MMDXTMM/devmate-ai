@@ -216,6 +216,7 @@ tbody tr:hover { background: #fbfcfb; }
 .ai-review-summary small { color: var(--muted); font-size: 9px; text-transform: uppercase; }
 .ai-review-summary b { margin-top: 5px; font: 600 11px 'DM Mono', monospace; overflow-wrap: anywhere; }
 .ai-review-button { color: var(--green) !important; border-color: #b8d5c4 !important; }
+.evaluation-button { color: #6d5516 !important; }
 .conclusion { padding: 3px 6px; border-radius: 5px; color: var(--muted); background: #f0f2f0; font-size: 8px; font-weight: 700; }
 .conclusion.fact { color: #286344; background: #e9f5ed; }
 .conclusion.needs_verification { color: #8c6418; background: #fff4d8; }
@@ -251,6 +252,48 @@ tbody tr:hover { background: #fbfcfb; }
 .tool-call-list code { margin-top: 3px; color: var(--muted); font: 500 8px 'DM Mono', monospace; overflow-wrap: anywhere; }
 .tool-call-list small { margin-top: 3px; color: #4d5750; font-size: 9px; }
 .tool-call-list em { color: var(--muted); font: normal 500 8px 'DM Mono', monospace; }
+
+.evaluation-modal { width: min(1080px, 100%); }
+.evaluation-toolbar { padding: 15px 22px; display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; align-items: end; gap: 12px; border-bottom: 1px solid var(--line); background: #fafbfa; }
+.evaluation-toolbar label span, .evaluation-toolbar div small, .evaluation-case-form label span { display: block; margin-bottom: 6px; color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.evaluation-toolbar input, .evaluation-case-form input, .evaluation-case-form select, .evaluation-case-form textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; outline: 0; background: #fff; }
+.evaluation-toolbar input:focus, .evaluation-case-form input:focus, .evaluation-case-form select:focus, .evaluation-case-form textarea:focus { border-color: #719982; box-shadow: 0 0 0 3px rgba(27,105,70,.08); }
+.evaluation-toolbar code { display: block; overflow-wrap: anywhere; color: var(--green); font: 500 9px 'DM Mono', monospace; }
+.evaluation-run-panel { padding: 15px 22px; display: flex; align-items: center; justify-content: space-between; gap: 15px; border-bottom: 1px solid var(--line); background: #f3f8f5; }
+.evaluation-run-panel b { font-size: 12px; }
+.evaluation-run-panel p { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
+.evaluation-comparison { padding: 18px 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border-bottom: 1px solid var(--line); }
+.evaluation-score-card { min-height: 250px; padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.evaluation-mode-head { display: flex; align-items: center; justify-content: space-between; }
+.evaluation-mode-head b { color: var(--green); font: 700 11px 'DM Mono', monospace; }
+.evaluation-mode-head span { padding: 4px 7px; border-radius: 999px; color: #755615; background: #fff2cb; font-size: 8px; font-weight: 700; }
+.evaluation-score-card > strong { display: block; margin-top: 12px; color: var(--ink); font: 700 34px 'DM Mono', monospace; }
+.evaluation-score-card > small { color: var(--muted); font: 600 8px 'DM Mono', monospace; }
+.evaluation-score-card dl { margin: 15px 0 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.evaluation-score-card dl div { padding: 9px; border-radius: 7px; background: #f7f9f7; }
+.evaluation-score-card dt { color: var(--muted); font-size: 8px; }
+.evaluation-score-card dd { margin: 4px 0 0; font: 600 10px 'DM Mono', monospace; }
+.evaluation-missing { min-height: 190px; display: grid; place-items: center; align-content: center; text-align: center; color: var(--muted); }
+.evaluation-missing b { color: var(--ink); font-size: 13px; }
+.evaluation-missing p { max-width: 260px; margin: 7px 0 0; font-size: 10px; line-height: 1.5; }
+.evaluation-cases, .evaluation-case-form { padding: 18px 22px; border-bottom: 1px solid var(--line); }
+.evaluation-section-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.evaluation-section-title b, .evaluation-section-title small { display: block; }
+.evaluation-section-title b { font-size: 12px; }
+.evaluation-section-title small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.evaluation-section-title > span { padding: 4px 8px; border-radius: 999px; color: var(--green); background: #e9f5ed; font-size: 9px; font-weight: 700; }
+.evaluation-case-list { margin-top: 12px; display: grid; gap: 7px; }
+.evaluation-case-list article { padding: 11px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.evaluation-case-list article > span { align-self: start; padding: 4px 6px; border-radius: 5px; color: #932f28; background: #ffebe8; font: 700 8px 'DM Mono', monospace; }
+.evaluation-case-list article > span.clean { color: #286344; background: #e9f5ed; }
+.evaluation-case-list b, .evaluation-case-list code, .evaluation-case-list small { display: block; }
+.evaluation-case-list b { font-size: 11px; }
+.evaluation-case-list code { margin-top: 4px; color: var(--green); overflow-wrap: anywhere; font: 500 8px 'DM Mono', monospace; }
+.evaluation-case-list small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.evaluation-case-form { background: #fafbfa; }
+.evaluation-form-grid { margin-top: 13px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.evaluation-form-grid label.wide { grid-column: 1 / -1; }
+.evaluation-case-form textarea { resize: vertical; }
 
 .retrieval-modal { width: min(980px, 100%); }
 .retrieval-form { padding: 18px 22px; border-bottom: 1px solid var(--line); background: #fafbfa; }
@@ -308,4 +351,7 @@ tbody tr:hover { background: #fbfcfb; }
   .ai-review-actions { flex-direction: column; }
   .ai-review-summary, .ai-finding-card dl { grid-template-columns: 1fr; }
   .retrieval-controls, .retrieval-summary { grid-template-columns: 1fr 1fr; }
+  .evaluation-toolbar, .evaluation-comparison, .evaluation-form-grid { grid-template-columns: 1fr; }
+  .evaluation-form-grid label.wide { grid-column: auto; }
+  .evaluation-run-panel { align-items: stretch; flex-direction: column; }
 }

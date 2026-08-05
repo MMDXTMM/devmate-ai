@@ -16,6 +16,9 @@ import type {
   AiReview,
   ReviewFeedback,
   ReviewFeedbackForm,
+  ReviewEvaluationCase,
+  ReviewEvaluationCaseForm,
+  ReviewEvaluationRun,
 } from '../types/project'
 
 export class ApiError extends Error {
@@ -156,6 +159,49 @@ export const projectApi = {
 
   latestAiReview(id: string): Promise<AiReview> {
     return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews/latest`)
+  },
+
+  createReviewEvaluationCase(
+    projectId: string,
+    form: ReviewEvaluationCaseForm,
+  ): Promise<ReviewEvaluationCase> {
+    return request(`/api/projects/${encodeURIComponent(projectId)}/review-evaluation-cases`, {
+      method: 'POST',
+      body: JSON.stringify(form),
+    })
+  },
+
+  listReviewEvaluationCases(
+    projectId: string,
+    datasetVersion: string,
+    reviewTaskId: string,
+  ): Promise<ReviewEvaluationCase[]> {
+    const params = new URLSearchParams({ datasetVersion, reviewTaskId })
+    return request(
+      `/api/projects/${encodeURIComponent(projectId)}/review-evaluation-cases?${params.toString()}`,
+    )
+  },
+
+  runReviewEvaluation(
+    projectId: string,
+    datasetVersion: string,
+    aiReviewTaskId: string,
+  ): Promise<ReviewEvaluationRun> {
+    return request(`/api/projects/${encodeURIComponent(projectId)}/review-evaluation-runs`, {
+      method: 'POST',
+      body: JSON.stringify({ datasetVersion, aiReviewTaskId }),
+    })
+  },
+
+  listReviewEvaluationRuns(
+    projectId: string,
+    datasetVersion: string,
+    reviewTaskId: string,
+  ): Promise<ReviewEvaluationRun[]> {
+    const params = new URLSearchParams({ datasetVersion, reviewTaskId })
+    return request(
+      `/api/projects/${encodeURIComponent(projectId)}/review-evaluation-runs?${params.toString()}`,
+    )
   },
 
   upsertReviewFeedback(

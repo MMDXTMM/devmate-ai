@@ -31,6 +31,8 @@ MySQL 或 H2
 - AI Finding 展示服务端证据位置、事实/推断/待验证、置信度、风险场景、建议和验证方法。
 - AI 审查提供“固定流水线”和“Agent 智能取证”两个显式入口；Agent 结果展示脱敏工具调用顺序、状态和耗时。
 - 每条 AI Finding 支持填写可选备注并标记采纳、驳回、误报或稍后处理；保存反馈不会重跑模型。
+- 支持为最近成功 Diff 录入版本化的缺陷/无缺陷标准答案，并评测最近一次已完成 AI 审查。
+- 支持并排比较 FIXED/AGENT 的质量、Token、耗时和工具成功率；部分指标会显式提示，前端不能指定或篡改任务执行模式。
 
 ## 3. 目录职责
 
@@ -39,6 +41,7 @@ frontend/
 ├── src/App.vue                         页面状态和业务交互
 ├── src/components/ProjectFormModal.vue 新建/编辑表单
 ├── src/components/AiReviewModal.vue    AI 审查入口与报告
+├── src/components/ReviewEvaluationModal.vue 固定评测集与 A/B 对比
 ├── src/services/projectApi.ts          HTTP 请求和统一异常
 ├── src/types/project.ts                接口类型
 ├── src/style.css                       页面样式和响应式布局
@@ -78,6 +81,7 @@ npm run dev
 - AI 审查必须显式触发，且结构化证据和验证步骤可见。
 - Agent 模式必须显式触发，且工具调用链可见；前端不发送模型密钥或项目 revision。
 - Finding 反馈路径、字符串 ID、局部状态更新和后端失败提示。
+- 评测标准答案字段约束、显式运行、FIXED/AGENT 快照对比，以及评测请求不发送执行模式。
 
 执行：
 
@@ -88,7 +92,7 @@ npm run build
 npm audit
 ```
 
-2026-08-05 自动化回归通过：24 项前端测试与生产构建成功；两种 AI 审查均需显式触发，Agent 工具链可见，反馈不会重新消费模型额度，失败任务不会被展示为无风险。真实模型和 MySQL 联调结果记录在对应阶段文档。
+2026-08-05 自动化回归通过：29 项前端测试与生产构建成功；两种 AI 审查均需显式触发，Agent 工具链可见，反馈不会重新消费模型额度，失败任务不会被展示为无风险。评测页只计算已保存任务，不会自动调用模型。真实模型和 MySQL 联调结果记录在对应阶段文档。
 
 ## 6. 后续演进
 

@@ -321,6 +321,83 @@ describe('projectApi', () => {
     expect(result.feedbackType).toBe('FALSE_POSITIVE')
   })
 
+  it('creates and lists project-scoped review evaluation cases', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        message: 'success',
+        data: { id: '21', projectId: '1', reviewTaskId: '2', datasetVersion: 'known-v1' },
+        timestamp: '2026-08-05T00:00:00Z',
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        message: 'success',
+        data: [],
+        timestamp: '2026-08-05T00:00:00Z',
+      }))
+
+    const form = {
+      reviewTaskId: '2',
+      datasetVersion: 'known-v1',
+      caseKey: 'lost-update',
+      name: '库存丢失更新',
+      expectationType: 'DEFECT' as const,
+      category: 'CONCURRENCY' as const,
+      filePath: 'src/OrderService.java',
+      startLine: 20,
+      endLine: 32,
+      rationale: '并发请求可能同时通过库存检查',
+    }
+
+    await projectApi.createReviewEvaluationCase('1', form)
+    await projectApi.listReviewEvaluationCases('1', 'known-v1', '2')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/projects/1/review-evaluation-cases',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(form) }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/projects/1/review-evaluation-cases?datasetVersion=known-v1&reviewTaskId=2',
+      expect.any(Object),
+    )
+  })
+
+  it('runs and lists evaluation snapshots without choosing an execution mode in the request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        message: 'success',
+        data: { id: '31', executionMode: 'AGENT', precision: 1, recall: 0.5, f1: 0.6667 },
+        timestamp: '2026-08-05T00:00:00Z',
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        message: 'success',
+        data: [],
+        timestamp: '2026-08-05T00:00:00Z',
+      }))
+
+    await projectApi.runReviewEvaluation('1', 'known-v1', '9')
+    await projectApi.listReviewEvaluationRuns('1', 'known-v1', '2')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/projects/1/review-evaluation-runs',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ datasetVersion: 'known-v1', aiReviewTaskId: '9' }),
+      }),
+    )
+    expect(fetchMock.mock.calls[0][1]?.body).not.toContain('executionMode')
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/projects/1/review-evaluation-runs?datasetVersion=known-v1&reviewTaskId=2',
+      expect.any(Object),
+    )
+  })
+
   it('searches version-isolated context with an explicit token budget', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       code: 0,

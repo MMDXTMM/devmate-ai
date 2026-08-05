@@ -6,6 +6,7 @@ import DiffReportModal from './components/DiffReportModal.vue'
 import StaticAnalysisModal from './components/StaticAnalysisModal.vue'
 import RetrievalModal from './components/RetrievalModal.vue'
 import AiReviewModal from './components/AiReviewModal.vue'
+import ReviewEvaluationModal from './components/ReviewEvaluationModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
 
@@ -25,6 +26,7 @@ const diffProject = ref<Project | null>(null)
 const analysisProject = ref<Project | null>(null)
 const retrievalProject = ref<Project | null>(null)
 const aiReviewProject = ref<Project | null>(null)
+const evaluationProject = ref<Project | null>(null)
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
 const rangeText = computed(() => {
@@ -285,6 +287,12 @@ onMounted(() => loadProjects())
                     :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
                     @click="aiReviewProject = project"
                   >AI审查</button>
+                  <button
+                    class="evaluation-button"
+                    type="button"
+                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    @click="evaluationProject = project"
+                  >评测</button>
                   <button type="button" :disabled="importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
                   <button class="danger" type="button" :disabled="deletingId === project.id || importingId === project.id" @click="removeProject(project)">
                     {{ deletingId === project.id ? '删除中' : '删除' }}
@@ -341,6 +349,12 @@ onMounted(() => loadProjects())
       :project-id="aiReviewProject?.id"
       :project-name="aiReviewProject?.name"
       @close="aiReviewProject = null"
+    />
+    <ReviewEvaluationModal
+      :open="evaluationProject !== null"
+      :project-id="evaluationProject?.id"
+      :project-name="evaluationProject?.name"
+      @close="evaluationProject = null"
     />
   </div>
 </template>
