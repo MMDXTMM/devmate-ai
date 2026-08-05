@@ -9,7 +9,17 @@
 - `DEFECT` 场景：一个或多个带类别、相对路径和目标版本行范围的缺陷；
 - `CLEAN` 场景：没有已知缺陷的对照变更。
 
-每个场景必须独立生成一个 Diff。V13 的评测约束不允许同一 Diff 和数据集版本同时包含 `DEFECT` 与 `CLEAN`，因此不能把所有 target 文件一次性提交。
+每个场景必须独立生成一个 Diff。V13 的评测约束不允许同一 Diff 和数据集版本同时包含 `DEFECT` 与 `CLEAN`，因此不能把所有 candidate 文件一次性提交。
+
+## 可导入 Git 仓库
+
+- 地址：`https://github.com/MMDXTMM/devmate-review-benchmark.git`
+- 分支：`case-001` 至 `case-008`
+- 每个分支的 HEAD 是 candidate 提交，`HEAD^` 是 base 提交；符合系统默认 Diff 规则。
+- 分支使用不表达缺陷类别的编号，避免把人工答案泄漏给模型。
+- `known-defects-v1/revisions.json` 固定每个场景的分支、base revision 和 candidate revision。
+
+`ReviewBenchmarkRepositoryBuilder` 使用 JGit、固定作者、提交时间、消息和父提交生成确定性历史。`ReviewBenchmarkGitHistoryTest` 会生成两次仓库并断言 revision 完全相同，同时检查每个候选提交只有一个父提交且 Diff 只修改一个 Java 文件。
 
 ## 约束
 
@@ -26,8 +36,8 @@
 1. 场景键和标准答案键唯一；
 2. 类别属于系统支持的 `AiFindingCategory`；
 3. 路径是项目内相对路径且文件真实存在；
-4. 行范围位于 target 文件内；
+4. 行范围位于 candidate 文件内；
 5. base 与 candidate 快照确实存在变更；
 6. CLEAN 场景没有缺陷定位，DEFECT 场景至少有一个标准答案。
 
-后续任务会将每个场景转换成独立 Git 提交，再通过现有导入、Diff、FIXED、AGENT 和 V13 评测接口运行第一轮 A/B。
+后续任务直接通过上述公开仓库执行源码导入、Diff、FIXED、AGENT 和 V13 评测接口的第一轮 A/B。

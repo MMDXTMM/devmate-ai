@@ -129,7 +129,7 @@ V13 同时为 `ai_review_task` 增加 `execution_mode=FIXED/AGENT`。模式由�
 - 相同 AI 任务和数据集哈希重复执行幂等返回；
 - H2 从空库执行 V1–V13，并在真实 MySQL 验证 V12→V13。
 
-当前验证结果：后端 105 项测试、前端 29 项测试和 Vue 生产构建全部通过；本机 MySQL 已从 V12 成功迁移到 V13，健康检查为 `UP`，原项目数据保持可读。评测工作台和样本契约没有新增数据库结构，也没有调用真实模型。
+当前验证结果：后端 107 项测试、前端 29 项测试和 Vue 生产构建全部通过；本机 MySQL 已从 V12 成功迁移到 V13，健康检查为 `UP`，原项目数据保持可读。评测工作台和样本契约没有新增数据库结构，也没有调用真实模型。
 
 ## 10. 第一版真实缺陷样本契约
 
@@ -148,4 +148,26 @@ V13 同时为 `ai_review_task` 增加 `execution_mode=FIXED/AGENT`。模式由�
 
 `manifest.json` 是人工标准答案源，行号绑定 candidate 快照。自动契约测试会拒绝重复键、路径逃逸、越界行号、未发生真实变更的快照，以及没有覆盖目标变更行的标准答案。该目录产生真实运行后冻结；修改标准答案必须创建新版本。
 
-当前只完成样本定义和自动校验，尚未将快照发布为可导入的 Git 提交，也尚未产生真实 FIXED/AGENT 指标。
+当前已完成样本定义、自动校验、确定性 Git 历史和公开仓库发布，但尚未产生真实 FIXED/AGENT 指标。
+
+## 11. 可复现 Git 历史
+
+样本已发布到 `https://github.com/MMDXTMM/devmate-review-benchmark.git`。每个场景映射到不携带缺陷语义的 `case-NNN` 分支：
+
+```text
+main 根提交
+  └── base revision
+        └── candidate revision（分支 HEAD）
+```
+
+因此系统使用默认 `HEAD^ → HEAD` 即可得到单场景 Diff。`revisions.json` 记录 base 和 candidate SHA；生成器固定文件树、父提交、作者、提交者、时间和消息，重复生成必须得到相同 SHA。
+
+自动测试还验证：
+
+- 8 个分支名唯一且使用 `case-NNN`，不把缺陷类别泄漏给模型；
+- candidate 只有一个父提交，base 的父提交是 main；
+- base/candidate 之间仅有一个 Java 文件 `MODIFY`；
+- 输出目录非空时拒绝覆盖；
+- 远端分支 HEAD 发布后与本地 revision 清单逐一一致。
+
+样本仓库只包含虚构 Java 代码和中性 README；缺陷名称、类别、路径、行号和人工依据只保存在主仓库 manifest，不进入待审查仓库。

@@ -1,0 +1,54 @@
+{
+  "datasetVersion": "known-defects-v1",
+  "repositoryUrl": "https://github.com/MMDXTMM/devmate-review-benchmark.git",
+  "scenarios": [
+    {
+      "scenarioKey": "concurrency-lost-update",
+      "repositoryBranch": "case-001",
+      "baseRevision": "4d9800185c650267fba73b0df1221b3e5f834317",
+      "candidateRevision": "d1eec311740e58fe8ad7236551497d3f82fb55c0"
+    },
+    {
+      "scenarioKey": "transaction-self-invocation",
+      "repositoryBranch": "case-002",
+      "baseRevision": "957f1b35da391514306781e8e2d6c534e4d9799a",
+      "candidateRevision": "9303b12b69e51119ae5528a9e993d99b7709948a"
+    },
+    {
+      "scenarioKey": "cache-stampede",
+      "repositoryBranch": "case-003",
+      "baseRevision": "0a174243062669ccf14149b5c3849958bb0a0151",
+      "candidateRevision": "d84addb960fd22400209c3ecf45e7513d43d18f4"
+    },
+    {
+      "scenarioKey": "message-ack-before-persist",
+      "repositoryBranch": "case-004",
+      "baseRevision": "db8ed88699987aff608bd9bfa0aff9756f45519c",
+      "candidateRevision": "f222dd7c4f4c3f260c31c8cb22cfdef055eb453e"
+    },
+    {
+      "scenarioKey": "sql-query-in-loop",
+      "repositoryBranch": "case-005",
+      "baseRevision": "3d44756a41f9f4e881a620683429665a0c2b7c8d",
+      "candidateRevision": "2df013bf8ceecd1ad6ae8948467c3bcc18468d48"
+    },
+    {
+      "scenarioKey": "security-path-traversal",
+      "repositoryBranch": "case-006",
+      "baseRevision": "915e88655f2f8a69fb7cb9a4949a98d8255a0188",
+      "candidateRevision": "00f60223e5e37bf0f688b8dcdb9dd1f8e5d3adf7"
+    },
+    {
+      "scenarioKey": "performance-remote-call-under-lock",
+      "repositoryBranch": "case-007",
+      "baseRevision": "5cda1fec049cc0f4e68ee93b7f2b527b48ac75df",
+      "candidateRevision": "b75410086425555769cb7af7323097acac929758"
+    },
+    {
+      "scenarioKey": "clean-batch-query",
+      "repositoryBranch": "case-008",
+      "baseRevision": "84593394c3f7d8c0ea3accfc0c6dcbd687b51b62",
+      "candidateRevision": "a9095302063a2db6441affff7179b239c3f06eee"
+    }
+  ]
+}
