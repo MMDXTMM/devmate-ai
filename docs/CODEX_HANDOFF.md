@@ -33,11 +33,11 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | AI 审查 | 完成工程闭环 | DashScope JSON 输出、Chunk 白名单、结构化 Finding、任务审计 |
 | Tool Calling Agent | 完成工程闭环 | 四个只读 Tool、Qwen 多轮协议、限制与审计、Vue 调用链 |
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
-| 效果评测 | 完成数据、计算与 Vue 工作台闭环 | 固定缺陷/无缺陷用例、FIXED/AGENT 快照、TP/FP/FN、质量与成本指标、A/B 展示 |
+| 效果评测 | 完成数据、计算、Vue 工作台与样本契约 | FIXED/AGENT 快照、TP/FP/FN、A/B 展示、8 个 base/candidate 固定样本 |
 
 当前数据库版本为 V13。H2 已验证从空库执行 V1–V13；本机 MySQL 已从 V12 成功迁移到 V13，健康检查为 `UP`，原项目 `2084116785588305922` 保持可读。
 
-当前自动化基线：后端 103 项测试通过；前端 29 项测试通过；Vue 生产构建通过。
+当前自动化基线：后端 105 项测试通过；前端 29 项测试通过；Vue 生产构建通过。
 
 ## 3. 当前核心代码入口
 
@@ -64,6 +64,9 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - 评测设计：`docs/REVIEW_EVALUATION.md`
 - 评测 Vue：`frontend/src/components/ReviewEvaluationModal.vue`
 - 评测请求与类型：`frontend/src/services/projectApi.ts`、`frontend/src/types/project.ts`
+- 固定样本说明：`benchmarks/review-fixtures/README.md`
+- 第一版样本清单：`benchmarks/review-fixtures/known-defects-v1/manifest.json`
+- 样本契约测试：`src/test/java/com/devmate/review/benchmark/ReviewBenchmarkFixtureContractTest.java`
 
 ## 4. 必须保持的架构边界
 
@@ -79,7 +82,7 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 
 ## 5. 当前精确暂停点
 
-V13 的后端评测模型和 Vue 评测工作台均已完成。工作台自动绑定最近成功 Diff，可录入标准答案、评测最近一次 AI 任务，并排展示 FIXED/AGENT 指标。它不会调用模型，也不会让客户端指定执行模式。
+V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1` 已增加 8 个独立 base/candidate 样本，覆盖并发、事务、缓存、消息、SQL、安全、性能和 CLEAN 对照；清单中的标准答案已经契约测试校验，但尚未生成可被系统导入的真实 Git 历史，也没有运行模型。
 
 当前交互限制是 AI 接口只提供最近任务，因此完整 A/B 顺序为：
 
@@ -89,18 +92,18 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。工作台自动�
 返回评测页查看两种历史快照
 ```
 
-不要为了消除这一步操作立刻扩展历史接口；先在真实缺陷提交集上验证流程是否真的构成瓶颈。
+不要为了消除这一步操作立刻扩展历史接口；先把样本转换为真实 Git 提交并验证流程是否真的构成瓶颈。
 
 ## 6. 下一阶段：真实缺陷提交集与第一轮 A/B
 
 阶段 8 的目标是证明效果，不继续堆框架。建议按以下小任务推进：
 
-1. 建立包含并发、事务、SQL、安全和性能问题的固定 Java 提交集，同时包含无缺陷对照样本。
-2. 通过现有 API 为每个成功 Diff 录入人工标准答案，不复制完整源码到评测表。
-3. 同一项目、revision 和 Diff 分别运行固定流水线与 Agent 路径。
-4. 使用现有 Vue 评测页分别保存 FIXED/AGENT 运行，核对项目、Diff、revision、模型和数据集一致。
-5. 人工复核 `partialMetrics` 中不能自动匹配的 Finding，并记录失败原因。
-6. 根据失败案例调整 Tool 描述、检索查询和 Prompt；每次变化都更新版本号并重新评测。
+1. 将 `known-defects-v1` 的每组 base/candidate 快照转换成独立、稳定的 Git 提交；不能把 CLEAN 与 DEFECT 合并进同一个 Diff。
+2. 发布为系统可通过 HTTPS 安全导入的 fixture 仓库，记录每个场景的 base/target revision 映射，不提交凭证。
+3. 通过现有 API 为每个成功 Diff 录入清单中的人工标准答案，不复制完整源码到评测表。
+4. 同一项目、revision 和 Diff 分别运行固定流水线与 Agent 路径。
+5. 使用现有 Vue 评测页分别保存 FIXED/AGENT 运行，核对项目、Diff、revision、模型和数据集一致。
+6. 人工复核 `partialMetrics` 中不能自动匹配的 Finding，并记录失败原因；之后才允许按失败案例调整 Tool、检索和 Prompt 版本。
 
 阶段 8 完成前不能在简历中宣称准确率，也不能宣称 Agent 优于固定流水线。
 
@@ -108,7 +111,7 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。工作台自动�
 
 可以直接发送：
 
-> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区状态；V13 固定缺陷评测后端和 Vue A/B 工作台已完成，自动化基线是后端 103 项、前端 29 项。下一小任务只做“真实缺陷提交集与第一轮 A/B”：先设计一个独立、可安全导入的 Java fixture 仓库或目录，包含并发、事务、SQL、安全、性能缺陷和 CLEAN 对照，每个缺陷都必须有人工依据、稳定路径和行范围；再用现有导入、Diff、FIXED/AGENT、评测接口跑出可复现结果。不要先改 Prompt，不要引入 MQ、微服务或自动改码，也不要把 Mock 指标写进简历。完成后更新文档、运行前后端全量测试，并创建草稿 PR。
+> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md、benchmarks/review-fixtures/README.md 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区状态；V13 评测后端、Vue A/B 工作台和 `known-defects-v1` 的 8 个 base/candidate 样本契约已经完成。下一小任务只做“生成可导入的 fixture Git 历史”：将每个场景转换为独立 base/candidate 提交，记录 revision 映射并自动验证 Diff 与 manifest 一致；如需发布新 GitHub fixture 仓库，仓库只包含虚构样本且不得保存凭证。不要先改 Prompt，不要引入 MQ、微服务或自动改码，也不要把 Mock 指标写进简历。完成后更新文档并运行全量测试。
 
 ## 8. 验证命令
 
@@ -138,3 +141,4 @@ npm run build
 - AI 可以高效生成模板和测试初稿，但开发者必须主导状态机、事务、安全、评测和技术取舍，并能独立解释和修改核心链路。
 - A/B 看板不能自行选择执行模式；模式必须来自已落库任务，否则前端标签可以伪造实验条件。
 - 评测页面打开和加载数据不应产生模型费用；模型运行与指标计算是两个显式步骤，便于重试、审计和控制额度。
+- 固定缺陷集必须把“样本代码”和“人工标准答案”分离；目标源码内不能放泄漏答案的 Bug 标记，标准答案必须自动校验确实覆盖目标 Diff。
