@@ -214,6 +214,19 @@ export interface AiReviewFinding {
   verification: string
 }
 
+export interface ToolCall {
+  id: string
+  toolCallId: string
+  stepNo: number
+  toolName: string
+  argumentsSummary: string
+  resultSummary?: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  latencyMs: number
+  errorMessage?: string
+  createdAt: string
+}
+
 export interface AiReview {
   id: string
   projectId: string
@@ -238,6 +251,7 @@ export interface AiReview {
   createdAt: string
   finishedAt?: string
   findings: AiReviewFinding[]
+  toolCalls: ToolCall[]
 }
 
 export type RetrievalTrimReason = 'DUPLICATE_CONTENT' | 'TOKEN_BUDGET' | 'TOP_K'

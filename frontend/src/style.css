@@ -209,6 +209,7 @@ tbody tr:hover { background: #fbfcfb; }
 .ai-review-intro b { font-size: 12px; }
 .ai-review-intro p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .ai-review-intro .button { flex: 0 0 auto; }
+.ai-review-actions { display: flex; flex: 0 0 auto; gap: 8px; }
 .ai-review-summary { padding: 16px 22px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; border-bottom: 1px solid var(--line); background: #fafbfa; }
 .ai-review-summary span { padding: 11px 12px; border-radius: 8px; background: #fff; }
 .ai-review-summary small, .ai-review-summary b { display: block; }
@@ -223,6 +224,22 @@ tbody tr:hover { background: #fbfcfb; }
 .ai-finding-card dl div { padding: 10px; border-radius: 7px; background: #f8faf8; }
 .ai-finding-card dt { color: var(--muted); font-size: 9px; font-weight: 700; }
 .ai-finding-card dd { margin: 4px 0 0; font-size: 11px; line-height: 1.55; }
+.tool-call-panel { border-bottom: 1px solid var(--line); background: #fff; }
+.tool-call-title { padding: 14px 22px 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.tool-call-title b, .tool-call-title small { display: block; }
+.tool-call-title b { font-size: 12px; }
+.tool-call-title small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.tool-call-title > span { padding: 4px 8px; border-radius: 999px; color: var(--green); background: #e9f5ed; font: 600 9px 'DM Mono', monospace; }
+.tool-call-list { margin: 0; padding: 0 22px 16px; list-style: none; }
+.tool-call-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.tool-call-list li + li { margin-top: 7px; }
+.tool-call-list li.failed { border-color: #efc3be; background: #fff8f7; }
+.tool-step { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; color: #fff; background: var(--green); font: 700 9px 'DM Mono', monospace; }
+.tool-call-list b, .tool-call-list code, .tool-call-list small { display: block; }
+.tool-call-list b { font-size: 11px; }
+.tool-call-list code { margin-top: 3px; color: var(--muted); font: 500 8px 'DM Mono', monospace; overflow-wrap: anywhere; }
+.tool-call-list small { margin-top: 3px; color: #4d5750; font-size: 9px; }
+.tool-call-list em { color: var(--muted); font: normal 500 8px 'DM Mono', monospace; }
 
 .retrieval-modal { width: min(980px, 100%); }
 .retrieval-form { padding: 18px 22px; border-bottom: 1px solid var(--line); background: #fafbfa; }
@@ -277,6 +294,7 @@ tbody tr:hover { background: #fbfcfb; }
   .diff-summary { grid-template-columns: repeat(2, 1fr); }
   .analysis-summary { grid-template-columns: 1fr; }
   .ai-review-intro { align-items: stretch; flex-direction: column; }
+  .ai-review-actions { flex-direction: column; }
   .ai-review-summary, .ai-finding-card dl { grid-template-columns: 1fr; }
   .retrieval-controls, .retrieval-summary { grid-template-columns: 1fr 1fr; }
 }

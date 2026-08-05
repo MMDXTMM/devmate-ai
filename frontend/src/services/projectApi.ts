@@ -146,6 +146,12 @@ export const projectApi = {
     })
   },
 
+  createAgentAiReview(id: string): Promise<AiReview> {
+    return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews/agent`, {
+      method: 'POST',
+    })
+  },
+
   latestAiReview(id: string): Promise<AiReview> {
     return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews/latest`)
   },

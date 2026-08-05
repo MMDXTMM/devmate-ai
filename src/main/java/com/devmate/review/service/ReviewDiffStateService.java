@@ -141,6 +141,21 @@ public class ReviewDiffStateService {
         return toResponse(task, listFiles(task.getId()));
     }
 
+    @Transactional(readOnly = true)
+    public ReviewDiffResponse getByTask(Long projectId, Long taskId) {
+        if (projectMapper.selectById(projectId) == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
+        }
+        CodeReviewTask task = taskMapper.selectOne(Wrappers.lambdaQuery(CodeReviewTask.class)
+                .eq(CodeReviewTask::getId, taskId)
+                .eq(CodeReviewTask::getProjectId, projectId)
+                .last("LIMIT 1"));
+        if (task == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "Diff任务不存在");
+        }
+        return toResponse(task, listFiles(task.getId()));
+    }
+
     private List<CodeReviewFile> listFiles(Long reviewTaskId) {
         return fileMapper.selectList(Wrappers.lambdaQuery(CodeReviewFile.class)
                 .eq(CodeReviewFile::getReviewTaskId, reviewTaskId)

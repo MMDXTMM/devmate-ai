@@ -29,9 +29,11 @@ public record AiReviewResponse(
         String errorMessage,
         LocalDateTime createdAt,
         LocalDateTime finishedAt,
-        List<AiReviewFindingResponse> findings
+        List<AiReviewFindingResponse> findings,
+        List<ToolCallResponse> toolCalls
 ) {
     public AiReviewResponse {
         findings = List.copyOf(findings);
+        toolCalls = List.copyOf(toolCalls);
     }
 }

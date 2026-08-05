@@ -92,3 +92,16 @@ devmate:
     connect-timeout: 5s
     read-timeout: 90s
     stale-task-timeout: 10m
+  review-agent:
+    prompt-version: review-agent-v1
+    max-tool-calls: 6
+    max-repeated-calls: 2
+    max-evidence-chunks: 20
+    max-evidence-tokens: 8000
+    search-top-k: 6
+    search-token-budget: 2500
+    max-structure-documents: 50
+    max-static-findings: 50
+    max-diff-files: 50
+    max-tool-output-characters: 16000
+    tool-timeout: 20s
