@@ -272,6 +272,86 @@ export interface AiReview {
   toolCalls: ToolCall[]
 }
 
+export type AiFindingCategory =
+  | 'CONCURRENCY'
+  | 'TRANSACTION'
+  | 'CACHE'
+  | 'MESSAGE'
+  | 'SQL'
+  | 'SECURITY'
+  | 'ARCHITECTURE'
+  | 'PERFORMANCE'
+  | 'RELIABILITY'
+
+export type ReviewExpectationType = 'DEFECT' | 'CLEAN'
+
+export interface ReviewEvaluationCaseForm {
+  reviewTaskId: string
+  datasetVersion: string
+  caseKey: string
+  name: string
+  expectationType: ReviewExpectationType
+  category?: AiFindingCategory
+  filePath?: string
+  startLine?: number
+  endLine?: number
+  rationale: string
+}
+
+export interface ReviewEvaluationCase extends ReviewEvaluationCaseForm {
+  id: string
+  projectId: string
+  targetRevision: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ReviewEvaluationOutcome =
+  | 'TRUE_POSITIVE'
+  | 'FALSE_POSITIVE'
+  | 'FALSE_NEGATIVE'
+  | 'MANUAL_REVIEW'
+  | 'CLEAN_PASS'
+
+export interface ReviewEvaluationItemResult {
+  expectedCaseId?: string
+  findingId?: string
+  outcome: ReviewEvaluationOutcome
+  reason: string
+}
+
+export interface ReviewEvaluationRun {
+  id: string
+  projectId: string
+  reviewTaskId: string
+  aiReviewTaskId: string
+  datasetVersion: string
+  datasetHash: string
+  executionMode: 'FIXED' | 'AGENT'
+  revision: string
+  modelName: string
+  promptVersion: string
+  retrievalConfigVersion?: string
+  status: 'SUCCEEDED' | 'FAILED'
+  expectedDefects: number
+  predictedFindings: number
+  truePositives: number
+  falsePositives: number
+  falseNegatives: number
+  manualReviewCount: number
+  partialMetrics: boolean
+  precision: number
+  recall: number
+  f1: number
+  totalTokens: number
+  latencyMs: number
+  toolCallCount: number
+  toolSuccessCount: number
+  createdAt: string
+  finishedAt?: string
+  results: ReviewEvaluationItemResult[]
+}
+
 export type RetrievalTrimReason = 'DUPLICATE_CONTENT' | 'TOKEN_BUDGET' | 'TOP_K'
 export type RetrievalMode = 'LEXICAL' | 'VECTOR' | 'HYBRID'
 
