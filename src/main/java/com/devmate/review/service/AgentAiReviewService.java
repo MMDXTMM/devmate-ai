@@ -13,6 +13,7 @@ import com.devmate.common.error.BusinessException;
 import com.devmate.common.error.ErrorCode;
 import com.devmate.review.dto.AiReviewResponse;
 import com.devmate.review.model.AiFindingValidationResult;
+import com.devmate.review.model.ReviewExecutionMode;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
@@ -46,7 +47,8 @@ public class AgentAiReviewService {
     public AiReviewResponse create(Long projectId) {
         AiReviewModel model = modelRegistry.current();
         AiReviewContext context = stateService.prepare(
-                projectId, model.providerName(), model.modelName(), properties.getPromptVersion()
+                projectId, model.providerName(), model.modelName(), properties.getPromptVersion(),
+                ReviewExecutionMode.AGENT
         );
         long startedAt = System.nanoTime();
         AiReviewPrompt prompt = null;

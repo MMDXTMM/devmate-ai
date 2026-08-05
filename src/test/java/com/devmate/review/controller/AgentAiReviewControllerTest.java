@@ -91,6 +91,7 @@ class AgentAiReviewControllerTest {
         mockMvc.perform(post("/api/projects/{projectId}/ai-reviews/agent", fixture.projectId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.executionMode").value("AGENT"))
                 .andExpect(jsonPath("$.data.promptVersion").value("review-agent-v1"))
                 .andExpect(jsonPath("$.data.findingCount").value(1))
                 .andExpect(jsonPath("$.data.totalTokens").value(200))
@@ -99,6 +100,7 @@ class AgentAiReviewControllerTest {
                 .andExpect(jsonPath("$.data.toolCalls[0].status").value("SUCCEEDED"));
 
         AiReviewTask task = latestTask(fixture.projectId());
+        assertThat(task.getExecutionMode()).isEqualTo("AGENT");
         AiInvocationLog invocation = invocationMapper.selectById(task.getInvocationId());
         assertThat(invocation.getTotalTokens()).isEqualTo(200);
         ToolCallLog log = toolCallLogMapper.selectOne(Wrappers.lambdaQuery(ToolCallLog.class)

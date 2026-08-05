@@ -32,6 +32,7 @@ import com.devmate.review.mapper.CodeReviewFileMapper;
 import com.devmate.review.mapper.CodeReviewTaskMapper;
 import com.devmate.review.mapper.ReviewFindingMapper;
 import com.devmate.review.mapper.StaticAnalysisTaskMapper;
+import com.devmate.review.model.ReviewExecutionMode;
 import com.devmate.review.service.AiReviewContext;
 import com.devmate.review.service.AiReviewStateService;
 import org.junit.jupiter.api.Test;
@@ -108,6 +109,7 @@ class AiReviewControllerTest {
                 .andExpect(jsonPath("$.data.id").isString())
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.provider").value("TEST"))
+                .andExpect(jsonPath("$.data.executionMode").value("FIXED"))
                 .andExpect(jsonPath("$.data.findingCount").value(1))
                 .andExpect(jsonPath("$.data.rejectedFindings").value(0))
                 .andExpect(jsonPath("$.data.totalTokens").value(150))
@@ -118,6 +120,7 @@ class AiReviewControllerTest {
 
         AiReviewTask task = latestTask(fixture.projectId());
         assertThat(task.getRunningKey()).isNull();
+        assertThat(task.getExecutionMode()).isEqualTo("FIXED");
         assertThat(task.getRetrievalMode()).isEqualTo("LEXICAL_FALLBACK");
         AiInvocationLog invocation = invocationMapper.selectById(task.getInvocationId());
         assertThat(invocation.getStatus()).isEqualTo("SUCCEEDED");
@@ -191,12 +194,12 @@ class AiReviewControllerTest {
     void databaseUniqueKeyPreventsConcurrentReviewForSameDiff() {
         Fixture fixture = fixture("ai-review-duplicate");
         AiReviewContext first = stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1"
+                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         );
 
         assertThat(first.aiReviewTaskId()).isNotNull();
         assertThatThrownBy(() -> stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1"
+                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         )).hasMessage("当前Diff已有AI审查任务正在运行");
     }
 
@@ -204,14 +207,14 @@ class AiReviewControllerTest {
     void staleRunningTaskIsFailedBeforeRetryStarts() {
         Fixture fixture = fixture("ai-review-stale-retry");
         AiReviewContext first = stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1"
+                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         );
         AiReviewTask stale = aiReviewTaskMapper.selectById(first.aiReviewTaskId());
         stale.setStartedAt(LocalDateTime.now().minusMinutes(20));
         aiReviewTaskMapper.updateById(stale);
 
         AiReviewContext retried = stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1"
+                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         );
 
         assertThat(retried.aiReviewTaskId()).isNotEqualTo(first.aiReviewTaskId());

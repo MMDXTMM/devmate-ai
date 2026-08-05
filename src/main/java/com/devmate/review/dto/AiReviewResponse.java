@@ -16,6 +16,7 @@ public record AiReviewResponse(
         String provider,
         String modelName,
         String promptVersion,
+        String executionMode,
         String retrievalConfigVersion,
         String retrievalMode,
         String status,

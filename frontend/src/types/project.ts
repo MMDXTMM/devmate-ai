@@ -254,6 +254,7 @@ export interface AiReview {
   provider: string
   modelName: string
   promptVersion: string
+  executionMode: 'FIXED' | 'AGENT'
   retrievalConfigVersion?: string
   retrievalMode?: string
   status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'

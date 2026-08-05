@@ -31,7 +31,9 @@ class DatabaseSchemaTest {
             "code_review_file",
             "static_analysis_task",
             "review_finding",
-            "code_review_feedback"
+            "code_review_feedback",
+            "review_evaluation_case",
+            "review_evaluation_run"
     );
 
     @Autowired
