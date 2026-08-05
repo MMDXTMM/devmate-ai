@@ -38,6 +38,8 @@ class ReviewBenchmarkFixtureContractTest {
 
         assertThat(validate(manifest, DATASET_ROOT)).isEmpty();
         assertThat(manifest.datasetVersion()).isEqualTo(DATASET_ROOT.getFileName().toString());
+        assertThat(manifest.repositoryUrl())
+                .isEqualTo("https://github.com/MMDXTMM/devmate-review-benchmark.git");
         assertThat(manifest.scenarios())
                 .extracting(BenchmarkScenario::expectationType)
                 .contains(ReviewExpectationType.DEFECT, ReviewExpectationType.CLEAN);
@@ -67,6 +69,7 @@ class ReviewBenchmarkFixtureContractTest {
         );
         BenchmarkScenario invalidScenario = new BenchmarkScenario(
                 "security-path-traversal",
+                "case-006",
                 "非法清单",
                 ReviewExpectationType.DEFECT,
                 "路径不能逃逸样本根目录",
@@ -74,6 +77,7 @@ class ReviewBenchmarkFixtureContractTest {
         );
         BenchmarkManifest invalidManifest = new BenchmarkManifest(
                 "known-defects-v1",
+                "https://github.com/MMDXTMM/devmate-review-benchmark.git",
                 "非法清单",
                 List.of(invalidScenario)
         );
@@ -85,9 +89,14 @@ class ReviewBenchmarkFixtureContractTest {
     private List<String> validate(BenchmarkManifest manifest, Path datasetRoot) {
         List<String> violations = new ArrayList<>();
         Set<String> scenarioKeys = new HashSet<>();
+        Set<String> repositoryBranches = new HashSet<>();
         Set<String> caseKeys = new HashSet<>();
         if (manifest.datasetVersion() == null || manifest.datasetVersion().isBlank()) {
             violations.add("datasetVersion 不能为空");
+        }
+        if (manifest.repositoryUrl() == null
+                || !manifest.repositoryUrl().matches("https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git")) {
+            violations.add("repositoryUrl 必须是无内嵌凭证的 GitHub HTTPS 地址");
         }
         if (manifest.scenarios() == null || manifest.scenarios().isEmpty()) {
             violations.add("至少需要一个场景");
@@ -97,6 +106,12 @@ class ReviewBenchmarkFixtureContractTest {
         for (BenchmarkScenario scenario : manifest.scenarios()) {
             if (!scenarioKeys.add(scenario.scenarioKey())) {
                 violations.add("场景键重复: " + scenario.scenarioKey());
+            }
+            if (scenario.repositoryBranch() == null
+                    || !scenario.repositoryBranch().matches("case-[0-9]{3}")) {
+                violations.add("仓库分支必须使用不泄漏答案的 case-NNN 格式: " + scenario.scenarioKey());
+            } else if (!repositoryBranches.add(scenario.repositoryBranch())) {
+                violations.add("仓库分支重复: " + scenario.repositoryBranch());
             }
             if (scenario.rationale() == null || scenario.rationale().isBlank()) {
                 violations.add("场景缺少人工依据: " + scenario.scenarioKey());
@@ -141,14 +156,14 @@ class ReviewBenchmarkFixtureContractTest {
             List<String> violations
     ) {
         if (!Files.isDirectory(baseRoot) || !Files.isDirectory(targetRoot)) {
-            violations.add("场景缺少 base/target: " + scenarioKey);
+            violations.add("场景缺少 base/candidate: " + scenarioKey);
             return;
         }
         try {
             Set<Path> baseFiles = relativeFiles(baseRoot);
             Set<Path> targetFiles = relativeFiles(targetRoot);
             if (!baseFiles.equals(targetFiles)) {
-                violations.add("base/target 文件集合不一致: " + scenarioKey);
+                violations.add("base/candidate 文件集合不一致: " + scenarioKey);
                 return;
             }
             boolean changed = false;
@@ -159,7 +174,7 @@ class ReviewBenchmarkFixtureContractTest {
                 }
             }
             if (!changed) {
-                violations.add("base/target 没有真实变更: " + scenarioKey);
+                violations.add("base/candidate 没有真实变更: " + scenarioKey);
             }
         } catch (IOException exception) {
             violations.add("无法读取场景快照: " + scenarioKey);
@@ -250,6 +265,7 @@ class ReviewBenchmarkFixtureContractTest {
 
     private record BenchmarkManifest(
             String datasetVersion,
+            String repositoryUrl,
             String description,
             List<BenchmarkScenario> scenarios
     ) {
@@ -257,6 +273,7 @@ class ReviewBenchmarkFixtureContractTest {
 
     private record BenchmarkScenario(
             String scenarioKey,
+            String repositoryBranch,
             String name,
             ReviewExpectationType expectationType,
             String rationale,

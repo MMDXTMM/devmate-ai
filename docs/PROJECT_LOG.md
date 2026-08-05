@@ -2,6 +2,17 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-05：生成并发布可复现的评测 Git 历史
+
+- 为 8 个样本分配不泄漏缺陷类别的 `case-001` 至 `case-008` 分支；每个分支固定为 main 根提交、base 提交、candidate 提交。
+- 使用 JGit 和固定作者、时间、消息及父提交生成确定性历史；重复生成的 16 个 revision 完全一致。
+- `revisions.json` 固定场景、分支、base revision 与 candidate revision，测试验证候选 HEAD、父提交和单 Java 文件 MODIFY Diff。
+- 输出目录必须为空，生成器拒绝覆盖已有文件，避免误删人工数据。
+- 创建公开纯虚构仓库 `MMDXTMM/devmate-review-benchmark` 并推送 main 和 8 个 case 分支；远端分支 HEAD 已与 revision 清单逐一核对。
+- 仓库源码不含标准答案、凭证或 Bug 标记；人工依据只保留在 DevMate 主仓库的 manifest 中。
+- 后端全量 107 项测试通过；本任务没有前端和数据库结构变化。
+- 下一步通过公开仓库创建 8 个评测项目并执行导入、Diff、标准答案录入及真实 FIXED/AGENT A/B。
+
 ## 2026-08-05：建立第一版真实缺陷样本契约
 
 - 新增 `benchmarks/review-fixtures/known-defects-v1`，使用独立 `base/candidate` 快照描述每个待生成的 Git Diff，避免同一 Diff 混用 `DEFECT/CLEAN`；`candidate` 命名避免被 Maven `target/` 忽略规则排除。

@@ -1,9 +1,11 @@
 {
   "datasetVersion": "known-defects-v1",
+  "repositoryUrl": "https://github.com/MMDXTMM/devmate-review-benchmark.git",
   "description": "DevMate AI 第一版真实代码审查固定样本",
   "scenarios": [
     {
       "scenarioKey": "concurrency-lost-update",
+      "repositoryBranch": "case-001",
       "name": "库存并发丢失更新",
       "expectationType": "DEFECT",
       "rationale": "读取、判断和写回库存不是原子操作，并发请求可能基于同一旧值重复扣减。",
@@ -20,6 +22,7 @@
     },
     {
       "scenarioKey": "transaction-self-invocation",
+      "repositoryBranch": "case-002",
       "name": "事务方法同类自调用",
       "expectationType": "DEFECT",
       "rationale": "同一个 Bean 内直接调用带事务的方法会绕过 Spring 代理。",
@@ -36,6 +39,7 @@
     },
     {
       "scenarioKey": "cache-stampede",
+      "repositoryBranch": "case-003",
       "name": "热点缓存失效后并发回源",
       "expectationType": "DEFECT",
       "rationale": "热点 Key 失效时所有请求都会访问数据库，缺少互斥、逻辑过期或请求合并。",
@@ -52,6 +56,7 @@
     },
     {
       "scenarioKey": "message-ack-before-persist",
+      "repositoryBranch": "case-004",
       "name": "消息先确认后落库",
       "expectationType": "DEFECT",
       "rationale": "消息确认早于业务落库，进程在两步之间失败会导致消息永久丢失。",
@@ -68,6 +73,7 @@
     },
     {
       "scenarioKey": "sql-query-in-loop",
+      "repositoryBranch": "case-005",
       "name": "循环内逐条查询",
       "expectationType": "DEFECT",
       "rationale": "列表长度增长时数据库访问次数线性增加，形成 N+1 查询。",
@@ -84,6 +90,7 @@
     },
     {
       "scenarioKey": "security-path-traversal",
+      "repositoryBranch": "case-006",
       "name": "上传文件路径穿越",
       "expectationType": "DEFECT",
       "rationale": "不可信文件名直接参与路径解析，攻击者可使用 ../ 逃逸上传目录。",
@@ -100,6 +107,7 @@
     },
     {
       "scenarioKey": "performance-remote-call-under-lock",
+      "repositoryBranch": "case-007",
       "name": "持锁执行远程调用",
       "expectationType": "DEFECT",
       "rationale": "慢速网络调用占用 JVM 锁，延迟和故障会串行阻塞所有相同服务请求。",
@@ -116,6 +124,7 @@
     },
     {
       "scenarioKey": "clean-batch-query",
+      "repositoryBranch": "case-008",
       "name": "批量查询无缺陷对照",
       "expectationType": "CLEAN",
       "rationale": "变更把逐条查询替换为一次批量查询，并保持空输入处理和稳定返回。",
