@@ -33,10 +33,11 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | AI 审查 | 完成工程闭环 | DashScope JSON 输出、Chunk 白名单、结构化 Finding、任务审计 |
 | Tool Calling Agent | 完成工程闭环 | 四个只读 Tool、Qwen 多轮协议、限制与审计、Vue 调用链 |
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
+| 效果评测 | 完成数据与计算闭环 | 固定缺陷/无缺陷用例、FIXED/AGENT 快照、TP/FP/FN、质量与成本指标 |
 
-当前数据库版本为 V12。本机 MySQL 已从 V11 成功迁移到 V12，健康检查为 `UP`，原项目 `2084116785588305922` 保持可读。
+当前数据库版本为 V13。H2 已验证从空库执行 V1–V13；本机 MySQL 已从 V12 成功迁移到 V13，健康检查为 `UP`，原项目 `2084116785588305922` 保持可读。
 
-当前自动化基线：后端 96 项测试通过；前端 24 项测试通过；Vue 生产构建通过。
+当前自动化基线：后端 103 项测试通过；前端 24 项测试通过；Vue 生产构建通过。
 
 ## 3. 当前核心代码入口
 
@@ -56,6 +57,11 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - 反馈业务：`src/main/java/com/devmate/review/service/ReviewFeedbackService.java`
 - 反馈迁移：`src/main/resources/db/migration/V12__add_code_review_feedback.sql`
 - 反馈设计：`docs/REVIEW_FEEDBACK.md`
+- 评测接口：`src/main/java/com/devmate/review/controller/ReviewEvaluationController.java`
+- 评测计算：`src/main/java/com/devmate/review/service/ReviewFindingMatcher.java`
+- 评测业务：`src/main/java/com/devmate/review/service/ReviewEvaluationService.java`
+- 评测迁移：`src/main/resources/db/migration/V13__add_review_evaluation_schema.sql`
+- 评测设计：`docs/REVIEW_EVALUATION.md`
 
 ## 4. 必须保持的架构边界
 
@@ -69,15 +75,15 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - 不记录或提交数据库密码、Git Token、模型 Key、完整 Prompt 和完整私有源码。
 - 已执行 Flyway 迁移不可修改，只能新增版本。
 
-## 5. 下一阶段：固定缺陷集与效果评测
+## 5. 下一阶段：真实缺陷提交集与 A/B 展示
 
 阶段 8 的目标是证明效果，不继续堆框架。建议按以下小任务推进：
 
-1. 先设计已知缺陷样本、标准答案、Finding 匹配规则和评测运行表，不先写模型调用代码。
-2. 建立包含并发、事务、SQL、安全和性能问题的固定 Java 提交集，同时包含无缺陷对照样本。
+1. 建立包含并发、事务、SQL、安全和性能问题的固定 Java 提交集，同时包含无缺陷对照样本。
+2. 通过现有 API 为每个成功 Diff 录入人工标准答案，不复制完整源码到评测表。
 3. 同一项目、revision 和 Diff 分别运行固定流水线与 Agent 路径。
-4. 记录命中、漏报、误报、Token、耗时、工具成功率和失败原因。
-5. 人工复核不能匹配的 Finding，避免用脆弱字符串相等冒充准确率。
+4. 增加 Vue 评测页，展示数据集、两种模式、TP/FP/FN、Precision/Recall/F1、Token、耗时和 Tool 成功率。
+5. 人工复核 `partialResult` 中不能自动匹配的 Finding，并记录失败原因。
 6. 根据失败案例调整 Tool 描述、检索查询和 Prompt；每次变化都更新版本号并重新评测。
 
 阶段 8 完成前不能在简历中宣称准确率，也不能宣称 Agent 优于固定流水线。
@@ -86,7 +92,7 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 
 可以直接发送：
 
-> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_FEEDBACK.md 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区状态；审查反馈闭环和 V12 已完成。下一小任务是“已知缺陷固定数据集与评测表设计”：先说明样本格式、标准答案、Finding 匹配方法、输入输出、状态变化、失败路径和测试方案，再修改代码。不要提前引入 MQ、微服务或自动改码；完成后更新文档、运行后端与前端全量测试、验证真实 MySQL，并创建草稿 PR。
+> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区状态；V13 固定缺陷评测数据和计算闭环已完成。下一小任务是“真实缺陷提交集与 Vue A/B 对比页”：先定义固定 Java 提交集的缺陷类别、标准答案和演示流程，再实现前端用例录入、运行和结果比较。不要提前引入 MQ、微服务或自动改码；完成后更新文档、运行前后端全量测试、验证真实 MySQL，并创建草稿 PR。
 
 ## 7. 验证命令
 

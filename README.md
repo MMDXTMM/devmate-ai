@@ -2,7 +2,7 @@
 
 DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
-当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图、带固定评测集的关键词/向量/关系图混合 RAG、证据约束的结构化 AI 审查、受控 Tool Calling Agent，以及开发者 Finding 反馈闭环。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图、带固定评测集的关键词/向量/关系图混合 RAG、证据约束的结构化 AI 审查、受控 Tool Calling Agent、开发者 Finding 反馈闭环，以及固定缺陷标准答案与评测运行模型。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
 
 ## 当前已具备
 
@@ -46,6 +46,8 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - Tool 参数校验、超时、调用/循环上限、证据预算和脱敏审计
 - Vue 固定流水线/Agent 模式选择与工具调用链展示
 - Finding 采纳、驳回、误报、稍后处理和备注持久化
+- `DEFECT/CLEAN` 固定评测用例、FIXED/AGENT 执行模式快照与幂等运行
+- TP/FP/FN、Precision/Recall/F1、Token、耗时和 Tool 成功率评测
 - 健康检查接口及基础测试
 
 ## 快速启动
@@ -145,6 +147,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [证据约束的 AI 代码审查 MVP](docs/AI_REVIEW_MVP.md)
 - [受控 Tool Calling 代码审查 Agent](docs/TOOL_CALLING_AGENT.md)
 - [代码审查反馈闭环](docs/REVIEW_FEEDBACK.md)
+- [代码审查固定缺陷集与效果评测](docs/REVIEW_EVALUATION.md)
 - [前端开发与联调](docs/FRONTEND_DEVELOPMENT.md)
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
 - [同类开源项目对比与路线优化](docs/OPEN_SOURCE_COMPARISON.md)

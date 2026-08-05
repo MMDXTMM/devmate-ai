@@ -14,6 +14,7 @@ import com.devmate.knowledge.retrieval.RetrievalMode;
 import com.devmate.review.dto.AiReviewResponse;
 import com.devmate.review.dto.ReviewContextRequest;
 import com.devmate.review.model.AiFindingValidationResult;
+import com.devmate.review.model.ReviewExecutionMode;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
@@ -50,7 +51,8 @@ public class AiReviewService {
                 projectId,
                 model.providerName(),
                 model.modelName(),
-                properties.getPromptVersion()
+                properties.getPromptVersion(),
+                ReviewExecutionMode.FIXED
         );
         long startedAt = System.nanoTime();
         AiReviewPrompt prompt = null;

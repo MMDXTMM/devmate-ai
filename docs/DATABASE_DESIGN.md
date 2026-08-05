@@ -15,7 +15,7 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。
 
 ## 2. 表关系
 
@@ -39,6 +39,10 @@ erDiagram
     STATIC_ANALYSIS_TASK ||--o{ AI_REVIEW_TASK : grounds
     AI_INVOCATION_LOG ||--o| AI_REVIEW_TASK : executes
     AI_REVIEW_TASK ||--o{ REVIEW_FINDING : produces
+    PROJECT ||--o{ REVIEW_EVALUATION_CASE : defines
+    CODE_REVIEW_TASK ||--o{ REVIEW_EVALUATION_CASE : scopes
+    PROJECT ||--o{ REVIEW_EVALUATION_RUN : evaluates
+    AI_REVIEW_TASK ||--o{ REVIEW_EVALUATION_RUN : measures
     KNOWLEDGE_CHUNK ||--o{ REVIEW_FINDING : evidences
     PROJECT ||--o{ RETRIEVAL_EVALUATION_CASE : defines
     PROJECT ||--o{ RETRIEVAL_EVALUATION_RUN : evaluates
@@ -187,7 +191,7 @@ V8 增加可复现的检索评测：
 
 ## 5. 代码审查表
 
-V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加静态分析任务和第一版统一 Finding；V10 增加 AI 审查任务和语义 Finding 字段。反馈表将在评测阶段创建。
+V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加静态分析任务和第一版统一 Finding；V10 增加 AI 审查任务和语义 Finding 字段；V12 增加开发者反馈；V13 增加固定缺陷评测。
 
 ### `code_review_task`
 
@@ -228,6 +232,7 @@ V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加�
 - `running_key` 只在 RUNNING 状态存在，唯一键承担同一 Diff 并发幂等保护；完成、失败或超时回收时由显式 SQL 置空；
 - 保存上下文 Chunk、有效 Finding、拒绝 Finding 和脱敏错误计数；
 - 通过 `invocation_id` 关联 Token、耗时和错误类别。
+- V13 增加 `execution_mode`，明确保存 `FIXED` 或 `AGENT`，不再通过 Prompt 名称猜测执行路径。
 
 ### `review_finding`
 
@@ -254,6 +259,20 @@ V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加�
 
 当前系统尚未接入认证，V12 不接收客户端提供的 `user_id`，避免伪造操作人。阶段 10 完成认证后，再使用服务端身份增加用户关联和多评审人唯一范围。
 
+### `review_evaluation_case` 与 `review_evaluation_run`
+
+V13 保存代码审查效果评测的标准答案与运行快照：
+
+- 用例绑定项目、成功 Diff 任务、目标 revision、数据集版本和稳定 `case_key`；
+- `DEFECT` 用例必须标注类别、相对文件路径和行区间，`CLEAN` 用例表示本次 Diff 不应产生 Finding；
+- 同一数据集不能混用 `CLEAN` 与 `DEFECT`，避免指标分母含义不一致；
+- 数据集产生首条运行后冻结，标准答案变化必须创建新版本；
+- 运行绑定一次成功 AI 审查和数据集哈希，重复请求返回同一结果；
+- 只有类别、文件路径一致且行区间重叠的唯一一对一候选自动计为 TP；未匹配标准答案为 FN，未匹配 Finding 为 FP；
+- 多对多或一对多歧义进入 `MANUAL_REVIEW`，从自动指标中排除并设置 `partial_result=true`；
+- 运行快照保存执行模式、revision、模型、Prompt、检索配置、Token、耗时和 Tool 成功数，不保存源码正文；
+- 开发者 `REJECTED` 反馈不是事实标签，不能自动转换为标准答案。
+
 计划关系：
 
 ```mermaid
@@ -265,9 +284,11 @@ erDiagram
     CODE_REVIEW_TASK ||--o{ AI_REVIEW_TASK : runs
     AI_REVIEW_TASK ||--o{ REVIEW_FINDING : produces
     REVIEW_FINDING ||--o| CODE_REVIEW_FEEDBACK : receives
+    CODE_REVIEW_TASK ||--o{ REVIEW_EVALUATION_CASE : scopes
+    AI_REVIEW_TASK ||--o{ REVIEW_EVALUATION_RUN : evaluates
 ```
 
-`review_finding` 已在 V6 创建；`code_review_feedback` 已通过 V12 创建。
+`review_finding` 已在 V6 创建；`code_review_feedback` 已通过 V12 创建；评测用例与运行已通过 V13 创建。
 
 ### `code_reference`
 
@@ -296,6 +317,7 @@ erDiagram
 - `V10__add_ai_review_schema.sql`：AI 审查任务、调用版本审计和结构化语义 Finding。
 - `V11__extend_tool_call_audit.sql`：Agent Tool 调用 ID、顺序、参数哈希、错误分类和唯一约束。
 - `V12__add_code_review_feedback.sql`：Finding 最新反馈、项目归属、类型索引和级联清理。
+- `V13__add_review_evaluation_schema.sql`：固定缺陷标准答案、执行模式快照、评测运行和质量/成本指标。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

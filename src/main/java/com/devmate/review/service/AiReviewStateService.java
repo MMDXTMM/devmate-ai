@@ -24,6 +24,7 @@ import com.devmate.review.mapper.CodeReviewTaskMapper;
 import com.devmate.review.mapper.ReviewFindingMapper;
 import com.devmate.review.mapper.StaticAnalysisTaskMapper;
 import com.devmate.review.model.AiFindingValidationResult;
+import com.devmate.review.model.ReviewExecutionMode;
 import com.devmate.review.model.ValidatedAiFinding;
 import com.devmate.tool.entity.ToolCallLog;
 import com.devmate.tool.mapper.ToolCallLogMapper;
@@ -83,7 +84,8 @@ public class AiReviewStateService {
             Long projectId,
             String provider,
             String modelName,
-            String promptVersion
+            String promptVersion,
+            ReviewExecutionMode executionMode
     ) {
         if (projectMapper.selectById(projectId) == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
@@ -145,6 +147,7 @@ public class AiReviewStateService {
         task.setProvider(provider);
         task.setModelName(modelName);
         task.setPromptVersion(promptVersion);
+        task.setExecutionMode(executionMode.name());
         task.setStatus("RUNNING");
         task.setContextChunks(0);
         task.setFindingCount(0);
@@ -289,7 +292,7 @@ public class AiReviewStateService {
         return new AiReviewResponse(
                 task.getId(), task.getProjectId(), task.getReviewTaskId(), task.getStaticAnalysisTaskId(),
                 task.getInvocationId(), task.getRevision(), task.getProvider(), task.getModelName(),
-                task.getPromptVersion(), task.getRetrievalConfigVersion(), task.getRetrievalMode(),
+                task.getPromptVersion(), task.getExecutionMode(), task.getRetrievalConfigVersion(), task.getRetrievalMode(),
                 task.getStatus(), task.getContextChunks(), task.getFindingCount(), task.getRejectedFindings(),
                 invocation.getPromptTokens(), invocation.getCompletionTokens(), invocation.getTotalTokens(),
                 invocation.getLatencyMs(), task.getErrorMessage(), task.getCreatedAt(), task.getFinishedAt(),

@@ -134,6 +134,7 @@ function report(): AiReview {
     provider: 'TEST',
     modelName: 'test-model',
     promptVersion: 'ai-review-v1',
+    executionMode: 'FIXED',
     retrievalConfigVersion: 'lexical-graph-v1',
     retrievalMode: 'LEXICAL_FALLBACK',
     status: 'SUCCEEDED',
@@ -170,6 +171,7 @@ function agentReport(): AiReview {
   return {
     ...report(),
     promptVersion: 'review-agent-v1',
+    executionMode: 'AGENT',
     toolCalls: [{
       id: '8',
       toolCallId: 'call-search-1',

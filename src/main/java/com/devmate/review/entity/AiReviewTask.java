@@ -17,6 +17,7 @@ public class AiReviewTask {
     private String provider;
     private String modelName;
     private String promptVersion;
+    private String executionMode;
     private String retrievalConfigVersion;
     private String retrievalMode;
     private String status;
@@ -47,6 +48,8 @@ public class AiReviewTask {
     public void setModelName(String modelName) { this.modelName = modelName; }
     public String getPromptVersion() { return promptVersion; }
     public void setPromptVersion(String promptVersion) { this.promptVersion = promptVersion; }
+    public String getExecutionMode() { return executionMode; }
+    public void setExecutionMode(String executionMode) { this.executionMode = executionMode; }
     public String getRetrievalConfigVersion() { return retrievalConfigVersion; }
     public void setRetrievalConfigVersion(String retrievalConfigVersion) { this.retrievalConfigVersion = retrievalConfigVersion; }
     public String getRetrievalMode() { return retrievalMode; }
