@@ -43,8 +43,17 @@ public class AiReviewPromptBuilder {
             RetrievalSearchResponse retrieval,
             List<ReviewFinding> staticFindings
     ) {
+        return build(reviewTask, retrieval, staticFindings, properties.getPromptVersion());
+    }
+
+    public AiReviewPrompt build(
+            CodeReviewTask reviewTask,
+            RetrievalSearchResponse retrieval,
+            List<ReviewFinding> staticFindings,
+            String promptVersion
+    ) {
         PromptPayload payload = new PromptPayload(
-                properties.getPromptVersion(),
+                promptVersion,
                 reviewTask.getBaseRevision(),
                 reviewTask.getTargetRevision(),
                 new Coverage(

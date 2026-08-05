@@ -261,6 +261,31 @@ describe('projectApi', () => {
     expect(result.modelName).toBe('qwen-plus')
   })
 
+  it('starts the controlled agent review through its explicit endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588311000',
+        projectId: '2084116785588305922',
+        promptVersion: 'review-agent-v1',
+        status: 'SUCCEEDED',
+        findings: [],
+        toolCalls: [],
+      },
+      timestamp: '2026-08-05T00:00:00Z',
+    }))
+
+    const result = await projectApi.createAgentAiReview('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/ai-reviews/agent',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('body')
+    expect(result.promptVersion).toBe('review-agent-v1')
+  })
+
   it('searches version-isolated context with an explicit token budget', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       code: 0,

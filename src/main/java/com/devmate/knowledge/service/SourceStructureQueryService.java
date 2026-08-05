@@ -55,10 +55,23 @@ public class SourceStructureQueryService {
         if (project.getCurrentRevision() == null) {
             return List.of();
         }
+        return listDocuments(projectId, project.getCurrentRevision(), 200);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SourceDocumentResponse> listDocuments(Long projectId, String revision, int limit) {
+        requireProject(projectId);
+        if (revision == null || revision.isBlank()) {
+            return List.of();
+        }
+        if (limit < 1 || limit > 200) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "项目结构文件数量超出允许范围");
+        }
         return documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
                         .eq(KnowledgeDocument::getProjectId, projectId)
-                        .eq(KnowledgeDocument::getRevision, project.getCurrentRevision())
-                        .orderByAsc(KnowledgeDocument::getFilePath))
+                        .eq(KnowledgeDocument::getRevision, revision)
+                        .orderByAsc(KnowledgeDocument::getFilePath)
+                        .last("LIMIT " + limit))
                 .stream()
                 .map(SourceDocumentResponse::from)
                 .toList();

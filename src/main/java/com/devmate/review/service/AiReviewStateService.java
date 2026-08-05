@@ -11,6 +11,7 @@ import com.devmate.knowledge.dto.RetrievalSearchResponse;
 import com.devmate.project.mapper.ProjectMapper;
 import com.devmate.review.dto.AiReviewFindingResponse;
 import com.devmate.review.dto.AiReviewResponse;
+import com.devmate.review.dto.ToolCallResponse;
 import com.devmate.review.entity.AiReviewTask;
 import com.devmate.review.entity.CodeReviewTask;
 import com.devmate.review.entity.ReviewFinding;
@@ -21,6 +22,8 @@ import com.devmate.review.mapper.ReviewFindingMapper;
 import com.devmate.review.mapper.StaticAnalysisTaskMapper;
 import com.devmate.review.model.AiFindingValidationResult;
 import com.devmate.review.model.ValidatedAiFinding;
+import com.devmate.tool.entity.ToolCallLog;
+import com.devmate.tool.mapper.ToolCallLogMapper;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +46,7 @@ public class AiReviewStateService {
     private final ReviewFindingMapper findingMapper;
     private final AiInvocationLogMapper invocationMapper;
     private final AiReviewTaskMapper aiReviewTaskMapper;
+    private final ToolCallLogMapper toolCallLogMapper;
     private final AiReviewProperties properties;
 
     public AiReviewStateService(
@@ -52,6 +56,7 @@ public class AiReviewStateService {
             ReviewFindingMapper findingMapper,
             AiInvocationLogMapper invocationMapper,
             AiReviewTaskMapper aiReviewTaskMapper,
+            ToolCallLogMapper toolCallLogMapper,
             AiReviewProperties properties
     ) {
         this.projectMapper = projectMapper;
@@ -60,6 +65,7 @@ public class AiReviewStateService {
         this.findingMapper = findingMapper;
         this.invocationMapper = invocationMapper;
         this.aiReviewTaskMapper = aiReviewTaskMapper;
+        this.toolCallLogMapper = toolCallLogMapper;
         this.properties = properties;
     }
 
@@ -277,8 +283,16 @@ public class AiReviewStateService {
                 task.getStatus(), task.getContextChunks(), task.getFindingCount(), task.getRejectedFindings(),
                 invocation.getPromptTokens(), invocation.getCompletionTokens(), invocation.getTotalTokens(),
                 invocation.getLatencyMs(), task.getErrorMessage(), task.getCreatedAt(), task.getFinishedAt(),
-                findings.stream().map(this::toFindingResponse).toList()
+                findings.stream().map(this::toFindingResponse).toList(), listToolCalls(task.getInvocationId())
         );
+    }
+
+    private List<ToolCallResponse> listToolCalls(Long invocationId) {
+        return toolCallLogMapper.selectList(Wrappers.lambdaQuery(ToolCallLog.class)
+                        .eq(ToolCallLog::getInvocationId, invocationId)
+                        .orderByAsc(ToolCallLog::getStepNo)
+                        .orderByAsc(ToolCallLog::getId))
+                .stream().map(ToolCallResponse::from).toList();
     }
 
     private AiReviewFindingResponse toFindingResponse(ReviewFinding finding) {

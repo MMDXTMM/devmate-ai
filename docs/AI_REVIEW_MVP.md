@@ -2,7 +2,7 @@
 
 ## 1. 当前边界
 
-阶段 6 已实现从“最新成功 Diff + 对应静态分析 + RAG 证据”到结构化 AI Finding 的工程闭环。当前是固定审查流水线，不是阶段 7 的自主 Tool Calling Agent。
+阶段 6 已实现从“最新成功 Diff + 对应静态分析 + RAG 证据”到结构化 AI Finding 的工程闭环。本固定流水线继续保留；阶段 7 的受控 Tool Calling Agent 见 [TOOL_CALLING_AGENT.md](TOOL_CALLING_AGENT.md)，后续用同一缺陷集比较两条路径。
 
 第一版只给出审查建议，不自动修改、提交或合并代码，也不允许模型执行 Shell、SQL 或直接访问数据库。
 

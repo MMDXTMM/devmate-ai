@@ -2,6 +2,19 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-05：完成受控 Tool Calling Agent 工程闭环
+
+- 保留阶段 6 固定流水线，新增独立 Agent 审查入口，为阶段 8 做同数据集 A/B 评测准备。
+- 按 Qwen Function Calling 协议实现多轮消息回填；模型只负责规划，Java 负责工具白名单、执行和最终业务校验。
+- 提供 `getDiffCoverage/getStaticAnalysis/searchCode/analyzeProjectStructure` 四个只读工具；项目、任务和 revision 由服务端固定。
+- 增加合法 JSON、字段、长度、数量、超时、输出、总步数和重复调用限制；必须获得真实代码 Chunk 才能完成审查。
+- V11 扩展工具审计，记录调用 ID、顺序、参数哈希、脱敏摘要和错误类别，不保存完整查询、源码或 Prompt。
+- Agent 多次检索证据去重并受 Chunk/Token 预算限制；规划与最终审查 Token 合并记录。
+- Vue 增加“固定流水线/Agent 智能取证”显式选择和工具调用链展示，打开弹窗不会自动消耗额度。
+- 后端 93 项测试、前端 21 项测试与生产构建通过；真实模型效果仍待 DashScope Key 和阶段 8 固定缺陷集验证。
+- 本机 MySQL 26.7 已从 V10 迁移到 V11，应用健康检查为 `UP`，原有 `devmate-ai` 项目仍可正常读取。
+- 下一阶段进入审查反馈和效果评测，不提前增加自动改码、任意 Shell/SQL 或微服务。
+
 ## 2026-08-04：完成证据约束的 AI 代码审查工程闭环
 
 - V10 新增独立 `ai_review_task`，并扩展 AI 调用审计和统一 Finding，固定 Diff、静态分析、revision、模型、Prompt 与检索版本。

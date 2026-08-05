@@ -164,6 +164,9 @@ V9 增加可替换的向量索引实现：
 - `arguments_summary` 和 `result_summary` 只保存脱敏摘要。
 - 通过 `invocation_id` 还原一次 Agent 请求的工具调用链。
 - 可统计各工具的成功率和延迟。
+- V11 增加 `tool_call_id` 和 `step_no` 还原模型调用顺序，并以 `(invocation_id, tool_call_id)` 防止重复回填。
+- `arguments_hash` 用于重复调用识别；`error_code` 区分未知工具、非法参数、超时和执行失败。
+- 完整参数和 Tool 输出不会持久化；`arguments_summary/result_summary` 只保留键名、字符数、命中量等脱敏信息。
 
 ### 3.12 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
 
@@ -288,6 +291,7 @@ erDiagram
 - `V8__add_retrieval_evaluation_schema.sql`：固定检索评测用例、运行版本和质量指标。
 - `V9__add_embedding_vector_schema.sql`：向量索引任务、模型版本隔离和开发阶段向量存储。
 - `V10__add_ai_review_schema.sql`：AI 审查任务、调用版本审计和结构化语义 Finding。
+- `V11__extend_tool_call_audit.sql`：Agent Tool 调用 ID、顺序、参数哈希、错误分类和唯一约束。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

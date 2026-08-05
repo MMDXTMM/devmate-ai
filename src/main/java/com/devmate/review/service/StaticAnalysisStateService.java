@@ -173,6 +173,23 @@ public class StaticAnalysisStateService {
         return toResponse(task, listFindings(task.getId()));
     }
 
+    @Transactional(readOnly = true)
+    public StaticAnalysisResponse getByTask(Long projectId, Long taskId) {
+        if (projectMapper.selectById(projectId) == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
+        }
+        StaticAnalysisTask task = analysisTaskMapper.selectOne(
+                Wrappers.lambdaQuery(StaticAnalysisTask.class)
+                        .eq(StaticAnalysisTask::getId, taskId)
+                        .eq(StaticAnalysisTask::getProjectId, projectId)
+                        .last("LIMIT 1")
+        );
+        if (task == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "静态分析任务不存在");
+        }
+        return toResponse(task, listFindings(task.getId()));
+    }
+
     private List<ReviewFinding> listFindings(Long analysisTaskId) {
         return findingMapper.selectList(Wrappers.lambdaQuery(ReviewFinding.class)
                 .eq(ReviewFinding::getAnalysisTaskId, analysisTaskId)
