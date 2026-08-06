@@ -17,6 +17,7 @@ import com.devmate.knowledge.source.GitRepositoryValidator;
 import com.devmate.knowledge.source.ParsedSourceChunk;
 import com.devmate.knowledge.source.ParsedCodeReference;
 import com.devmate.knowledge.source.ParsedSourceFile;
+import com.devmate.knowledge.source.ScannedSourceFile;
 import com.devmate.project.entity.Project;
 import com.devmate.project.mapper.ProjectMapper;
 import com.devmate.project.model.ProjectSourceType;
@@ -25,11 +26,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -37,6 +42,7 @@ import java.util.stream.Collectors;
 public class SourceImportStateService {
 
     private static final String TASK_TYPE_FULL = "FULL";
+    private static final String TASK_TYPE_INCREMENTAL = "INCREMENTAL";
     private static final String DOCUMENT_STATUS_PARSED = "PARSED";
 
     private final ProjectMapper projectMapper;
@@ -91,10 +97,13 @@ public class SourceImportStateService {
 
         IndexTask task = new IndexTask();
         task.setProjectId(projectId);
-        task.setTaskType(TASK_TYPE_FULL);
+        task.setTaskType(StringUtils.hasText(project.getCurrentRevision())
+                ? TASK_TYPE_INCREMENTAL
+                : TASK_TYPE_FULL);
         task.setStatus(IndexTaskStatus.RUNNING.name());
         task.setTotalFiles(0);
         task.setProcessedFiles(0);
+        task.setReusedFiles(0);
         task.setFailedFiles(0);
         task.setCreatedAt(now);
         task.setStartedAt(now);
@@ -107,16 +116,65 @@ public class SourceImportStateService {
                 projectId,
                 task.getId(),
                 project.getSourceLocation().trim(),
-                branch
+                branch,
+                project.getCurrentRevision()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public SourceImportPlan planIncremental(
+            SourceImportContext context,
+            List<ScannedSourceFile> scannedFiles
+    ) {
+        if (!StringUtils.hasText(context.previousRevision())) {
+            return new SourceImportPlan(scannedFiles, List.of());
+        }
+        Map<String, KnowledgeDocument> previousByPathHash = loadPreviousDocuments(
+                context.projectId(),
+                context.previousRevision(),
+                scannedFiles.stream().map(file -> file.pathHash()).collect(Collectors.toSet())
+        ).stream().collect(Collectors.toMap(
+                KnowledgeDocument::getPathHash,
+                Function.identity(),
+                (left, right) -> left
+        ));
+        Map<Long, List<KnowledgeChunk>> chunksByDocument = loadChunks(
+                previousByPathHash.values().stream().map(KnowledgeDocument::getId).toList()
+        ).stream().collect(Collectors.groupingBy(KnowledgeChunk::getDocumentId));
+        List<KnowledgeChunk> reusableChunks = chunksByDocument.values().stream().flatMap(List::stream).toList();
+        Map<Long, List<CodeReference>> referencesBySourceChunk = loadReferences(
+                reusableChunks.stream().map(KnowledgeChunk::getId).toList()
+        ).stream().collect(Collectors.groupingBy(CodeReference::getSourceChunkId));
+
+        List<ScannedSourceFile> filesToParse = new ArrayList<>();
+        List<ParsedSourceFile> reusedFiles = new ArrayList<>();
+        for (ScannedSourceFile scanned : scannedFiles) {
+            KnowledgeDocument previous = previousByPathHash.get(scanned.pathHash());
+            if (!canReuse(previous, scanned)) {
+                filesToParse.add(scanned);
+                continue;
+            }
+            reusedFiles.add(reconstructParsedFile(
+                    scanned,
+                    previous,
+                    chunksByDocument.getOrDefault(previous.getId(), List.of()),
+                    referencesBySourceChunk
+            ));
+        }
+        return new SourceImportPlan(filesToParse, reusedFiles);
     }
 
     @Transactional
     public IndexTaskResponse complete(
             SourceImportContext context,
             String revision,
-            List<ParsedSourceFile> files
+            List<ParsedSourceFile> files,
+            int processedFiles,
+            int reusedFiles
     ) {
+        if (files.size() != processedFiles + reusedFiles) {
+            throw new IllegalArgumentException("源码导入文件计数不一致");
+        }
         LocalDateTime now = LocalDateTime.now();
         for (ParsedSourceFile file : files) {
             upsertDocument(context.projectId(), revision, file, now);
@@ -127,11 +185,40 @@ public class SourceImportStateService {
         task.setRevision(revision);
         task.setStatus(IndexTaskStatus.SUCCEEDED.name());
         task.setTotalFiles(files.size());
-        task.setProcessedFiles(files.size());
+        task.setProcessedFiles(processedFiles);
+        task.setReusedFiles(reusedFiles);
         task.setFailedFiles(0);
         task.setFinishedAt(now);
         indexTaskMapper.updateById(task);
 
+        projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
+                .eq(Project::getId, context.projectId())
+                .set(Project::getStatus, ProjectStatus.READY.name())
+                .set(Project::getCurrentRevision, revision)
+                .set(Project::getLastIndexedAt, now)
+                .set(Project::getUpdatedAt, now));
+        return IndexTaskResponse.from(task);
+    }
+
+    @Transactional
+    public IndexTaskResponse completeUnchanged(SourceImportContext context, String revision) {
+        long documentCount = documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                .eq(KnowledgeDocument::getProjectId, context.projectId())
+                .eq(KnowledgeDocument::getRevision, revision)
+                .eq(KnowledgeDocument::getDeleted, 0));
+        if (documentCount < 1 || documentCount > Integer.MAX_VALUE) {
+            throw new IllegalStateException("当前版本缺少可复用的源码结构");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        IndexTask task = requireTask(context.taskId());
+        task.setRevision(revision);
+        task.setStatus(IndexTaskStatus.SUCCEEDED.name());
+        task.setTotalFiles((int) documentCount);
+        task.setProcessedFiles(0);
+        task.setReusedFiles((int) documentCount);
+        task.setFailedFiles(0);
+        task.setFinishedAt(now);
+        indexTaskMapper.updateById(task);
         projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
                 .eq(Project::getId, context.projectId())
                 .set(Project::getStatus, ProjectStatus.READY.name())
@@ -170,6 +257,140 @@ public class SourceImportStateService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目暂无源码导入任务");
         }
         return IndexTaskResponse.from(task);
+    }
+
+    private List<KnowledgeDocument> loadPreviousDocuments(
+            Long projectId,
+            String revision,
+            Set<String> pathHashes
+    ) {
+        if (pathHashes.isEmpty()) {
+            return List.of();
+        }
+        List<String> hashes = new ArrayList<>(pathHashes);
+        List<KnowledgeDocument> result = new ArrayList<>();
+        for (int offset = 0; offset < hashes.size(); offset += 500) {
+            List<String> batch = hashes.subList(offset, Math.min(offset + 500, hashes.size()));
+            result.addAll(documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                    .eq(KnowledgeDocument::getProjectId, projectId)
+                    .eq(KnowledgeDocument::getRevision, revision)
+                    .eq(KnowledgeDocument::getDeleted, 0)
+                    .in(KnowledgeDocument::getStatus, "PARSED", "INDEXED")
+                    .in(KnowledgeDocument::getPathHash, batch)));
+        }
+        return result;
+    }
+
+    private List<KnowledgeChunk> loadChunks(List<Long> documentIds) {
+        if (documentIds.isEmpty()) {
+            return List.of();
+        }
+        List<KnowledgeChunk> result = new ArrayList<>();
+        for (int offset = 0; offset < documentIds.size(); offset += 500) {
+            List<Long> batch = documentIds.subList(offset, Math.min(offset + 500, documentIds.size()));
+            result.addAll(chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                    .in(KnowledgeChunk::getDocumentId, batch)
+                    .orderByAsc(KnowledgeChunk::getDocumentId)
+                    .orderByAsc(KnowledgeChunk::getChunkIndex)));
+        }
+        return result;
+    }
+
+    private List<CodeReference> loadReferences(List<Long> sourceChunkIds) {
+        if (sourceChunkIds.isEmpty()) {
+            return List.of();
+        }
+        List<CodeReference> result = new ArrayList<>();
+        for (int offset = 0; offset < sourceChunkIds.size(); offset += 500) {
+            List<Long> batch = sourceChunkIds.subList(
+                    offset,
+                    Math.min(offset + 500, sourceChunkIds.size())
+            );
+            result.addAll(referenceMapper.selectList(Wrappers.lambdaQuery(CodeReference.class)
+                    .in(CodeReference::getSourceChunkId, batch)
+                    .orderByAsc(CodeReference::getId)));
+        }
+        return result;
+    }
+
+    private boolean canReuse(
+            KnowledgeDocument previous,
+            ScannedSourceFile scanned
+    ) {
+        return previous != null
+                && previous.getFilePath().equals(scanned.relativePath())
+                && previous.getFileType().equals(scanned.fileType().name())
+                && previous.getContentHash().equals(scanned.contentHash());
+    }
+
+    private ParsedSourceFile reconstructParsedFile(
+            ScannedSourceFile scanned,
+            KnowledgeDocument document,
+            List<KnowledgeChunk> storedChunks,
+            Map<Long, List<CodeReference>> referencesBySourceChunk
+    ) {
+        List<KnowledgeChunk> orderedChunks = storedChunks.stream()
+                .sorted(Comparator.comparing(KnowledgeChunk::getChunkIndex))
+                .toList();
+        List<ParsedSourceChunk> parsedChunks = orderedChunks.stream()
+                .map(this::reconstructChunk)
+                .toList();
+        List<ParsedCodeReference> parsedReferences = new ArrayList<>();
+        for (KnowledgeChunk sourceChunk : orderedChunks) {
+            for (CodeReference reference : referencesBySourceChunk.getOrDefault(
+                    sourceChunk.getId(), List.of()
+            )) {
+                parsedReferences.add(new ParsedCodeReference(
+                        sourceChunk.getSymbolName(),
+                        reference.getReferenceKind(),
+                        reference.getReferenceName(),
+                        reference.getQualifier(),
+                        reference.getArgumentCount(),
+                        reference.getStartLine(),
+                        reference.getEndLine(),
+                        reference.getMetadataJson()
+                ));
+            }
+        }
+        return new ParsedSourceFile(
+                scanned,
+                document.getPackageName(),
+                parsedChunks,
+                parsedReferences
+        );
+    }
+
+    private ParsedSourceChunk reconstructChunk(KnowledgeChunk chunk) {
+        Map<String, Object> metadata = readMetadata(chunk.getMetadataJson());
+        List<String> annotations = metadata.get("annotations") instanceof List<?> values
+                ? values.stream().filter(String.class::isInstance).map(String.class::cast).toList()
+                : List.of();
+        Integer parameterCount = metadata.get("parameterCount") instanceof Number value
+                ? value.intValue()
+                : null;
+        return new ParsedSourceChunk(
+                chunk.getChunkIndex(),
+                chunk.getChunkType(),
+                chunk.getSymbolName(),
+                annotations,
+                parameterCount,
+                metadata,
+                chunk.getContent(),
+                chunk.getContentHash(),
+                chunk.getStartLine(),
+                chunk.getEndLine()
+        );
+    }
+
+    private Map<String, Object> readMetadata(String metadataJson) {
+        if (!StringUtils.hasText(metadataJson)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(metadataJson, new TypeReference<>() { });
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("读取源码符号元数据失败", exception);
+        }
     }
 
     private void upsertDocument(

@@ -81,6 +81,7 @@ describe('projectApi', () => {
         status: 'SUCCEEDED',
         totalFiles: 12,
         processedFiles: 12,
+        reusedFiles: 0,
         failedFiles: 0,
       },
       timestamp: '2026-08-03T00:00:00Z',

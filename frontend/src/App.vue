@@ -127,7 +127,9 @@ async function importSource(project: Project) {
   importingId.value = project.id
   try {
     const task = await projectApi.importSource(project.id)
-    showSuccess(`源码导入成功：发现 ${task.totalFiles} 个 Java 文件`)
+    showSuccess(
+      `源码导入成功：共 ${task.totalFiles} 个文件，解析 ${task.processedFiles}，复用 ${task.reusedFiles}`,
+    )
     await loadProjects(pageData.value.page)
   } catch (error) {
     showError(error)

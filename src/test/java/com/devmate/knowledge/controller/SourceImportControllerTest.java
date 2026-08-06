@@ -9,6 +9,7 @@ import com.devmate.knowledge.mapper.IndexTaskMapper;
 import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
 import com.devmate.knowledge.mapper.CodeReferenceMapper;
+import com.devmate.knowledge.mapper.EmbeddingVectorMapper;
 import com.devmate.knowledge.source.GitCloneResult;
 import com.devmate.knowledge.source.GitSourceClient;
 import com.devmate.knowledge.source.SourceImportException;
@@ -29,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SourceImportControllerTest {
 
     private static final String REVISION = "0123456789abcdef0123456789abcdef01234567";
+    private static final String NEXT_REVISION = "89abcdef0123456789abcdef0123456789abcdef";
 
     @Autowired
     private MockMvc mockMvc;
@@ -64,6 +68,8 @@ class SourceImportControllerTest {
     private KnowledgeChunkMapper chunkMapper;
     @Autowired
     private CodeReferenceMapper referenceMapper;
+    @Autowired
+    private EmbeddingVectorMapper vectorMapper;
 
     @MockitoBean
     private GitSourceClient gitSourceClient;
@@ -83,7 +89,8 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.revision").value(REVISION))
                 .andExpect(jsonPath("$.data.totalFiles").value(2))
-                .andExpect(jsonPath("$.data.processedFiles").value(2));
+                .andExpect(jsonPath("$.data.processedFiles").value(2))
+                .andExpect(jsonPath("$.data.reusedFiles").value(0));
 
         Project storedProject = projectMapper.selectById(project.id());
         assertThat(storedProject.getStatus()).isEqualTo("READY");
@@ -112,17 +119,110 @@ class SourceImportControllerTest {
 
         mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
                 .andExpect(status().isOk());
+        mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.processedChunks").value(5));
+        Set<Long> originalChunkIds = chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getProjectId, project.id()))
+                .stream()
+                .map(KnowledgeChunk::getId)
+                .collect(java.util.stream.Collectors.toSet());
         mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taskType").value("INCREMENTAL"))
+                .andExpect(jsonPath("$.data.processedFiles").value(0))
+                .andExpect(jsonPath("$.data.reusedFiles").value(2));
 
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, project.id()))).isEqualTo(2);
         assertThat(chunkMapper.selectCount(Wrappers.lambdaQuery(KnowledgeChunk.class)
                 .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(5);
+        assertThat(chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getProjectId, project.id())))
+                .extracting(KnowledgeChunk::getId)
+                .containsExactlyInAnyOrderElementsOf(originalChunkIds);
+        assertThat(chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getProjectId, project.id())))
+                .allSatisfy(chunk -> assertThat(chunk.getVectorId()).isNotBlank());
+        assertThat(vectorMapper.selectCount(null)).isEqualTo(5);
         assertThat(referenceMapper.selectCount(Wrappers.lambdaQuery(CodeReference.class)
                 .eq(CodeReference::getProjectId, project.id()))).isEqualTo(1);
         assertThat(indexTaskMapper.selectCount(Wrappers.lambdaQuery(IndexTask.class)
                 .eq(IndexTask::getProjectId, project.id()))).isEqualTo(2);
+    }
+
+    @Test
+    void incrementallyImportsChangedFilesAndRebuildsReusedReferencesForNewRevision() throws Exception {
+        ProjectResponse project = createGitProject("incremental-import");
+        AtomicInteger cloneCount = new AtomicInteger();
+        given(gitSourceClient.cloneRepository(anyString(), eq("main"), any(Path.class)))
+                .willAnswer(invocation -> {
+                    Path target = invocation.getArgument(2);
+                    Path sources = target.resolve("src/main/java/com/example");
+                    Files.createDirectories(sources);
+                    Files.writeString(sources.resolve("Stable.java"), """
+                            package com.example;
+                            class Stable {
+                                void run() { helper(); }
+                                void helper() {}
+                            }
+                            """);
+                    if (cloneCount.getAndIncrement() == 0) {
+                        Files.writeString(sources.resolve("Changed.java"), """
+                                package com.example;
+                                class Changed { String value() { return "before"; } }
+                                """);
+                        Files.writeString(sources.resolve("Deleted.java"), """
+                                package com.example;
+                                class Deleted {}
+                                """);
+                        return new GitCloneResult(target, REVISION);
+                    }
+                    Files.writeString(sources.resolve("Changed.java"), """
+                            package com.example;
+                            class Changed { String value() { return "after"; } }
+                            """);
+                    Files.writeString(sources.resolve("Added.java"), """
+                            package com.example;
+                            class Added {}
+                            """);
+                    return new GitCloneResult(target, NEXT_REVISION);
+                });
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taskType").value("FULL"))
+                .andExpect(jsonPath("$.data.processedFiles").value(3))
+                .andExpect(jsonPath("$.data.reusedFiles").value(0));
+        Long previousReferenceTarget = referenceMapper.selectOne(
+                Wrappers.lambdaQuery(CodeReference.class)
+                        .eq(CodeReference::getProjectId, project.id())
+                        .eq(CodeReference::getRevision, REVISION)
+                        .last("LIMIT 1")
+        ).getTargetChunkId();
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taskType").value("INCREMENTAL"))
+                .andExpect(jsonPath("$.data.totalFiles").value(3))
+                .andExpect(jsonPath("$.data.processedFiles").value(2))
+                .andExpect(jsonPath("$.data.reusedFiles").value(1));
+
+        assertThat(documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                        .eq(KnowledgeDocument::getProjectId, project.id())
+                        .eq(KnowledgeDocument::getRevision, NEXT_REVISION)))
+                .extracting(KnowledgeDocument::getFileName)
+                .containsExactlyInAnyOrder("Stable.java", "Changed.java", "Added.java")
+                .doesNotContain("Deleted.java");
+        CodeReference rebuilt = referenceMapper.selectOne(Wrappers.lambdaQuery(CodeReference.class)
+                .eq(CodeReference::getProjectId, project.id())
+                .eq(CodeReference::getRevision, NEXT_REVISION)
+                .last("LIMIT 1"));
+        assertThat(rebuilt.getTargetChunkId()).isNotNull().isNotEqualTo(previousReferenceTarget);
+        assertThat(chunkMapper.selectById(rebuilt.getSourceChunkId()).getRevision()).isEqualTo(NEXT_REVISION);
+        assertThat(chunkMapper.selectById(rebuilt.getTargetChunkId()).getRevision()).isEqualTo(NEXT_REVISION);
+        assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                .eq(KnowledgeDocument::getProjectId, project.id()))).isEqualTo(6);
     }
 
     @Test

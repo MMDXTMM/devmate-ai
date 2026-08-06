@@ -16,6 +16,7 @@ public class IndexTask {
     private String status;
     private Integer totalFiles;
     private Integer processedFiles;
+    private Integer reusedFiles;
     private Integer failedFiles;
     private String errorMessage;
     private LocalDateTime createdAt;
@@ -36,6 +37,8 @@ public class IndexTask {
     public void setTotalFiles(Integer totalFiles) { this.totalFiles = totalFiles; }
     public Integer getProcessedFiles() { return processedFiles; }
     public void setProcessedFiles(Integer processedFiles) { this.processedFiles = processedFiles; }
+    public Integer getReusedFiles() { return reusedFiles; }
+    public void setReusedFiles(Integer reusedFiles) { this.reusedFiles = reusedFiles; }
     public Integer getFailedFiles() { return failedFiles; }
     public void setFailedFiles(Integer failedFiles) { this.failedFiles = failedFiles; }
     public String getErrorMessage() { return errorMessage; }

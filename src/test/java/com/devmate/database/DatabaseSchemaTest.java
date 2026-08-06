@@ -85,5 +85,10 @@ class DatabaseSchemaTest {
                   )
                 """, Integer.class);
         assertThat(embeddingReuseIndexColumns).isEqualTo(6);
+        Integer reusedFilesColumn = jdbcTemplate.queryForObject(
+                "SELECT COUNT(reused_files) FROM index_task",
+                Integer.class
+        );
+        assertThat(reusedFilesColumn).isZero();
     }
 }
