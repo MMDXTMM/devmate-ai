@@ -165,6 +165,7 @@ public class StaticAnalysisStateService {
                 Wrappers.lambdaQuery(StaticAnalysisTask.class)
                         .eq(StaticAnalysisTask::getProjectId, projectId)
                         .orderByDesc(StaticAnalysisTask::getCreatedAt)
+                        .orderByDesc(StaticAnalysisTask::getId)
                         .last("LIMIT 1")
         );
         if (task == null) {

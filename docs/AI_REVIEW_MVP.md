@@ -2,16 +2,20 @@
 
 ## 1. 当前边界
 
-阶段 6 已实现从“最新成功 Diff + 对应静态分析 + RAG 证据”到结构化 AI Finding 的工程闭环。本固定流水线继续保留；阶段 7 的受控 Tool Calling Agent 见 [TOOL_CALLING_AGENT.md](TOOL_CALLING_AGENT.md)，后续用同一缺陷集比较两条路径。
+阶段 6 已实现从“客户端显式指定、服务端确认仍为最近成功的 Diff + 对应静态分析 + RAG 证据”到结构化 AI Finding 的工程闭环。本固定流水线继续保留；阶段 7 的受控 Tool Calling Agent 见 [TOOL_CALLING_AGENT.md](TOOL_CALLING_AGENT.md)，后续用同一缺陷集比较两条路径。
 
 第一版只给出审查建议，不自动修改、提交或合并代码，也不允许模型执行 Shell、SQL 或直接访问数据库。
 
 ## 2. 请求流程
 
 ```text
-POST /api/projects/{projectId}/ai-reviews
+POST /api/projects/{projectId}/ai-reviews，提交预期 reviewTaskId、revision 与 attemptKey
         ↓
-短事务：固定最新成功 Diff 和对应静态分析
+只读预检：确认预期 Diff 仍是当前最近成功 Diff
+        ↓
+解析当前模型配置
+        ↓
+短事务：再次校验并固定该 Diff 和对应静态分析
         ↓
 写入 RUNNING ai_review_task 与 ai_invocation_log
         ↓
@@ -26,7 +30,19 @@ Java 校验 chunkId、枚举、长度、置信度和重复 Finding
 失败时短事务：保存脱敏错误并释放运行幂等键
 ```
 
-模型或检索调用不位于数据库长事务中。任务使用 `running_key` 唯一键阻止同一 Diff 并发重复审查；超过 10 分钟的 RUNNING 任务会先转为 FAILED，再允许重试。
+请求体示例：
+
+```json
+{
+  "reviewTaskId": "2084116785588308000",
+  "revision": "0123456789abcdef0123456789abcdef01234567",
+  "attemptKey": "123e4567-e89b-42d3-a456-426614174000"
+}
+```
+
+`reviewTaskId` 是 `BIGINT`，前端和 JSON 中必须使用字符串，避免 JavaScript 精度丢失；`revision` 必须是规范的 40 位小写 Git SHA；`attemptKey` 必须是客户端每次新操作生成的小写 UUID v4。参数格式错误返回 HTTP 400。若 ID 或 revision 已不再对应当前最近成功 Diff，预检或 `prepare` 二次校验返回 HTTP 409、业务码 `40900`，且不会创建 `ai_review_task` 或 `ai_invocation_log`。二次校验用于覆盖预检完成后又产生新 Diff 的竞态窗口。
+
+模型或检索调用不位于数据库长事务中。任务使用 `running_key` 唯一键阻止同一 Diff 并发重复审查；V15 的 `attempt_key` 唯一键关联单次付费请求，响应丢失后通过 `GET /api/projects/{projectId}/ai-reviews/attempts/{attemptKey}` 精确回读，不能重发模型 POST。超过 10 分钟的 RUNNING 任务会先转为 FAILED，再允许新的 attempt 重试。
 
 ## 3. 前置条件
 
@@ -80,10 +96,12 @@ V10 增加：
 
 ## 7. API 与前端
 
-- `POST /api/projects/{projectId}/ai-reviews`：执行一次 AI 审查。
+- `POST /api/projects/{projectId}/ai-reviews`：携带预期 `reviewTaskId` 和 `revision` 执行一次 AI 审查；服务端不替客户端静默切换到新 Diff。
 - `GET /api/projects/{projectId}/ai-reviews/latest`：读取最近任务及结构化 Finding。
 
 Vue 弹窗打开时只读取历史记录，不自动调用模型。用户必须显式点击“开始 AI 审查”，界面会展示模型、证据数量、有效/拒绝结论、Token、耗时、事实/推断/待验证和验证方法。
+
+相关 latest 查询使用 `created_at DESC, id DESC` 稳定排序，避免时间戳相同时结果不确定，同时保留各接口原有状态语义：`/review-diffs/latest` 返回最近一次 Diff 任务，包括失败任务；创建 AI 审查时只接受当前最近成功 Diff；静态分析和 AI 审查 latest 继续返回各自最近一次任务。
 
 ## 8. 配置
 
@@ -102,13 +120,13 @@ export DASHSCOPE_API_KEY='<your-key>'
 
 ## 9. 当前验证与限制
 
-- 后端 87 项测试通过，覆盖 JSON 模型适配、证据伪造、字段校验、重复 Finding、成功/失败状态、并发幂等和超时任务恢复。
-- 前端 18 项测试与生产构建通过，验证打开弹窗不自动消耗额度。
-- H2 已从空库完整执行 V1–V10。
+- 后端自动化测试覆盖 JSON 模型适配、证据伪造、字段校验、重复 Finding、成功/失败状态、并发幂等、Diff 漂移拒绝、稳定排序和超时任务恢复。
+- 前端自动化测试与生产构建验证打开弹窗不自动消耗额度，并使用明确的 Diff ID 与 revision 发起审查。
+- H2 已从空库完整执行 V1–V15；V15 增加可精确恢复付费请求的 `attempt_key` 唯一索引。
 - 本地 MySQL 26.7 已从 V9 成功迁移到 V10；后端健康检查为 `UP`，原有 `devmate-ai` 项目数据可正常读取。Flyway 对高于 8.1 的 MySQL 版本给出兼容性提醒，后续升级依赖前需要继续做真实库回归。
 - DashScope 真实调用需要本地 API Key，未配置时会创建可观察的 FAILED 任务并给出可读错误；不能把 Mock 测试当作真实模型效果证明。
 - 当前请求是同步接口；阶段 9 再依据耗时和流量引入 MQ 异步化。
-- 当前没有固定 AI 缺陷评测集，不宣称准确率；阶段 8 用人工标注集统计命中、漏报和误报。
+- 已建立固定 AI 缺陷评测集和受控 A/B 执行器，但尚未运行真实 canary，不宣称准确率或 Agent 优于固定流水线。
 
 ## 10. 面试必须掌握
 
@@ -120,3 +138,5 @@ export DASHSCOPE_API_KEY='<your-key>'
 6. Structured Output 为什么仍然需要服务端校验？
 7. “模型没发现问题”和“没有 Finding 通过证据校验”有什么区别？
 8. 为什么当前先固定流水线，下一阶段才加入 Tool Calling？
+9. 为什么客户端必须显式提交 Diff ID 和 revision，服务端还要进行两次校验？
+10. `running_key` 与 `attemptKey` 分别解决什么问题，为什么响应丢失后不能盲目重发付费 POST？

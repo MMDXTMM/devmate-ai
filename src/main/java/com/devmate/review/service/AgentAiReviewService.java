@@ -12,6 +12,7 @@ import com.devmate.agent.service.ReviewAgentOrchestrator;
 import com.devmate.common.error.BusinessException;
 import com.devmate.common.error.ErrorCode;
 import com.devmate.review.dto.AiReviewResponse;
+import com.devmate.review.dto.CreateAiReviewRequest;
 import com.devmate.review.model.AiFindingValidationResult;
 import com.devmate.review.model.ReviewExecutionMode;
 import org.springframework.stereotype.Service;
@@ -44,10 +45,12 @@ public class AgentAiReviewService {
         this.findingValidator = findingValidator;
     }
 
-    public AiReviewResponse create(Long projectId) {
+    public AiReviewResponse create(Long projectId, CreateAiReviewRequest request) {
+        stateService.validateExpectedDiff(projectId, request.reviewTaskId(), request.revision());
         AiReviewModel model = modelRegistry.current();
         AiReviewContext context = stateService.prepare(
-                projectId, model.providerName(), model.modelName(), properties.getPromptVersion(),
+                projectId, request.reviewTaskId(), request.revision(), request.attemptKey(),
+                model.providerName(), model.modelName(), properties.getPromptVersion(),
                 ReviewExecutionMode.AGENT
         );
         long startedAt = System.nanoTime();

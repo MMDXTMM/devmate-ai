@@ -251,13 +251,23 @@ describe('projectApi', () => {
       timestamp: '2026-08-04T00:00:00Z',
     }))
 
-    const result = await projectApi.createAiReview('2084116785588305922')
+    const result = await projectApi.createAiReview('2084116785588305922', {
+      reviewTaskId: '2084116785588308000',
+      revision: 'a'.repeat(40),
+      attemptKey: '123e4567-e89b-42d3-a456-426614174000',
+    })
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/2084116785588305922/ai-reviews',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          reviewTaskId: '2084116785588308000',
+          revision: 'a'.repeat(40),
+          attemptKey: '123e4567-e89b-42d3-a456-426614174000',
+        }),
+      }),
     )
-    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('body')
     expect(result.modelName).toBe('qwen-plus')
   })
 
@@ -276,13 +286,23 @@ describe('projectApi', () => {
       timestamp: '2026-08-05T00:00:00Z',
     }))
 
-    const result = await projectApi.createAgentAiReview('2084116785588305922')
+    const result = await projectApi.createAgentAiReview('2084116785588305922', {
+      reviewTaskId: '2084116785588308000',
+      revision: 'b'.repeat(40),
+      attemptKey: '123e4567-e89b-42d3-a456-426614174001',
+    })
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/2084116785588305922/ai-reviews/agent',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          reviewTaskId: '2084116785588308000',
+          revision: 'b'.repeat(40),
+          attemptKey: '123e4567-e89b-42d3-a456-426614174001',
+        }),
+      }),
     )
-    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('body')
     expect(result.promptVersion).toBe('review-agent-v1')
   })
 

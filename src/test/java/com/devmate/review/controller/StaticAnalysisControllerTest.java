@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -101,6 +102,51 @@ class StaticAnalysisControllerTest {
         mockMvc.perform(post("/api/projects/{projectId}/static-analyses", project.id()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("请先生成成功的Diff覆盖报告"));
+    }
+
+    @Test
+    void latestAnalysisUsesHigherIdForTiedTimestampAndKeepsFailedVisibility() throws Exception {
+        ProjectResponse project = createProject("static-tied-latest");
+        mockRepositoryWithEmptyCatchBlock();
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/projects/{projectId}/review-diffs", project.id())
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/projects/{projectId}/static-analyses", project.id()))
+                .andExpect(status().isOk());
+
+        StaticAnalysisTask first = taskMapper.selectOne(
+                Wrappers.lambdaQuery(StaticAnalysisTask.class)
+                        .eq(StaticAnalysisTask::getProjectId, project.id())
+                        .orderByDesc(StaticAnalysisTask::getId)
+                        .last("LIMIT 1")
+        );
+        LocalDateTime tiedTimestamp = LocalDateTime.of(2026, 8, 6, 12, 0);
+        first.setCreatedAt(tiedTimestamp);
+        taskMapper.updateById(first);
+
+        StaticAnalysisTask latest = new StaticAnalysisTask();
+        latest.setProjectId(project.id());
+        latest.setReviewTaskId(first.getReviewTaskId());
+        latest.setToolName(first.getToolName());
+        latest.setToolVersion(first.getToolVersion());
+        latest.setStatus("FAILED");
+        latest.setAnalyzedFiles(0);
+        latest.setFindingCount(0);
+        latest.setErrorMessage("静态分析失败");
+        latest.setCreatedAt(tiedTimestamp);
+        latest.setStartedAt(tiedTimestamp);
+        latest.setFinishedAt(tiedTimestamp);
+        taskMapper.insert(latest);
+
+        assertThat(latest.getId()).isGreaterThan(first.getId());
+        mockMvc.perform(get("/api/projects/{projectId}/static-analyses/latest", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(latest.getId().toString()))
+                .andExpect(jsonPath("$.data.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.errorMessage").value("静态分析失败"));
     }
 
     @Test

@@ -102,6 +102,14 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 
 请求只提供 `datasetVersion` 和 `aiReviewTaskId`。服务端校验 AI 任务成功、项目归属、Diff 与 revision 一致，并读取真实执行模式和调用指标。
 
+### 创建受控 AI 审查
+
+`POST /api/projects/{projectId}/ai-reviews`
+
+`POST /api/projects/{projectId}/ai-reviews/agent`
+
+两个入口都必须显式提交 `{reviewTaskId, revision, attemptKey}`。服务端在解析模型和创建调用记录前，核对请求绑定的是该项目最新成功 Diff 及其目标 revision；任一字段漂移都拒绝执行，不能再由服务端静默改用另一个“最近任务”。`attemptKey` 只关联和恢复单次付费请求，执行模式仍由 FIXED/AGENT 入口决定，客户端不能在请求体中伪造。
+
 ### 查询运行结果
 
 `GET /api/projects/{projectId}/review-evaluation-runs?datasetVersion=...&reviewTaskId=...`
@@ -117,7 +125,9 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 3. 对最近一次已持久化的 AI 审查执行评测；
 4. 并排查看最近 FIXED/AGENT 的质量、成本与 Tool 指标。
 
-工作台不会调用模型，也不允许请求携带执行模式。当前 AI 创建接口会自动选择最近成功 Diff，查询接口也只提供最近任务；人工单次操作可以按“运行 FIXED → 评测 → 运行 AGENT → 评测”完成，但 8 项付费批量实验存在 Diff 漂移和响应丢失后重复执行的风险。真实全量运行前必须增加预期 Diff ID/revision 的服务端校验和受控执行器，并先通过零模型恢复路径测试。
+工作台不会调用模型，也不允许请求携带执行模式。运行 FIXED 或 AGENT 时，前端从当前成功 Diff 读取字符串 `reviewTaskId` 和目标 `revision` 并显式传给后端；后端再次校验绑定，避免页面状态与服务端最近 Diff 发生竞态。
+
+人工单次操作仍可按“运行 FIXED → 评测 → 运行 AGENT → 评测”完成。完整 8 项付费实验使用独立受控执行器，以统一处理全批预检、顺序、结果可比性、响应丢失和失败停止，不能依赖手工连续点击。
 
 ## 8. 事务和安全边界
 
@@ -129,6 +139,8 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 - 标准答案绑定已保存的 Diff 证据快照，不在用例创建事务中重新访问 Git、文件系统或模型。
 - V14 通过 `(review_task_id, new_path_hash)` 索引保持 Git 路径大小写语义；历史 V13 空哈希行回退为 Java 精确比较。Diff 的 TARGET 证据生成也按已有 `knowledge_document.path_hash` 查询并复核完整路径，避免先生成错误 Chunk 快照再被标准答案校验接受。
 - 批量工具不跨 8 个 HTTP 请求持有数据库长事务。它先全批预检，消除可提前发现的部分写入；应用阶段依靠唯一键、精确回读和可恢复重跑处理响应丢失或中途失败。
+- 每次付费 POST 使用新的 UUID v4 `attemptKey`。V15 将其持久化并建立唯一索引；POST 响应不明确时只按 attempt 路径轮询回读，不重复 POST。恢复结果还必须匹配项目、Diff、静态分析、revision、模式和模型，latest 或并发同配置任务不能作为本次证据。
+- 执行器仍不自动跨进程续跑完整实验。进程退出后可以用报告中的 `attemptKey` 人工核对已提交任务，但没有服务端批次状态机时，程序不能证明整个 FIXED/AGENT 顺序和所有评测步骤已经连续完成，因此再次运行属于新的显式实验。
 
 ## 9. 测试方案
 
@@ -143,9 +155,13 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 - manifest 请求字段完整镜像后端 DTO 约束，后一个非法条目也必须在整批零 POST 时失败；
 - Import/Diff 任一失败时标准答案零 POST；已有用例的 revision、类别、路径、行号、依据、重复或额外 caseKey 漂移均在全批预检失败；
 - 首次只补录缺失用例，POST 响应丢失后可回读恢复，立即重跑为零创建且全部复用；
-- H2 从空库执行 V1–V14，并在真实 MySQL 验证 V13→V14 与历史 Diff 兼容。
+- A/B 全批预检在任意项目、Diff、Gold Case 或静态分析漂移时保持零次 AI POST；
+- A/B 严格执行每个场景的 `FIXED → 评测 → AGENT → 评测`，检查两条结果的项目、Diff、revision、provider、model 和 dataset hash，并允许各自保留不同 Prompt/检索版本；
+- A/B 的 AI 响应丢失只接受 `attemptKey` 精确回读，评测响应丢失按唯一 AI 任务与数据集回读；任一失败停止后续场景，单场景 canary 不会被标记为完整 8 场景报告；
+- A/B 总体质量按汇总 TP/FP/FN 计算微平均 Precision/Recall/F1，同时汇总 Token、耗时和 Tool 调用；`partialMetrics=true` 不进入最终可比结果；
+- H2 从空库执行 V1–V15；真实 MySQL 已验证 V13→V14→V15 与历史项目、Diff 兼容，V15 列和唯一索引均已回读确认。
 
-当前验证结果：后端 111 项测试、前端 29 项测试、真实验收工具 28 项 Node 测试和 Vue 生产构建全部通过；隔离空库 MySQL 26.7 先在 V13 完成 25 张表和 8 场景真实持久化验收，随后包含 16 个历史 Diff 文件的数据目录成功迁移到 V14，应用健康为 `UP`。隔离 MySQL 临时表实测确认大小写不敏感 `file_path` 会命中两个变体，而 SHA-256 只命中正确原始路径。本轮没有调用真实模型。系统安装的 3306 服务仍未监听，属于独立的本机运维问题。
+2026-08-06 最终验证结果：后端 120 项、前端 37 项、真实验收与 A/B 工具共 48 项 Node 测试和 Vue 生产构建全部通过；其中受控 A/B 执行器为 20 项零模型 Fake Client 测试。隔离 MySQL 26.7 先在 V13 完成 25 张表和 8 场景真实持久化验收，随后包含 16 个历史 Diff 文件的数据目录成功迁移到 V14，再原地迁移到 V15；应用健康为 `UP`，`attempt_key` 列和唯一索引均存在，8 个项目与 16 个成功 Diff 保持可读。隔离 MySQL 临时表实测确认大小写不敏感 `file_path` 会命中两个变体，而 SHA-256 只命中正确原始路径。本轮没有调用真实模型。系统安装的 3306 服务仍未监听，属于独立的本机运维问题。
 
 ## 10. 第一版真实缺陷样本契约
 
@@ -219,3 +235,30 @@ MySQL 从空库执行 Flyway V1-V13，生成 25 张表，应用健康检查为 `
 最终结论来自完整 8 场景运行，不是把单场景报告拼在一起。MySQL 首次标准答案运行得到 `8 created / 8 verified`，立即重跑得到 `0 created / 8 reused / 8 verified`；数据库为 7 条 `DEFECT`、1 条 `CLEAN`，8 个字符串 ID、项目、Diff、revision、类别、路径、行号和依据均通过回读。报告保存在被 Git 忽略的 `target/benchmark-results/known-defects-v1-mysql-gold-cases*.json`，不包含源码、凭证、Prompt 或模型内容。
 
 本轮没有执行 Embedding、FIXED、AGENT 或模型，也没有生成或宣称任何准确率。H2 与 MySQL 实跑共同证明 API、GitHub、JGit、解析、Diff、人工标准答案和真实持久化证据链可工作。系统安装的 MySQL 3306 仍未监听，但这不再阻塞项目数据库链路验收；后续可按运维手册单独恢复。
+
+## 13. 受控 FIXED/AGENT A/B 执行器
+
+`benchmarks/review-fixtures/run-review-ab.mjs` 读取同一份 `manifest.json` 和 `revisions.json`，并把两份原始文件的 SHA-256 写入脱敏报告。运行测试：
+
+```bash
+node --test benchmarks/review-fixtures/run-review-ab.test.mjs
+```
+
+确认模型密钥仅存在于进程环境、额度足够且服务端依赖就绪后，先运行一个场景 canary：
+
+```bash
+node benchmarks/review-fixtures/run-review-ab.mjs \
+  --scenario case-001 \
+  --report target/benchmark-results/known-defects-v1-review-ab-canary.json
+```
+
+canary 的模型、绑定、评测和报告均通过后，再执行完整 8 组：
+
+```bash
+node benchmarks/review-fixtures/run-review-ab.mjs \
+  --report target/benchmark-results/known-defects-v1-review-ab.json
+```
+
+也可以通过 `--base-url` 指定后端。完整模式会先解析并预检全部 8 个确定性项目，严格核对 latest 成功 Diff 的 ID/base/target/candidate revision、完整 Gold Case 和同 Diff 的 latest 成功静态分析；任一漂移时不会发出 AI POST。随后按场景顺序执行 FIXED、立即评测、AGENT、立即评测，失败后把剩余场景标记为未执行。
+
+报告只保存必要 ID、revision、模型/版本、指标和成本快照，不保存源码、Finding/Tool 载荷、API 地址或凭证。单场景 `--scenario` 只产生 `CANARY` 报告，只有 8 组全部完成时 `fullDatasetCompleted` 才为 `true`。当前只完成执行器的零模型测试，尚未运行真实 canary 或完整 A/B，也没有可用于简历的真实指标。

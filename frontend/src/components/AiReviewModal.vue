@@ -24,6 +24,9 @@ const errorMessage = ref('')
 const feedbackErrorMessage = ref('')
 const feedbackSubmittingId = ref<string>()
 const feedbackDrafts = ref<Record<string, string>>({})
+let viewGeneration = 0
+let runSequence = 0
+let activeRunToken: number | null = null
 
 const severityLabel: Record<FindingSeverity, string> = {
   INFO: '提示',
@@ -54,44 +57,75 @@ function syncFeedbackDrafts(review: AiReview) {
   )
 }
 
-async function loadLatest() {
-  if (!props.projectId) return
+function isCurrentView(generation: number, projectId: string) {
+  return generation === viewGeneration && props.open && props.projectId === projectId
+}
+
+function isCurrentRun(generation: number, projectId: string, runToken: number) {
+  return activeRunToken === runToken && isCurrentView(generation, projectId)
+}
+
+async function loadLatest(generation: number, projectId: string) {
   loading.value = true
   report.value = null
   errorMessage.value = ''
   feedbackErrorMessage.value = ''
   try {
-    const latest = await projectApi.latestAiReview(props.projectId)
+    const latest = await projectApi.latestAiReview(projectId)
+    if (!isCurrentView(generation, projectId)) return
     report.value = latest
     syncFeedbackDrafts(latest)
   } catch (error) {
+    if (!isCurrentView(generation, projectId)) return
     if (!(error instanceof ApiError) || error.code !== 40400) {
       errorMessage.value = error instanceof ApiError ? error.message : '读取AI审查记录失败'
     }
   } finally {
-    loading.value = false
+    if (isCurrentView(generation, projectId)) loading.value = false
   }
 }
 
 async function runReview(mode: 'fixed' | 'agent') {
-  if (!props.projectId) return
+  if (!props.open || !props.projectId || running.value || loading.value) return
+  const projectId = props.projectId
+  const generation = viewGeneration
+  const runToken = ++runSequence
+  activeRunToken = runToken
   running.value = true
   runningMode.value = mode
   errorMessage.value = ''
   feedbackErrorMessage.value = ''
   try {
+    const reviewDiff = await projectApi.latestReviewDiff(projectId)
+    if (!isCurrentRun(generation, projectId, runToken)) return
+    if (reviewDiff.status !== 'SUCCEEDED') {
+      throw new ApiError('最近一次 Diff 尚未成功，无法执行 AI 审查')
+    }
+    if (!reviewDiff.targetRevision) {
+      throw new ApiError('最近一次 Diff 缺少目标版本，无法执行 AI 审查')
+    }
+    const request = {
+      reviewTaskId: reviewDiff.id,
+      revision: reviewDiff.targetRevision,
+      attemptKey: crypto.randomUUID(),
+    }
     const created = mode === 'agent'
-      ? await projectApi.createAgentAiReview(props.projectId)
-      : await projectApi.createAiReview(props.projectId)
+      ? await projectApi.createAgentAiReview(projectId, request)
+      : await projectApi.createAiReview(projectId, request)
+    if (!isCurrentRun(generation, projectId, runToken)) return
     report.value = created
     syncFeedbackDrafts(created)
   } catch (error) {
+    if (!isCurrentRun(generation, projectId, runToken)) return
     const message = error instanceof ApiError ? error.message : 'AI审查执行失败'
-    await loadLatest()
-    errorMessage.value = message
+    await loadLatest(generation, projectId)
+    if (isCurrentRun(generation, projectId, runToken)) errorMessage.value = message
   } finally {
-    running.value = false
-    runningMode.value = null
+    if (isCurrentRun(generation, projectId, runToken)) {
+      activeRunToken = null
+      running.value = false
+      runningMode.value = null
+    }
   }
 }
 
@@ -126,8 +160,19 @@ function formatLatency(value: number) {
 
 watch(
   () => [props.open, props.projectId] as const,
-  ([open]) => {
-    if (open) void loadLatest()
+  ([open, projectId]) => {
+    viewGeneration += 1
+    activeRunToken = null
+    loading.value = false
+    running.value = false
+    runningMode.value = null
+    if (open && projectId) {
+      void loadLatest(viewGeneration, projectId)
+    } else {
+      report.value = null
+      errorMessage.value = ''
+      feedbackErrorMessage.value = ''
+    }
   },
   { immediate: true },
 )

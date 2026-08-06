@@ -46,12 +46,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -100,13 +104,17 @@ class AiReviewControllerTest {
     @Test
     void createsEvidenceValidatedReviewAndPersistsAuditState() throws Exception {
         Fixture fixture = fixture("ai-review-success");
+        String attemptKey = UUID.randomUUID().toString();
         AiReviewModel model = modelReturning(finding(String.valueOf(fixture.chunkId())));
         given(modelRegistry.current()).willReturn(model);
         given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
 
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId()))
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId())
+                        .contentType(APPLICATION_JSON)
+                        .content(aiReviewRequest(fixture.reviewTaskId(), fixture.revision(), attemptKey)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").isString())
+                .andExpect(jsonPath("$.data.attemptKey").value(attemptKey))
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.provider").value("TEST"))
                 .andExpect(jsonPath("$.data.executionMode").value("FIXED"))
@@ -120,6 +128,7 @@ class AiReviewControllerTest {
 
         AiReviewTask task = latestTask(fixture.projectId());
         assertThat(task.getRunningKey()).isNull();
+        assertThat(task.getAttemptKey()).isEqualTo(attemptKey);
         assertThat(task.getExecutionMode()).isEqualTo("FIXED");
         assertThat(task.getRetrievalMode()).isEqualTo("LEXICAL_FALLBACK");
         AiInvocationLog invocation = invocationMapper.selectById(task.getInvocationId());
@@ -136,6 +145,15 @@ class AiReviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(task.getId().toString()))
                 .andExpect(jsonPath("$.data.findings.length()").value(1));
+
+        mockMvc.perform(get(
+                        "/api/projects/{projectId}/ai-reviews/attempts/{attemptKey}",
+                        fixture.projectId(),
+                        attemptKey
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(task.getId().toString()))
+                .andExpect(jsonPath("$.data.attemptKey").value(attemptKey));
     }
 
     @Test
@@ -145,7 +163,7 @@ class AiReviewControllerTest {
         given(modelRegistry.current()).willReturn(model);
         given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
 
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId()))
+        mockMvc.perform(aiReviewPost(fixture))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.findingCount").value(0))
@@ -166,7 +184,7 @@ class AiReviewControllerTest {
         given(modelRegistry.current()).willReturn(model);
         given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
 
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId()))
+        mockMvc.perform(aiReviewPost(fixture))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.message").value("AI审查模型调用失败"));
 
@@ -185,21 +203,165 @@ class AiReviewControllerTest {
         given(model.modelName()).willReturn("test-model");
         given(modelRegistry.current()).willReturn(model);
 
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", project.id()))
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", project.id())
+                        .contentType(APPLICATION_JSON)
+                        .content(aiReviewRequest(1L, "0123456789abcdef0123456789abcdef01234567")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("请先生成成功的Diff覆盖报告"));
+    }
+
+    @Test
+    void rejectsStaleDiffIdBeforeResolvingModelOrCreatingAuditState() throws Exception {
+        Fixture fixture = fixture("ai-review-stale-diff-id");
+        AiReviewModel model = mock(AiReviewModel.class);
+        given(modelRegistry.current()).willReturn(model);
+
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId())
+                        .contentType(APPLICATION_JSON)
+                        .content(aiReviewRequest(fixture.reviewTaskId() - 1, fixture.revision())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(40900))
+                .andExpect(jsonPath("$.message").value("Diff已发生变化，请刷新后重试"));
+
+        verify(modelRegistry, never()).current();
+        verify(model, never()).review(any());
+        assertThat(aiReviewTaskMapper.selectCount(Wrappers.lambdaQuery(AiReviewTask.class)
+                .eq(AiReviewTask::getProjectId, fixture.projectId()))).isZero();
+        assertThat(invocationMapper.selectCount(Wrappers.lambdaQuery(AiInvocationLog.class)
+                .eq(AiInvocationLog::getProjectId, fixture.projectId()))).isZero();
+    }
+
+    @Test
+    void requiresCanonicalFullLowercaseRevisionBeforeResolvingModel() throws Exception {
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", 1L)
+                        .contentType(APPLICATION_JSON)
+                        .content(aiReviewRequest(1L, "a".repeat(39))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("目标版本必须是40位小写Git提交哈希"));
+
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", 1L)
+                        .contentType(APPLICATION_JSON)
+                        .content(aiReviewRequest(1L, "A".repeat(40))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("目标版本必须是40位小写Git提交哈希"));
+
+        verify(modelRegistry, never()).current();
+    }
+
+    @Test
+    void requiresCanonicalAttemptKeyBeforeResolvingModel() throws Exception {
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", 1L)
+                        .contentType(APPLICATION_JSON)
+                        .content(aiReviewRequest(1L, "a".repeat(40), "not-a-uuid")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("请求标识必须是小写UUID v4"));
+
+        verify(modelRegistry, never()).current();
+    }
+
+    @Test
+    void rejectsReusedAttemptKeyWithoutCallingTheModelTwice() throws Exception {
+        Fixture fixture = fixture("ai-review-reused-attempt");
+        String attemptKey = UUID.randomUUID().toString();
+        AiReviewModel model = modelReturning(finding(String.valueOf(fixture.chunkId())));
+        given(modelRegistry.current()).willReturn(model);
+        given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
+        String request = aiReviewRequest(fixture.reviewTaskId(), fixture.revision(), attemptKey);
+
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId())
+                        .contentType(APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId())
+                        .contentType(APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("请求标识已使用，请查询原任务结果"));
+
+        verify(model, times(1)).review(any());
+        assertThat(aiReviewTaskMapper.selectCount(Wrappers.lambdaQuery(AiReviewTask.class)
+                .eq(AiReviewTask::getAttemptKey, attemptKey))).isOne();
+    }
+
+    @Test
+    void latestDiffUsesHigherIdForTiedTimestampAndCanBeBoundToReview() throws Exception {
+        Fixture first = fixture("ai-review-tied-diff");
+        Fixture latest = duplicateSucceededDiffWithEvidence(first, first.revision());
+        AiReviewModel model = modelReturning(finding(String.valueOf(latest.chunkId())));
+        given(modelRegistry.current()).willReturn(model);
+        given(retrievalService.search(any(), any())).willReturn(retrieval(latest));
+
+        assertThat(latest.reviewTaskId()).isGreaterThan(first.reviewTaskId());
+        mockMvc.perform(get("/api/projects/{projectId}/review-diffs/latest", first.projectId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(latest.reviewTaskId().toString()))
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+
+        mockMvc.perform(aiReviewPost(latest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reviewTaskId").value(latest.reviewTaskId().toString()))
+                .andExpect(jsonPath("$.data.revision").value(latest.revision()));
+    }
+
+    @Test
+    void latestAiReviewUsesHigherIdForTiedTimestamp() throws Exception {
+        Fixture fixture = fixture("ai-review-tied-task");
+        AiReviewModel model = modelReturning(finding(String.valueOf(fixture.chunkId())));
+        given(modelRegistry.current()).willReturn(model);
+        given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
+
+        mockMvc.perform(aiReviewPost(fixture)).andExpect(status().isOk());
+        AiReviewTask first = latestTaskById(fixture.projectId());
+        mockMvc.perform(aiReviewPost(fixture)).andExpect(status().isOk());
+        AiReviewTask latest = latestTaskById(fixture.projectId());
+        assertThat(latest.getId()).isGreaterThan(first.getId());
+
+        LocalDateTime tiedTimestamp = LocalDateTime.of(2026, 8, 6, 12, 0);
+        first.setCreatedAt(tiedTimestamp);
+        latest.setCreatedAt(tiedTimestamp);
+        aiReviewTaskMapper.updateById(first);
+        aiReviewTaskMapper.updateById(latest);
+
+        mockMvc.perform(get("/api/projects/{projectId}/ai-reviews/latest", fixture.projectId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(latest.getId().toString()));
+    }
+
+    @Test
+    void prepareRejectsDiffThatBecameStaleAfterPreflightWithoutAuditState() {
+        Fixture fixture = fixture("ai-review-drift-after-preflight");
+        stateService.validateExpectedDiff(
+                fixture.projectId(), fixture.reviewTaskId(), fixture.revision()
+        );
+        CodeReviewTask latest = insertTiedSucceededDiff(fixture, "9".repeat(40));
+
+        assertThat(latest.getId()).isGreaterThan(fixture.reviewTaskId());
+        assertThatThrownBy(() -> stateService.prepare(
+                fixture.projectId(), fixture.reviewTaskId(), fixture.revision(),
+                UUID.randomUUID().toString(),
+                "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
+        )).hasMessage("Diff已发生变化，请刷新后重试");
+        assertThat(aiReviewTaskMapper.selectCount(Wrappers.lambdaQuery(AiReviewTask.class)
+                .eq(AiReviewTask::getProjectId, fixture.projectId()))).isZero();
+        assertThat(invocationMapper.selectCount(Wrappers.lambdaQuery(AiInvocationLog.class)
+                .eq(AiInvocationLog::getProjectId, fixture.projectId()))).isZero();
     }
 
     @Test
     void databaseUniqueKeyPreventsConcurrentReviewForSameDiff() {
         Fixture fixture = fixture("ai-review-duplicate");
         AiReviewContext first = stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
+                fixture.projectId(), fixture.reviewTaskId(), fixture.revision(),
+                UUID.randomUUID().toString(),
+                "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         );
 
         assertThat(first.aiReviewTaskId()).isNotNull();
         assertThatThrownBy(() -> stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
+                fixture.projectId(), fixture.reviewTaskId(), fixture.revision(),
+                UUID.randomUUID().toString(),
+                "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         )).hasMessage("当前Diff已有AI审查任务正在运行");
     }
 
@@ -207,14 +369,18 @@ class AiReviewControllerTest {
     void staleRunningTaskIsFailedBeforeRetryStarts() {
         Fixture fixture = fixture("ai-review-stale-retry");
         AiReviewContext first = stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
+                fixture.projectId(), fixture.reviewTaskId(), fixture.revision(),
+                UUID.randomUUID().toString(),
+                "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         );
         AiReviewTask stale = aiReviewTaskMapper.selectById(first.aiReviewTaskId());
         stale.setStartedAt(LocalDateTime.now().minusMinutes(20));
         aiReviewTaskMapper.updateById(stale);
 
         AiReviewContext retried = stateService.prepare(
-                fixture.projectId(), "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
+                fixture.projectId(), fixture.reviewTaskId(), fixture.revision(),
+                UUID.randomUUID().toString(),
+                "TEST", "test-model", "ai-review-v1", ReviewExecutionMode.FIXED
         );
 
         assertThat(retried.aiReviewTaskId()).isNotEqualTo(first.aiReviewTaskId());
@@ -231,7 +397,7 @@ class AiReviewControllerTest {
         AiReviewModel model = modelReturning(finding(String.valueOf(fixture.chunkId())));
         given(modelRegistry.current()).willReturn(model);
         given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId()))
+        mockMvc.perform(aiReviewPost(fixture))
                 .andExpect(status().isOk());
         ReviewFinding finding = latestFinding(fixture.projectId());
 
@@ -282,7 +448,7 @@ class AiReviewControllerTest {
         AiReviewModel model = modelReturning(finding(String.valueOf(owner.chunkId())));
         given(modelRegistry.current()).willReturn(model);
         given(retrievalService.search(any(), any())).willReturn(retrieval(owner));
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", owner.projectId()))
+        mockMvc.perform(aiReviewPost(owner))
                 .andExpect(status().isOk());
         ReviewFinding finding = latestFinding(owner.projectId());
 
@@ -303,7 +469,7 @@ class AiReviewControllerTest {
         AiReviewModel model = modelReturning(finding(String.valueOf(fixture.chunkId())));
         given(modelRegistry.current()).willReturn(model);
         given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews", fixture.projectId()))
+        mockMvc.perform(aiReviewPost(fixture))
                 .andExpect(status().isOk());
         ReviewFinding finding = latestFinding(fixture.projectId());
 
@@ -423,7 +589,70 @@ class AiReviewControllerTest {
         staticTask.setFinishedAt(now);
         staticTaskMapper.insert(staticTask);
 
-        return new Fixture(project.id(), chunk.getId(), revision, document.getFilePath());
+        return new Fixture(
+                project.id(), reviewTask.getId(), chunk.getId(), revision, document.getFilePath()
+        );
+    }
+
+    private Fixture duplicateSucceededDiffWithEvidence(Fixture source, String revision) {
+        CodeReviewTask reviewTask = insertTiedSucceededDiff(source, revision);
+        CodeReviewFile sourceFile = reviewFileMapper.selectOne(
+                Wrappers.lambdaQuery(CodeReviewFile.class)
+                        .eq(CodeReviewFile::getReviewTaskId, source.reviewTaskId())
+                        .last("LIMIT 1")
+        );
+        CodeReviewFile file = new CodeReviewFile();
+        file.setReviewTaskId(reviewTask.getId());
+        file.setProjectId(source.projectId());
+        file.setOldPath(sourceFile.getOldPath());
+        file.setNewPath(sourceFile.getNewPath());
+        file.setNewPathHash(sourceFile.getNewPathHash());
+        file.setChangeType(sourceFile.getChangeType());
+        file.setCoverageStatus(sourceFile.getCoverageStatus());
+        file.setAdditions(sourceFile.getAdditions());
+        file.setDeletions(sourceFile.getDeletions());
+        file.setBaseChangedLinesJson(sourceFile.getBaseChangedLinesJson());
+        file.setChangedLinesJson(sourceFile.getChangedLinesJson());
+        file.setMappedSymbolsJson(sourceFile.getMappedSymbolsJson());
+        file.setSkipReason(sourceFile.getSkipReason());
+        file.setCreatedAt(reviewTask.getCreatedAt());
+        reviewFileMapper.insert(file);
+
+        StaticAnalysisTask staticTask = new StaticAnalysisTask();
+        staticTask.setProjectId(source.projectId());
+        staticTask.setReviewTaskId(reviewTask.getId());
+        staticTask.setToolName("PMD+DEVMATE");
+        staticTask.setToolVersion("7.26.0+v1");
+        staticTask.setStatus("SUCCEEDED");
+        staticTask.setAnalyzedFiles(1);
+        staticTask.setFindingCount(0);
+        staticTask.setCreatedAt(reviewTask.getCreatedAt());
+        staticTask.setStartedAt(reviewTask.getCreatedAt());
+        staticTask.setFinishedAt(reviewTask.getCreatedAt());
+        staticTaskMapper.insert(staticTask);
+        return new Fixture(
+                source.projectId(), reviewTask.getId(), source.chunkId(), revision, source.filePath()
+        );
+    }
+
+    private CodeReviewTask insertTiedSucceededDiff(Fixture source, String revision) {
+        CodeReviewTask existing = reviewTaskMapper.selectById(source.reviewTaskId());
+        CodeReviewTask reviewTask = new CodeReviewTask();
+        reviewTask.setProjectId(source.projectId());
+        reviewTask.setIndexTaskId(existing.getIndexTaskId());
+        reviewTask.setBaseRevision(existing.getBaseRevision());
+        reviewTask.setTargetRevision(revision);
+        reviewTask.setTriggerType("MANUAL");
+        reviewTask.setStatus("SUCCEEDED");
+        reviewTask.setChangedFiles(1);
+        reviewTask.setFullyMappedFiles(1);
+        reviewTask.setPartiallyMappedFiles(0);
+        reviewTask.setSkippedFiles(0);
+        reviewTask.setCreatedAt(existing.getCreatedAt());
+        reviewTask.setStartedAt(existing.getStartedAt());
+        reviewTask.setFinishedAt(existing.getFinishedAt());
+        reviewTaskMapper.insert(reviewTask);
+        return reviewTask;
     }
 
     private ProjectResponse createProject(String name) {
@@ -469,10 +698,35 @@ class AiReviewControllerTest {
         );
     }
 
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder aiReviewPost(
+            Fixture fixture
+    ) {
+        return post("/api/projects/{projectId}/ai-reviews", fixture.projectId())
+                .contentType(APPLICATION_JSON)
+                .content(aiReviewRequest(fixture.reviewTaskId(), fixture.revision()));
+    }
+
+    private String aiReviewRequest(Long reviewTaskId, String revision) {
+        return aiReviewRequest(reviewTaskId, revision, UUID.randomUUID().toString());
+    }
+
+    private String aiReviewRequest(Long reviewTaskId, String revision, String attemptKey) {
+        return """
+                {"reviewTaskId":"%s","revision":"%s","attemptKey":"%s"}
+                """.formatted(reviewTaskId, revision, attemptKey);
+    }
+
     private AiReviewTask latestTask(Long projectId) {
         return aiReviewTaskMapper.selectOne(Wrappers.lambdaQuery(AiReviewTask.class)
                 .eq(AiReviewTask::getProjectId, projectId)
                 .orderByDesc(AiReviewTask::getCreatedAt)
+                .last("LIMIT 1"));
+    }
+
+    private AiReviewTask latestTaskById(Long projectId) {
+        return aiReviewTaskMapper.selectOne(Wrappers.lambdaQuery(AiReviewTask.class)
+                .eq(AiReviewTask::getProjectId, projectId)
+                .orderByDesc(AiReviewTask::getId)
                 .last("LIMIT 1"));
     }
 
@@ -483,6 +737,12 @@ class AiReviewControllerTest {
                 .last("LIMIT 1"));
     }
 
-    private record Fixture(Long projectId, Long chunkId, String revision, String filePath) {
+    private record Fixture(
+            Long projectId,
+            Long reviewTaskId,
+            Long chunkId,
+            String revision,
+            String filePath
+    ) {
     }
 }
