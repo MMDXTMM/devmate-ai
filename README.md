@@ -150,6 +150,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [代码审查固定缺陷集与效果评测](docs/REVIEW_EVALUATION.md)
 - [前端开发与联调](docs/FRONTEND_DEVELOPMENT.md)
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
+- [基础业务闭环、简历证据与问题复盘](docs/BUSINESS_WORKFLOW_AND_RESUME.md)
 - [同类开源项目对比与路线优化](docs/OPEN_SOURCE_COMPARISON.md)
 - [AI 辅助开发与项目归属规范](docs/AI_COLLABORATION_GUIDE.md)
 - [项目决策与变更日志](docs/PROJECT_LOG.md)

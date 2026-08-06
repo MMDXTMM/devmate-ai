@@ -54,6 +54,12 @@ export interface IndexTask {
   processedFiles: number
   reusedFiles: number
   failedFiles: number
+  cloneDurationMs: number
+  scanDurationMs: number
+  planDurationMs: number
+  parseDurationMs: number
+  persistDurationMs: number
+  totalDurationMs: number
   errorMessage?: string
   createdAt: string
   startedAt?: string

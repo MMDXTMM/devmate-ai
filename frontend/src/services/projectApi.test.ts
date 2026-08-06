@@ -83,6 +83,12 @@ describe('projectApi', () => {
         processedFiles: 12,
         reusedFiles: 0,
         failedFiles: 0,
+        cloneDurationMs: 120,
+        scanDurationMs: 10,
+        planDurationMs: 5,
+        parseDurationMs: 30,
+        persistDurationMs: 20,
+        totalDurationMs: 185,
       },
       timestamp: '2026-08-03T00:00:00Z',
     }))
@@ -94,6 +100,7 @@ describe('projectApi', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     expect(task.totalFiles).toBe(12)
+    expect(task.totalDurationMs).toBe(185)
   })
 
   it('loads source documents and symbols with string ids', async () => {

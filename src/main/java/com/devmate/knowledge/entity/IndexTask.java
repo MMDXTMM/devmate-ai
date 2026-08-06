@@ -18,6 +18,12 @@ public class IndexTask {
     private Integer processedFiles;
     private Integer reusedFiles;
     private Integer failedFiles;
+    private Long cloneDurationMs;
+    private Long scanDurationMs;
+    private Long planDurationMs;
+    private Long parseDurationMs;
+    private Long persistDurationMs;
+    private Long totalDurationMs;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime startedAt;
@@ -41,6 +47,18 @@ public class IndexTask {
     public void setReusedFiles(Integer reusedFiles) { this.reusedFiles = reusedFiles; }
     public Integer getFailedFiles() { return failedFiles; }
     public void setFailedFiles(Integer failedFiles) { this.failedFiles = failedFiles; }
+    public Long getCloneDurationMs() { return cloneDurationMs; }
+    public void setCloneDurationMs(Long cloneDurationMs) { this.cloneDurationMs = cloneDurationMs; }
+    public Long getScanDurationMs() { return scanDurationMs; }
+    public void setScanDurationMs(Long scanDurationMs) { this.scanDurationMs = scanDurationMs; }
+    public Long getPlanDurationMs() { return planDurationMs; }
+    public void setPlanDurationMs(Long planDurationMs) { this.planDurationMs = planDurationMs; }
+    public Long getParseDurationMs() { return parseDurationMs; }
+    public void setParseDurationMs(Long parseDurationMs) { this.parseDurationMs = parseDurationMs; }
+    public Long getPersistDurationMs() { return persistDurationMs; }
+    public void setPersistDurationMs(Long persistDurationMs) { this.persistDurationMs = persistDurationMs; }
+    public Long getTotalDurationMs() { return totalDurationMs; }
+    public void setTotalDurationMs(Long totalDurationMs) { this.totalDurationMs = totalDurationMs; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
     public LocalDateTime getCreatedAt() { return createdAt; }

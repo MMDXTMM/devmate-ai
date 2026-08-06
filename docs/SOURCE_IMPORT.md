@@ -37,7 +37,7 @@ index_task = SUCCEEDED，project = READY
 
 同一 revision 重复导入时直接复用已有 Document、Chunk、Reference 和向量绑定，不再删除重建。新 revision 会扫描并计算全部允许文件的哈希，但只解析新增、修改或移动的文件；路径、类型和内容哈希都一致的文件从上一 revision 重建结构元数据，并把原始引用重新绑定到新 revision 的 Chunk。删除文件不会写入新 revision，因此不会参与当前检索；旧 revision 保留用于复现历史审查。
 
-`index_task` 使用 `FULL/INCREMENTAL` 区分首次与后续导入，并分别记录 `processed_files` 和 `reused_files`。复用表示跳过了解析，不表示新 revision 直接引用旧 Chunk ID。
+`index_task` 使用 `FULL/INCREMENTAL` 区分首次与后续导入，并分别记录 `processed_files` 和 `reused_files`。复用表示跳过了解析，不表示新 revision 直接引用旧 Chunk ID。V18 进一步记录 `clone/scan/plan/parse/persist/total` 六段耗时；使用 `System.nanoTime()` 计算耗时，避免系统时钟调整产生负数。成功、失败和同 revision 快速路径都会保存指标，同 revision 的扫描、计划和解析耗时固定为 0。
 
 ## 事务边界
 
@@ -92,7 +92,7 @@ unset DEVMATE_GIT_USERNAME
 - 当前不会自动读取 GitHub CLI 或系统钥匙串；私有仓库必须显式设置环境变量。
 - 当前只有一组进程级 Git 凭证；多用户生产版本后续改为 GitHub App Installation Token。
 - JDK AST 当前完成语法结构解析，不执行仓库代码，也不解析完整跨文件类型绑定。
-- 当前 Chunk 尚未写入 Embedding，`vector_id` 保持为空。
+- Embedding 是导入后的独立显式步骤；本地 Provider 可完成零费用闭环，真实语义 Provider 需要运行环境密钥。
 
 ## 接口
 
