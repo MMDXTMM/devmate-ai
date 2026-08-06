@@ -2,6 +2,19 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-06：完成 JWT 登录与项目级访问隔离
+
+- 接入 Spring Security、BCrypt 和 Auth0 JWT，提供注册、登录和当前用户接口；JWT 只保存用户 ID、用户名和期限，项目权限继续读取数据库事实。
+- 启用安全时要求至少 32 字符的环境变量密钥，测试 Profile 默认关闭安全；专用集成测试显式开启，覆盖缺失、篡改和过期 Token。
+- 创建项目在同一数据库事务内写入 `project.owner_id` 和 `project_member(OWNER)`；列表只返回当前用户参与的项目，修改和删除要求 OWNER。
+- 增加统一项目路径过滤器，保护导入、结构、Diff、静态分析、RAG、Agent、反馈和评测接口；Project Service 再执行角色校验，避免内部调用绕过核心规则。
+- Vue 新增登录/注册页面，Token 只保存在 `sessionStorage`；统一 API 客户端添加 Bearer Token，401 自动清理会话并返回登录页。
+- DashScope AI、Agent 和 Embedding 客户端会把 HTTP 429 转换为明确的频率/额度错误并停止，不自动重试付费请求；Codex 平台自身的账号 429 不属于仓库可控制范围。
+- 开发中遇到 Spring 多构造器导致 `JwtService` 无法确定注入入口，明确标注生产构造器后修复；前端测试环境没有可用 `localStorage`，测试改为只验证实际使用的 `sessionStorage` 契约。
+- 当前不实现 Refresh Token、Redis 黑名单、管理员、成员邀请和密码找回；历史 `owner_id IS NULL` 项目不会自动公开，需要后续显式认领。
+- 最终全量验证为后端 130 项、前端 46 项、Benchmark Node 48 项和 Vue 生产构建通过。
+- 隔离 MySQL 26.7 在 V18 历史库完成真实验收：注册两个用户、创建项目、OWNER 查询 200、第二用户查询 403/40300；两条密码均为 BCrypt 哈希，`owner_id` 与唯一 OWNER 成员关系一致。验收没有调用 Embedding 或 AI 模型。
+
 ## 2026-08-06：补齐导入耗时与基础审查业务闭环
 
 - V18 为导入任务增加 clone、scan、plan、parse、persist 和 total 六段耗时，成功、失败和同 revision 幂等路径均持久化可观测数据。

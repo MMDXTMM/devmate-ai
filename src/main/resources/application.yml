@@ -44,6 +44,10 @@ logging:
     com.devmate: info
 
 devmate:
+  security:
+    enabled: ${DEVMATE_SECURITY_ENABLED:true}
+    jwt-secret: ${DEVMATE_JWT_SECRET:}
+    access-token-ttl: ${DEVMATE_ACCESS_TOKEN_TTL:8h}
   source:
     workspace-root: ${user.dir}/workspace
     clone-timeout-seconds: 60

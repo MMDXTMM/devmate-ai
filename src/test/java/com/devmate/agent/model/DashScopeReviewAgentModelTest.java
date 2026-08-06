@@ -3,6 +3,7 @@ package com.devmate.agent.model;
 import com.devmate.agent.config.AiReviewProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -17,6 +18,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 class DashScopeReviewAgentModelTest {
 
@@ -103,6 +105,22 @@ class DashScopeReviewAgentModelTest {
         assertThatThrownBy(() -> model.next(List.of(), List.of()))
                 .isInstanceOf(AiReviewException.class)
                 .hasMessage("未配置AI审查模型API Key");
+    }
+
+    @Test
+    void explainsRateLimitWithoutRetryingAgentTurns() {
+        AiReviewProperties properties = properties();
+        RestClient.Builder builder = testClientBuilder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://model.example/v1/chat/completions"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        DashScopeReviewAgentModel model = new DashScopeReviewAgentModel(properties, builder.build());
+
+        assertThatThrownBy(() -> model.next(List.of(), List.of()))
+                .isInstanceOf(AiReviewException.class)
+                .hasMessage("AI Agent模型请求过于频繁或额度不足，请稍后重试并检查额度");
+        server.verify();
     }
 
     private AiReviewProperties properties() {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import AuthView from './components/AuthView.vue'
 import ProjectFormModal from './components/ProjectFormModal.vue'
 import SourceStructureModal from './components/SourceStructureModal.vue'
 import DiffReportModal from './components/DiffReportModal.vue'
@@ -9,6 +10,8 @@ import AiReviewModal from './components/AiReviewModal.vue'
 import ReviewEvaluationModal from './components/ReviewEvaluationModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import { runBasicAnalysis } from './services/basicAnalysisWorkflow'
+import { clearAuthSession, getAuthSession, setAuthSession, subscribeAuthSession } from './services/authSession'
+import type { AuthSession } from './types/auth'
 import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
 
 const pageData = ref<PageData<Project>>({ page: 1, size: 10, total: 0, pages: 0, items: [] })
@@ -29,6 +32,8 @@ const analysisProject = ref<Project | null>(null)
 const retrievalProject = ref<Project | null>(null)
 const aiReviewProject = ref<Project | null>(null)
 const evaluationProject = ref<Project | null>(null)
+const authSession = ref<AuthSession | null>(getAuthSession())
+let unsubscribeAuth: (() => void) | undefined
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
 const rangeText = computed(() => {
@@ -188,11 +193,30 @@ function formatDate(value?: string) {
   }).format(new Date(value))
 }
 
-onMounted(() => loadProjects())
+function handleAuthenticated(session: AuthSession) {
+  setAuthSession(session)
+  authSession.value = session
+  void loadProjects(1)
+}
+
+function logout() {
+  clearAuthSession()
+  authSession.value = null
+  pageData.value = { page: 1, size: 10, total: 0, pages: 0, items: [] }
+}
+
+onMounted(() => {
+  unsubscribeAuth = subscribeAuthSession(() => {
+    authSession.value = getAuthSession()
+  })
+  if (authSession.value) void loadProjects()
+})
+onUnmounted(() => unsubscribeAuth?.())
 </script>
 
 <template>
-  <div class="app-shell">
+  <AuthView v-if="!authSession" @authenticated="handleAuthenticated" />
+  <div v-else class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="#" aria-label="DevMate AI 首页">
         <span class="brand-mark">D</span>
@@ -205,7 +229,8 @@ onMounted(() => loadProjects())
       </nav>
       <div class="sidebar-footer">
         <span class="connection-dot"></span>
-        <div><b>API 已配置</b><small>localhost:8080</small></div>
+        <div class="signed-user"><b>{{ authSession.user.username }}</b><small>{{ authSession.user.email || '已认证用户' }}</small></div>
+        <button class="logout-button" type="button" title="退出登录" aria-label="退出登录" @click="logout">↪</button>
       </div>
     </aside>
 

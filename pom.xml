@@ -23,6 +23,7 @@
         <jgit.version>7.6.0.202603022253-r</jgit.version>
         <jsqlparser.version>5.2</jsqlparser.version>
         <pmd.version>7.26.0</pmd.version>
+        <java-jwt.version>4.5.0</java-jwt.version>
     </properties>
 
     <dependencies>
@@ -37,6 +38,15 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>${java-jwt.version}</version>
         </dependency>
 
         <dependency>
