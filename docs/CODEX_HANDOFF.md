@@ -13,11 +13,11 @@
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
 | 最近合并 | PR #19，`main@4aa9ca3` |
-| 本轮交付 | 分支 `codex/incremental-index`：V16 跨 revision 精确向量复用与独立计数；开发中 |
+| 本轮交付 | PR #20，提交 `c852711`：V16 跨 revision 精确向量复用与独立计数；等待合并 |
 | 数据库 | H2 已从空库迁移到 V16；隔离 MySQL 26.7 已从 V15 原地迁移到 V16，健康检查与历史数据回读通过 |
 | 测试基线 | 后端 121 项、前端 37 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
 | 精确暂停点 | 零模型实现与快速回归完成；尚未执行真实 FIXED/AGENT canary，也未产生准确率、Token 或延迟结论 |
-| 下一小任务 | 提交增量向量复用独立 PR；之后实现文件/Chunk 级增量导入，真实 AI canary 继续等待显式额度确认 |
+| 下一小任务 | 合并 PR #20；之后实现文件/Chunk 级增量导入，真实 AI canary 继续等待显式额度确认 |
 
 ### 状态可信度顺序
 
