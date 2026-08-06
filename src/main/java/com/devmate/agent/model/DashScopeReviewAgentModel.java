@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 
@@ -86,6 +87,11 @@ public class DashScopeReviewAgentModel implements ReviewAgentModel {
                     usage.totalTokens(),
                     choice.finishReason()
             );
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 429) {
+                throw new AiReviewException("AI Agent模型请求过于频繁或额度不足，请稍后重试并检查额度", exception);
+            }
+            throw new AiReviewException("AI Agent模型调用失败", exception);
         } catch (RestClientException exception) {
             throw new AiReviewException("AI Agent模型调用失败", exception);
         }

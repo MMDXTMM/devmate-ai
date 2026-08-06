@@ -3,6 +3,7 @@ package com.devmate.knowledge.embedding;
 import com.devmate.knowledge.config.EmbeddingProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -18,6 +19,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 class DashScopeEmbeddingProviderTest {
 
@@ -69,6 +71,22 @@ class DashScopeEmbeddingProviderTest {
         assertThatThrownBy(() -> provider.embed(List.of("code")))
                 .isInstanceOf(EmbeddingException.class)
                 .hasMessage("未配置远端Embedding API Key");
+    }
+
+    @Test
+    void explainsRateLimitWithoutAutomaticallyRetryingTheBatch() {
+        EmbeddingProperties properties = properties();
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://embedding.example/v1/embeddings"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        DashScopeEmbeddingProvider provider = new DashScopeEmbeddingProvider(properties, builder);
+
+        assertThatThrownBy(() -> provider.embed(List.of("code")))
+                .isInstanceOf(EmbeddingException.class)
+                .hasMessage("远端Embedding请求过于频繁或额度不足，请稍后重试并检查额度");
+        server.verify();
     }
 
     private EmbeddingProperties properties() {

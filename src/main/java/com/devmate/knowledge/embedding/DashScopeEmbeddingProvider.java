@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.Comparator;
 import java.util.List;
@@ -70,6 +71,11 @@ public class DashScopeEmbeddingProvider implements EmbeddingProvider {
                     .map(this::toVector)
                     .toList();
             return new EmbeddingBatch(vectors);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 429) {
+                throw new EmbeddingException("远端Embedding请求过于频繁或额度不足，请稍后重试并检查额度", exception);
+            }
+            throw new EmbeddingException("远端Embedding调用失败", exception);
         } catch (RestClientException exception) {
             throw new EmbeddingException("远端Embedding调用失败", exception);
         }

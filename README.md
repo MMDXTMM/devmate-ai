@@ -2,7 +2,7 @@
 
 DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
-当前已经完成基础工程、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图、带固定评测集的关键词/向量/关系图混合 RAG、证据约束的结构化 AI 审查、受控 Tool Calling Agent、开发者 Finding 反馈闭环，以及固定缺陷标准答案与评测运行模型。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成基础工程、登录认证与项目隔离、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图、带固定评测集的关键词/向量/关系图混合 RAG、证据约束的结构化 AI 审查、受控 Tool Calling Agent、开发者 Finding 反馈闭环，以及固定缺陷标准答案与评测运行模型。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
 
 ## 当前已具备
 
@@ -14,6 +14,7 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - MySQL 运行配置模板
 - H2 零配置开发模式
 - 统一接口响应与全局异常处理
+- Spring Security、BCrypt、有期限 JWT、Vue 登录态和项目成员隔离
 - 项目创建、详情、分页筛选、修改和逻辑删除接口
 - HTTPS Git 仓库校验、指定分支浅克隆和 Java 文件安全扫描
 - 通过进程环境变量安全读取私有 GitHub 仓库，凭证不持久化
@@ -55,10 +56,11 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 本机需要 JDK 21 或更高版本。
 
 ```bash
+export DEVMATE_JWT_SECRET='<at-least-32-random-characters>'
 ./mvnw spring-boot:run
 ```
 
-默认激活 `local` Profile 并连接本机 MySQL。数据库连接信息保存在不会提交 Git 的 `application-local.yml`。访问：
+默认激活 `local` Profile 并连接本机 MySQL。数据库连接信息保存在不会提交 Git 的 `application-local.yml`；安全默认开启，`DEVMATE_JWT_SECRET` 必须至少 32 个字符且不能写入 Git。访问：
 
 - `GET http://localhost:8080/api/health`
 - `GET http://localhost:8080/actuator/health`
@@ -80,6 +82,8 @@ npm run dev
 ```
 
 访问 `http://localhost:5173`。开发服务器会把 `/api` 请求代理到 Spring Boot，因此前后端仍是两个独立工程，但不需要额外处理开发环境跨域。
+
+首次访问先注册账号。新账号只能看到自己创建或作为成员加入的项目；历史上 `owner_id` 为空的项目不会自动暴露，需要后续显式认领。
 
 前端检查命令：
 
@@ -151,6 +155,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [前端开发与联调](docs/FRONTEND_DEVELOPMENT.md)
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
 - [基础业务闭环、简历证据与问题复盘](docs/BUSINESS_WORKFLOW_AND_RESUME.md)
+- [认证与项目访问控制](docs/AUTHENTICATION_AND_ACCESS_CONTROL.md)
 - [同类开源项目对比与路线优化](docs/OPEN_SOURCE_COMPARISON.md)
 - [AI 辅助开发与项目归属规范](docs/AI_COLLABORATION_GUIDE.md)
 - [项目决策与变更日志](docs/PROJECT_LOG.md)

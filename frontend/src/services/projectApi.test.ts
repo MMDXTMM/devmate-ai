@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError, projectApi } from './projectApi'
+import { getAuthSession, setAuthSession } from './authSession'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -68,6 +69,45 @@ describe('projectApi', () => {
     await expect(projectApi.list({ page: 1, size: 10 })).rejects.toThrow(
       '无法连接后端服务，请确认 Spring Boot 已启动',
     )
+  })
+
+  it('adds the bearer token to authenticated requests', async () => {
+    setAuthSession({
+      accessToken: 'jwt-token',
+      tokenType: 'Bearer',
+      expiresAt: '2099-01-01T00:00:00Z',
+      user: { id: '1', username: 'alice' },
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: { page: 1, size: 10, total: 0, pages: 0, items: [] },
+    }))
+
+    await projectApi.list({ page: 1, size: 10 })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects?page=1&size=10',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer jwt-token' }),
+      }),
+    )
+  })
+
+  it('clears the session when the backend returns 401', async () => {
+    setAuthSession({
+      accessToken: 'expired-token',
+      tokenType: 'Bearer',
+      expiresAt: '2099-01-01T00:00:00Z',
+      user: { id: '1', username: 'alice' },
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 40100,
+      message: '未认证或登录已过期',
+    }, 401))
+
+    await expect(projectApi.list({ page: 1, size: 10 })).rejects.toMatchObject({ status: 401 })
+    expect(getAuthSession()).toBeNull()
   })
 
   it('starts a source import for the selected project', async () => {

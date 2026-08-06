@@ -16,6 +16,11 @@ import com.devmate.project.mapper.ProjectMapper;
 import com.devmate.project.model.ProjectSourceType;
 import com.devmate.project.model.ProjectStatus;
 import com.devmate.project.service.ProjectService;
+import com.devmate.user.config.SecurityProperties;
+import com.devmate.user.entity.ProjectMember;
+import com.devmate.user.mapper.ProjectMemberMapper;
+import com.devmate.user.service.CurrentUserService;
+import com.devmate.user.service.ProjectAccessService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -28,11 +33,26 @@ public class ProjectServiceImpl implements ProjectService {
 
     private static final String DEFAULT_SOURCE_TYPE = ProjectSourceType.LOCAL.name();
     private static final String INITIAL_STATUS = ProjectStatus.CREATED.name();
+    private static final String OWNER_ROLE = "OWNER";
 
     private final ProjectMapper projectMapper;
+    private final ProjectMemberMapper projectMemberMapper;
+    private final CurrentUserService currentUserService;
+    private final ProjectAccessService projectAccessService;
+    private final SecurityProperties securityProperties;
 
-    public ProjectServiceImpl(ProjectMapper projectMapper) {
+    public ProjectServiceImpl(
+            ProjectMapper projectMapper,
+            ProjectMemberMapper projectMemberMapper,
+            CurrentUserService currentUserService,
+            ProjectAccessService projectAccessService,
+            SecurityProperties securityProperties
+    ) {
         this.projectMapper = projectMapper;
+        this.projectMemberMapper = projectMemberMapper;
+        this.currentUserService = currentUserService;
+        this.projectAccessService = projectAccessService;
+        this.securityProperties = securityProperties;
     }
 
     @Override
@@ -46,6 +66,8 @@ public class ProjectServiceImpl implements ProjectService {
 
         LocalDateTime now = LocalDateTime.now();
         Project project = new Project();
+        Long ownerId = securityProperties.isEnabled() ? currentUserService.getRequiredUser().id() : null;
+        project.setOwnerId(ownerId);
         project.setName(request.name().trim());
         project.setDescription(trimToNull(request.description()));
         project.setSourceType(sourceType);
@@ -60,6 +82,16 @@ public class ProjectServiceImpl implements ProjectService {
         if (insertedRows != 1) {
             throw new IllegalStateException("项目创建失败");
         }
+        if (ownerId != null) {
+            ProjectMember owner = new ProjectMember();
+            owner.setProjectId(project.getId());
+            owner.setUserId(ownerId);
+            owner.setMemberRole(OWNER_ROLE);
+            owner.setCreatedAt(now);
+            if (projectMemberMapper.insert(owner) != 1) {
+                throw new IllegalStateException("项目所有者关系创建失败");
+            }
+        }
 
         return ProjectResponse.from(project);
     }
@@ -67,6 +99,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional(readOnly = true)
     public ProjectResponse getProject(Long projectId) {
+        requireMemberWhenEnabled(projectId);
         Project project = projectMapper.selectById(projectId);
         if (project == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
@@ -81,6 +114,10 @@ public class ProjectServiceImpl implements ProjectService {
                 .like(StringUtils.hasText(request.name()), Project::getName, trimToNull(request.name()))
                 .eq(StringUtils.hasText(request.status()), Project::getStatus, request.status())
                 .orderByDesc(Project::getCreatedAt);
+        if (securityProperties.isEnabled()) {
+            Long userId = currentUserService.getRequiredUser().id();
+            query.inSql(Project::getId, "SELECT project_id FROM project_member WHERE user_id = " + userId);
+        }
 
         Page<Project> result = projectMapper.selectPage(
                 Page.of(request.page(), request.size()),
@@ -103,6 +140,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public ProjectResponse updateProject(Long projectId, UpdateProjectRequest request) {
+        requireOwnerWhenEnabled(projectId);
         Project project = findProject(projectId);
         validateSourceLocation(request.sourceType(), request.sourceLocation());
 
@@ -131,6 +169,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public void deleteProject(Long projectId) {
+        requireOwnerWhenEnabled(projectId);
         int deletedRows = projectMapper.deleteById(projectId);
         if (deletedRows != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
@@ -154,5 +193,17 @@ public class ProjectServiceImpl implements ProjectService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private void requireMemberWhenEnabled(Long projectId) {
+        if (securityProperties.isEnabled()) {
+            projectAccessService.requireMember(projectId);
+        }
+    }
+
+    private void requireOwnerWhenEnabled(Long projectId) {
+        if (securityProperties.isEnabled()) {
+            projectAccessService.requireOwner(projectId);
+        }
     }
 }
