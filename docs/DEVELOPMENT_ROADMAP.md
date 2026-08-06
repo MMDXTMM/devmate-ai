@@ -247,7 +247,11 @@
 - 已建立 `known-defects-v1` 样本契约，以独立 base/candidate 快照覆盖并发、事务、缓存、消息、SQL、安全、性能和 CLEAN 对照，并自动校验路径、行号及真实变更范围。
 - 已使用确定性 JGit 生成器将快照转换为 8 个 `case-NNN` 分支，每个分支为 base/candidate 两次提交，并固定 revision 映射。
 - 已发布公开纯虚构仓库 `MMDXTMM/devmate-review-benchmark`；远端 HEAD 与清单一致，分支名不会泄漏缺陷类别。
-- 下一小任务通过这些分支执行真实导入、Diff、标准答案录入与模型 A/B，形成可复现报告；目前不宣称任何准确率。
+- 已建立零第三方依赖的真实导入/Diff 验收工具，核对项目配置、任务状态、revision、唯一 Java `MODIFY`、双方变更行、覆盖计数和 candidate 符号证据。
+- H2 与真实公开 GitHub 仓库全量实跑为 `8 PASS / 6 FULL / 2 PARTIAL / 0 SKIPPED`；16 项 Node 回归覆盖正常、契约漂移、证据缺失、无副作用失败、错误响应、单场景重试和最近成功导入复核。
+- 两个 `PARTIAL` 分别来自 TARGET 新增 import 和 BASE 删除 import 未进入当前 AST Chunk；类、方法和缺陷行仍有真实证据，后续单独设计 `FILE_HEADER/IMPORT` Chunk。
+- GitHub 临时网络错误可单场景排障重试；`--reuse-imports` 要求所有最近任务成功后再做完整 8 场景 Diff 复核，避免重新克隆让已成功分支再次暴露于网络抖动。最终报告明确记录导入模式，本轮没有调用模型或录入标准答案。
+- 下一小任务先在恢复后的本机 MySQL 执行同一链路复验，再为 8 个成功 Diff 录入并复核 manifest 人工标准答案；随后才运行真实 FIXED/AGENT A/B。目前不宣称准确率或 Agent 优于固定流水线。
 
 ## 阶段 9：增量索引与异步任务
 

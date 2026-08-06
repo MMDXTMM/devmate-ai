@@ -129,7 +129,7 @@ V13 同时为 `ai_review_task` 增加 `execution_mode=FIXED/AGENT`。模式由�
 - 相同 AI 任务和数据集哈希重复执行幂等返回；
 - H2 从空库执行 V1–V13，并在真实 MySQL 验证 V12→V13。
 
-当前验证结果：后端 107 项测试、前端 29 项测试和 Vue 生产构建全部通过；本机 MySQL 已从 V12 成功迁移到 V13，健康检查为 `UP`，原项目数据保持可读。评测工作台和样本契约没有新增数据库结构，也没有调用真实模型。
+当前验证结果：后端 107 项测试、前端 29 项测试、真实验收工具 16 项 Node 测试和 Vue 生产构建全部通过；本机 MySQL 此前已从 V12 成功迁移到 V13，并验证原项目可读，本轮 3306 未监听，因此 8 场景 MySQL 复验待服务恢复后补做。评测工作台和样本契约没有新增数据库结构，也没有调用真实模型。
 
 ## 10. 第一版真实缺陷样本契约
 
@@ -148,7 +148,7 @@ V13 同时为 `ai_review_task` 增加 `execution_mode=FIXED/AGENT`。模式由�
 
 `manifest.json` 是人工标准答案源，行号绑定 candidate 快照。自动契约测试会拒绝重复键、路径逃逸、越界行号、未发生真实变更的快照，以及没有覆盖目标变更行的标准答案。该目录产生真实运行后冻结；修改标准答案必须创建新版本。
 
-当前已完成样本定义、自动校验、确定性 Git 历史和公开仓库发布，但尚未产生真实 FIXED/AGENT 指标。
+当前已完成样本定义、自动校验、确定性 Git 历史、公开仓库发布及 8 个场景的真实导入/Diff 验收；尚未向 V13 录入人工标准答案，也未产生真实 FIXED/AGENT 指标。
 
 ## 11. 可复现 Git 历史
 
@@ -171,3 +171,30 @@ main 根提交
 - 远端分支 HEAD 发布后与本地 revision 清单逐一一致。
 
 样本仓库只包含虚构 Java 代码和中性 README；缺陷名称、类别、路径、行号和人工依据只保存在主仓库 manifest，不进入待审查仓库。
+
+## 12. 真实导入与 Diff 验收
+
+`verify-live-imports.mjs` 通过现有 API 顺序执行项目创建或精确复用、源码导入、项目与任务回读、默认 Diff 和 Diff 回读。它同时核对：
+
+- import、project、Diff 的 candidate SHA 与 `revisions.json` 一致；
+- Diff base/target SHA、唯一 Java `MODIFY`、文件路径和双方变更行一致；
+- 覆盖状态与汇总计数一致，不能出现 `SKIPPED`；
+- 每条 DEFECT 标准答案既命中真实目标 Diff，也命中 candidate 的 `TARGET` 符号范围。
+
+2026-08-06 使用 H2 `test` Profile（端口 8081）和真实公开 GitHub 仓库全量运行结果为：
+
+```text
+8 PASS
+6 FULL
+2 PARTIAL
+0 SKIPPED
+0 FAIL
+```
+
+`case-005` 的 candidate 新增 import，因此 TARGET 第 3 行未进入当前 Chunk；`case-008` 的 base 删除 import，因此 BASE 第 3 行未进入当前 Chunk。当前 Java Chunk 从 class 声明开始，这两个 `PARTIAL` 是真实覆盖缺口，不能为了结果好看改写成 `FULL`。缺陷方法行仍有 candidate 映射证据；后续若补齐，应新增具有明确语义的 `FILE_HEADER/IMPORT` Chunk，而不是扩大类 Chunk 伪造覆盖。
+
+真实运行曾遇到 GitHub TLS/克隆瞬时失败。工具允许使用 `--scenario` 做单场景排障重试；当每个项目的最近导入都恢复为 `SUCCEEDED` 后，`--reuse-imports` 会在不再次克隆的前提下，完整复核 8 个最新任务、项目 revision 和 candidate SHA，并重新创建 Diff。失败或缺失的最近任务仍会令验收失败，报告通过 `importMode` 与 `importTriggered` 区分“触发导入”和“复用已验证导入”。
+
+最终结论来自故障恢复后的完整 8 场景 `--reuse-imports` 运行，不是把单场景报告拼在一起。默认报告保存在被 Git 忽略的 `target/benchmark-results/known-defects-v1-import-diff.json`，不保存源码、凭证、Prompt 或模型内容。
+
+本轮没有执行 Embedding、FIXED 或 AGENT，没有把 manifest 写入评测表，也没有生成或宣称任何准确率。H2 实跑证明 API、GitHub、JGit、解析和 Diff 证据链可工作；本机 MySQL 仍需在服务恢复后执行同一验收工具，单独确认真实持久化环境。

@@ -2,6 +2,17 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-06：完成真实评测样本导入与 Diff 验收
+
+- 新增零第三方依赖的 `verify-live-imports.mjs`，通过现有 API 顺序完成 8 个项目的创建或精确复用、源码导入、状态回读、默认 Diff 和证据核对。
+- 16 项 Node 回归覆盖正常路径、manifest/revision 漂移、重复或配置漂移项目、`PARTIAL/SKIPPED`、标准答案未命中同一条持久化 TARGET Diff 证据、聚合计数不一致、非 JSON 错误、单场景参数、最近成功导入复核及前置失败不创建 Diff。
+- 使用 H2 `test` Profile 与真实公开 GitHub 仓库完整运行，最终结果为 `8 PASS / 6 FULL / 2 PARTIAL / 0 SKIPPED / 0 FAIL`；所有 base/candidate SHA 均与 `revisions.json` 一致。
+- `case-005` 的 TARGET 第 3 行新增 import、`case-008` 的 BASE 第 3 行删除 import 未进入当前 class/method Chunk；缺陷方法行仍有 candidate 映射证据，后续应设计 `FILE_HEADER/IMPORT` Chunk，不能伪造完整覆盖。
+- 真实运行曾遇到 GitHub TLS/克隆瞬时失败；先使用单场景重试恢复失败分支，再用 `--reuse-imports` 要求 8 个最近任务全部成功并重新执行完整 Diff，避免每次全量重克隆让其他成功分支再次暴露于网络抖动。最终报告明确记录 `REUSE_LATEST_SUCCEEDED`，不是拼接局部结果。
+- JGit 用户错误提示补充网络检查，避免只误导用户排查 Token；复用模式不会接受缺失、失败或 revision 漂移的任务。
+- 本轮未调用 Embedding、FIXED 或 AGENT，未录入标准答案，也未产生准确率。本机 MySQL 此前已验收 V13，但当前 3306 未监听，因此同链路真实持久化复验仍待服务恢复后完成。
+- 下一步先执行 MySQL 复验，再向 8 个成功 Diff 录入并复核 manifest 人工标准答案，之后才运行真实 FIXED/AGENT A/B。
+
 ## 2026-08-05：建立跨账号可验证交接协议
 
 - 将 GitHub `main`、已合并 PR、自动化测试和数据库迁移设为项目事实，交接文档次之，聊天历史只作背景参考。

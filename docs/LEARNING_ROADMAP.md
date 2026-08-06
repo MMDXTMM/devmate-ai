@@ -408,10 +408,16 @@ AI 可以协助：
 - 固定流水线与 Agent 模式由任务创建时写入，不根据 Prompt 名称临时推断。
 - Finding 只有在类别、文件路径一致且行区间重叠并形成唯一一对一候选时自动匹配；歧义项必须人工复核。
 - 评测同时保存质量、Token、耗时和 Tool 成功率，避免只比较“看起来更聪明”的文本。
+- 固定 fixture 通过契约测试不等于真实链路可用；还要逐层核对项目配置、导入任务、项目当前 revision、Diff base/target 和覆盖证据。
+- 8 个真实源码导入和默认 `HEAD^ → HEAD` Diff 已完成，结果为 `8 PASS / 6 FULL / 2 PARTIAL`；标准答案缺陷行均有 candidate 的 `TARGET` 符号证据。
+- 单场景重试只用于定位临时外部故障，最终结论必须来自完整数据集重跑。
+- `--reuse-imports` 不会把失败任务当成功：它要求确定性项目已存在、最近导入为 `SUCCEEDED` 且任务/项目/candidate revision 一致，然后重新运行完整 Diff。
+- `FULL/PARTIAL/SKIPPED` 描述证据覆盖程度；import 文件头未映射产生的 `PARTIAL` 不能被美化为 `FULL`。
 
 当前仍需亲自完成：
 
-- 已完成的样本基础：8 个 base/candidate 场景、确定性 Git revision、公开评测仓库和不泄漏答案的 case 分支。
+- 已完成的样本基础和真实 Diff：8 个 base/candidate 场景、确定性 Git revision、公开评测仓库、不泄漏答案的 case 分支，以及真实导入/Diff 证据报告。
+- 在本机 MySQL 恢复后执行同一验收工具，区分 H2 外部链路验收与真实 MySQL 持久化验收。
 - 人工确认标准答案和歧义匹配，运行真实 FIXED/AGENT 两条路径。
 - 解释 Precision/Recall/F1 的变化与具体失败案例，确认后才能写入简历。
 
@@ -428,6 +434,11 @@ AI 可以协助：
 - 如果模型能从分支名看到缺陷类别，评测结果为什么会失真？
 - 为什么 CLEAN 对照不能与 DEFECT 样本位于同一个评测 Diff？
 - 公开样本仓库发生强制推送后，系统如何通过 revision 清单发现数据集漂移？
+- 为什么 import task、project currentRevision 和 Diff targetRevision 都必须等于 candidate SHA？
+- 为什么 `case-005/008` 是 `PARTIAL`，为什么不能直接改成 `FULL`？
+- 如何用 `FILE_HEADER/IMPORT` Chunk 补齐文件头覆盖，同时不污染类/方法语义检索？
+- 为什么 TLS 单场景重试成功后仍要重新运行完整 8 场景？
+- 为什么网络抖动时复核最近成功导入比再次克隆全部分支更稳定，又如何防止它掩盖失败？
 
 下一阶段再学习的内容：
 
@@ -486,14 +497,16 @@ AI 可以协助：
 - 完成 V12、幂等反馈接口、项目归属校验和 Vue 局部更新。
 - 完成后端 96 项、前端 24 项测试、生产构建与真实 MySQL 迁移验收。
 
-### 第二次：固定缺陷集与评测模型（下一步）
+### 第二次：固定缺陷集、评测模型与真实 Diff 验收（已完成）
 
 - 定义缺陷样本、无缺陷对照、标准答案和可解释的 Finding 匹配规则。
 - 设计评测用例与运行表，先覆盖状态变化、重复运行和失败路径。
 - 不把 Mock 结果或开发者 `REJECTED` 操作直接写成准确率。
+- 发布确定性 case 分支，并完成 8 个真实导入和 Diff 的 revision、变更行与覆盖证据核对。
 
-### 第三次：固定流水线与 Agent A/B 报告
+### 第三次：人工标准答案与 FIXED/AGENT A/B（下一步）
 
+- 在真实 MySQL 复验后，把 manifest 人工标准答案录入对应的 8 个成功 Diff。
 - 在同一项目、revision、Diff 和模型版本下运行两条路径。
 - 展示命中、漏报、误报、Token、延迟、工具成功率及失败案例。
 - 评测结果稳定后再决定是否进入增量索引与异步任务阶段。
