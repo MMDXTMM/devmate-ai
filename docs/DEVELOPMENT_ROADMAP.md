@@ -272,6 +272,16 @@
 
 验收：修改单个文件不会触发全项目重新 Embedding。
 
+当前进度：
+
+- 已完成 V16 跨 revision 向量复用第一版：保存完整 Embedding 输入指纹，只从最近一次同项目、Provider、模型和维度的成功索引中复用。
+- 路径、Chunk 类型、符号或内容任一变化都会重新调用 Embedding，避免仅按源码内容哈希造成错误复用。
+- 新 revision 使用独立向量记录并保留旧 revision，检索仍按项目、revision 和模型配置严格隔离。
+- 任务已区分实际生成 `processedChunks`、跨版本复用 `reusedChunks` 和同版本跳过 `skippedChunks`，Vue 会展示三种结果。
+- 后端 121 项、前端 37 项和 Vue 生产构建通过；H2 从空库执行 V1–V16，隔离 MySQL 26.7 已从 V15 原地迁移到 V16，应用健康与 8 个项目、16 个成功 Diff、46 个 Chunk 回读通过。
+- 当前仍是同步全量解析后进行向量级增量复用；下一小任务根据 Git Diff 在源码导入阶段复用未变文件的 Document/Chunk，并明确删除文件的失效策略。
+- RabbitMQ、重试和死信尚未引入，需先用同步任务耗时和失败数据证明异步化收益。
+
 ## 阶段 10：认证、权限与可观测性
 
 - Spring Security + JWT

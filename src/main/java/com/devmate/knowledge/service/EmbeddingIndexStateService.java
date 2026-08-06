@@ -65,6 +65,7 @@ public class EmbeddingIndexStateService {
         task.setTotalChunks(totalChunks);
         task.setProcessedChunks(0);
         task.setSkippedChunks(0);
+        task.setReusedChunks(0);
         task.setFailedChunks(0);
         task.setCreatedAt(now);
         task.setStartedAt(now);
@@ -79,9 +80,12 @@ public class EmbeddingIndexStateService {
             EmbeddingIndexContext context,
             List<KnowledgeChunk> chunks,
             List<String> vectorIds,
+            List<String> inputHashes,
             List<String> vectorJson
     ) {
-        if (chunks.size() != vectorIds.size() || chunks.size() != vectorJson.size()) {
+        if (chunks.size() != vectorIds.size()
+                || chunks.size() != inputHashes.size()
+                || chunks.size() != vectorJson.size()) {
             throw new IllegalArgumentException("向量批次结果数量不一致");
         }
         LocalDateTime now = LocalDateTime.now();
@@ -98,6 +102,7 @@ public class EmbeddingIndexStateService {
                 vector.setModelName(context.model());
                 vector.setDimensions(context.dimensions());
                 vector.setContentHash(chunk.getContentHash());
+                vector.setInputHash(inputHashes.get(index));
                 vector.setVectorJson(vectorJson.get(index));
                 vector.setCreatedAt(now);
                 vector.setUpdatedAt(now);
@@ -109,7 +114,7 @@ public class EmbeddingIndexStateService {
                     .eq(KnowledgeChunk::getRevision, context.revision())
                     .set(KnowledgeChunk::getVectorId, vectorIds.get(index)));
         }
-        increment(context.taskId(), chunks.size(), 0);
+        increment(context.taskId(), chunks.size(), 0, 0);
     }
 
     @Transactional
@@ -119,7 +124,38 @@ public class EmbeddingIndexStateService {
                 .eq(KnowledgeChunk::getProjectId, context.projectId())
                 .eq(KnowledgeChunk::getRevision, context.revision())
                 .set(KnowledgeChunk::getVectorId, vectorId));
-        increment(context.taskId(), 0, 1);
+        increment(context.taskId(), 0, 1, 0);
+    }
+
+    @Transactional
+    public void reuse(
+            EmbeddingIndexContext context,
+            KnowledgeChunk chunk,
+            String vectorId,
+            String inputHash,
+            String vectorJson
+    ) {
+        LocalDateTime now = LocalDateTime.now();
+        EmbeddingVector vector = new EmbeddingVector();
+        vector.setVectorId(vectorId);
+        vector.setProjectId(context.projectId());
+        vector.setChunkId(chunk.getId());
+        vector.setRevision(context.revision());
+        vector.setProvider(context.provider());
+        vector.setModelName(context.model());
+        vector.setDimensions(context.dimensions());
+        vector.setContentHash(chunk.getContentHash());
+        vector.setInputHash(inputHash);
+        vector.setVectorJson(vectorJson);
+        vector.setCreatedAt(now);
+        vector.setUpdatedAt(now);
+        vectorMapper.insert(vector);
+        chunkMapper.update(null, Wrappers.lambdaUpdate(KnowledgeChunk.class)
+                .eq(KnowledgeChunk::getId, chunk.getId())
+                .eq(KnowledgeChunk::getProjectId, context.projectId())
+                .eq(KnowledgeChunk::getRevision, context.revision())
+                .set(KnowledgeChunk::getVectorId, vectorId));
+        increment(context.taskId(), 0, 0, 1);
     }
 
     @Transactional
@@ -147,7 +183,7 @@ public class EmbeddingIndexStateService {
         EmbeddingIndexTask task = requireTask(context.taskId());
         task.setStatus("FAILED");
         task.setFailedChunks(Math.max(1, context.totalChunks()
-                - task.getProcessedChunks() - task.getSkippedChunks()));
+                - task.getProcessedChunks() - task.getSkippedChunks() - task.getReusedChunks()));
         task.setErrorMessage(truncate(message));
         task.setFinishedAt(LocalDateTime.now());
         taskMapper.updateById(task);
@@ -165,10 +201,11 @@ public class EmbeddingIndexStateService {
         return EmbeddingIndexTaskResponse.from(task);
     }
 
-    private void increment(Long taskId, int processed, int skipped) {
+    private void increment(Long taskId, int processed, int skipped, int reused) {
         EmbeddingIndexTask task = requireTask(taskId);
         task.setProcessedChunks(task.getProcessedChunks() + processed);
         task.setSkippedChunks(task.getSkippedChunks() + skipped);
+        task.setReusedChunks(task.getReusedChunks() + reused);
         taskMapper.updateById(task);
     }
 
