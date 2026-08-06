@@ -15,7 +15,7 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。V14 为 Diff 目标路径增加大小写敏感哈希，避免 MySQL 默认排序规则混淆 Git 路径。
 
 ## 2. 表关系
 
@@ -96,7 +96,7 @@ erDiagram
 
 - `source_kind`：当前使用 `SOURCE_CODE`、`CONFIGURATION`、`DATABASE_SCHEMA`，后续文档扩展 `README`、`TECH_DOC`、`API_DOC`。
 - `content_hash`：判断文件内容是否变化，用于增量更新。
-- `path_hash`：文件路径的 SHA-256，用于建立定长唯一索引；完整路径仍保存在 `file_path`。
+- `path_hash`：文件路径原始大小写的 SHA-256，用于建立定长唯一索引；完整路径仍保存在 `file_path`。目标 Diff 映射按该哈希定位文档后，再用 Java 精确比较完整路径，避免 MySQL 默认排序规则混淆大小写不同的 Git 文件。
 - `revision`：文件所属的 Git 提交或导入版本。
 - `package_name`：Java 文件的包名，由 AST 解析得到。
 - `status`：当前结构解析使用 `PARSED`；完成向量索引后使用 `INDEXED`，失败使用 `FAILED`。
@@ -191,7 +191,7 @@ V8 增加可复现的检索评测：
 
 ## 5. 代码审查表
 
-V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加静态分析任务和第一版统一 Finding；V10 增加 AI 审查任务和语义 Finding 字段；V12 增加开发者反馈；V13 增加固定缺陷评测。
+V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加静态分析任务和第一版统一 Finding；V10 增加 AI 审查任务和语义 Finding 字段；V12 增加开发者反馈；V13 增加固定缺陷评测；V14 增加 Diff 目标路径哈希索引。
 
 ### `code_review_task`
 
@@ -214,6 +214,9 @@ V4/V5 已增加 Diff 任务和基准、目标版本覆盖清单；V6 已增加�
 - 新增、删除行数，以及基准和目标版本行区间
 - `FULL/PARTIAL/SKIPPED` 覆盖状态
 - 映射到的 AST 符号和跳过原因
+- `new_path_hash`：目标路径原始大小写的 SHA-256；与任务 ID 组成索引，避免 `utf8mb4_unicode_ci` 把 `Foo.java` 和 `foo.java` 视为相同路径。
+
+V14 不在 SQL 迁移中依赖数据库专属哈希函数，因此历史 V13 行的 `new_path_hash` 保持为空，并由服务按任务读取后使用 Java 精确比较；V14 之后创建的 Diff 在落库时直接写入哈希并走索引。
 
 ### `static_analysis_task`
 
@@ -318,6 +321,7 @@ erDiagram
 - `V11__extend_tool_call_audit.sql`：Agent Tool 调用 ID、顺序、参数哈希、错误分类和唯一约束。
 - `V12__add_code_review_feedback.sql`：Finding 最新反馈、项目归属、类型索引和级联清理。
 - `V13__add_review_evaluation_schema.sql`：固定缺陷标准答案、执行模式快照、评测运行和质量/成本指标。
+- `V14__add_review_file_path_hash.sql`：Diff 目标路径大小写敏感哈希和任务内查询索引。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

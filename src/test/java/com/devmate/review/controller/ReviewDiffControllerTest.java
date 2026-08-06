@@ -20,8 +20,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -81,6 +85,8 @@ class ReviewDiffControllerTest {
                 .eq(CodeReviewFile::getNewPath, "src/main/java/com/example/App.java")
                 .last("LIMIT 1"));
         assertThat(appFile.getCoverageStatus()).isEqualTo("FULL");
+        assertThat(appFile.getNewPathHash())
+                .isEqualTo(sha256("src/main/java/com/example/App.java"));
         assertThat(appFile.getMappedSymbolsJson()).contains("com.example.App#run()");
         assertThat(appFile.getBaseChangedLinesJson()).isNotBlank();
 
@@ -89,6 +95,8 @@ class ReviewDiffControllerTest {
                 .eq(CodeReviewFile::getOldPath, "src/main/java/com/example/Old.java")
                 .last("LIMIT 1"));
         assertThat(deletedFile.getCoverageStatus()).isEqualTo("FULL");
+        assertThat(deletedFile.getNewPath()).isNull();
+        assertThat(deletedFile.getNewPathHash()).isNull();
         assertThat(deletedFile.getMappedSymbolsJson()).contains("BASE", "com.example.Old");
 
         mockMvc.perform(get("/api/projects/{projectId}/review-diffs/latest", project.id()))
@@ -127,6 +135,15 @@ class ReviewDiffControllerTest {
                 "https://github.com/example/" + name + ".git",
                 "main"
         ));
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前JDK不支持SHA-256", exception);
+        }
     }
 
     private void mockRepositoryWithTwoCommits() {

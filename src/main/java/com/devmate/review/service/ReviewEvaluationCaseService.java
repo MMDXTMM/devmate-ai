@@ -6,13 +6,16 @@ import com.devmate.common.error.ErrorCode;
 import com.devmate.project.service.ProjectService;
 import com.devmate.review.config.ReviewEvaluationProperties;
 import com.devmate.review.dto.CreateReviewEvaluationCaseRequest;
+import com.devmate.review.dto.MappedSymbolResponse;
 import com.devmate.review.dto.ReviewEvaluationCaseResponse;
+import com.devmate.review.dto.ReviewFileResponse;
 import com.devmate.review.entity.CodeReviewTask;
 import com.devmate.review.entity.ReviewEvaluationCase;
 import com.devmate.review.entity.ReviewEvaluationRun;
 import com.devmate.review.mapper.CodeReviewTaskMapper;
 import com.devmate.review.mapper.ReviewEvaluationCaseMapper;
 import com.devmate.review.mapper.ReviewEvaluationRunMapper;
+import com.devmate.review.model.LineRange;
 import com.devmate.review.model.ReviewExpectationType;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -36,19 +39,22 @@ public class ReviewEvaluationCaseService {
     private final ReviewEvaluationCaseMapper caseMapper;
     private final ReviewEvaluationRunMapper runMapper;
     private final ReviewEvaluationProperties properties;
+    private final ReviewDiffStateService reviewDiffStateService;
 
     public ReviewEvaluationCaseService(
             ProjectService projectService,
             CodeReviewTaskMapper reviewTaskMapper,
             ReviewEvaluationCaseMapper caseMapper,
             ReviewEvaluationRunMapper runMapper,
-            ReviewEvaluationProperties properties
+            ReviewEvaluationProperties properties,
+            ReviewDiffStateService reviewDiffStateService
     ) {
         this.projectService = projectService;
         this.reviewTaskMapper = reviewTaskMapper;
         this.caseMapper = caseMapper;
         this.runMapper = runMapper;
         this.properties = properties;
+        this.reviewDiffStateService = reviewDiffStateService;
     }
 
     @Transactional
@@ -94,6 +100,14 @@ public class ReviewEvaluationCaseService {
         value.setUpdatedAt(now);
         if (request.expectationType() == ReviewExpectationType.DEFECT) {
             String filePath = normalizeRelativePath(request.filePath());
+            ReviewFileResponse targetFile = requireTargetDiffEvidence(
+                    projectId,
+                    reviewTask,
+                    filePath,
+                    request.startLine(),
+                    request.endLine()
+            );
+            filePath = targetFile.newPath();
             value.setCategory(request.category().name());
             value.setFilePath(filePath);
             value.setPathHash(sha256(filePath));
@@ -194,6 +208,94 @@ public class ReviewEvaluationCaseService {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "只能为成功的Diff任务建立评测用例");
         }
         return task;
+    }
+
+    private ReviewFileResponse requireTargetDiffEvidence(
+            Long projectId,
+            CodeReviewTask reviewTask,
+            String filePath,
+            int startLine,
+            int endLine
+    ) {
+        List<ReviewFileResponse> matchingFiles = reviewDiffStateService.findTargetFiles(
+                projectId,
+                reviewTask.getId(),
+                filePath
+        );
+        if (matchingFiles.size() != 1) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "缺陷文件不属于指定Diff的目标版本"
+            );
+        }
+
+        ReviewFileResponse file = matchingFiles.getFirst();
+        List<LineRange> changedLines = file.changedLines() == null
+                ? List.of()
+                : file.changedLines();
+        boolean intersectsChangedLine = changedLines.stream()
+                .anyMatch(range -> intersects(startLine, endLine, range.startLine(), range.endLine()));
+        if (!intersectsChangedLine) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "缺陷行范围必须与目标版本变更行相交"
+            );
+        }
+
+        List<MappedSymbolResponse> mappedSymbols = file.mappedSymbols() == null
+                ? List.of()
+                : file.mappedSymbols();
+        boolean hasTargetEvidence = changedLines.stream().anyMatch(changedLine ->
+                mappedSymbols.stream().anyMatch(symbol ->
+                        isPersistedTargetSymbol(symbol)
+                                && hasCommonLine(
+                                        startLine,
+                                        endLine,
+                                        changedLine.startLine(),
+                                        changedLine.endLine(),
+                                        symbol.startLine(),
+                                        symbol.endLine()
+                        )
+                )
+        );
+        if (!hasTargetEvidence) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "缺陷行范围缺少持久化的TARGET代码证据"
+            );
+        }
+        return file;
+    }
+
+    private boolean isPersistedTargetSymbol(MappedSymbolResponse symbol) {
+        return symbol != null
+                && symbol.chunkId() != null
+                && symbol.chunkId() > 0
+                && "TARGET".equals(symbol.revisionSide())
+                && symbol.startLine() != null
+                && symbol.endLine() != null
+                && symbol.startLine() > 0
+                && symbol.endLine() >= symbol.startLine();
+    }
+
+    private boolean intersects(int leftStart, int leftEnd, int rightStart, int rightEnd) {
+        return leftStart <= leftEnd
+                && rightStart <= rightEnd
+                && leftStart <= rightEnd
+                && leftEnd >= rightStart;
+    }
+
+    private boolean hasCommonLine(
+            int caseStart,
+            int caseEnd,
+            int changedStart,
+            int changedEnd,
+            int symbolStart,
+            int symbolEnd
+    ) {
+        int overlapStart = Math.max(caseStart, Math.max(changedStart, symbolStart));
+        int overlapEnd = Math.min(caseEnd, Math.min(changedEnd, symbolEnd));
+        return overlapStart <= overlapEnd;
     }
 
     private CodeReviewTask requireReviewTask(Long projectId, Long reviewTaskId) {

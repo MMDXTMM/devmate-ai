@@ -243,7 +243,7 @@
 - 已计算 TP、FP、FN、Precision、Recall、F1，并同时保存 Token、延迟和 Tool 调用成功率；相同 AI 任务和数据集哈希幂等返回。
 - Vue 已支持绑定最近成功 Diff 录入标准答案、评测最近已保存 AI 任务，并排展示 FIXED/AGENT 的质量、Token、耗时和 Tool 成功率。
 - 执行模式由后端任务固定，评测界面不会调用模型；部分匹配明确标记为不完整指标。
-- 后端 107 项测试、前端 29 项测试、16 项 Node 验收工具测试与生产构建通过；隔离空库 MySQL 26.7 已执行 V1-V13 并生成 25 张表。
+- 后端 111 项测试、前端 29 项测试、16 项 Node 验收工具测试与生产构建通过；H2 已从空库执行 V1-V14，隔离 MySQL 26.7 的 25 张表已从 V13 原地迁移到 V14。
 - 已建立 `known-defects-v1` 样本契约，以独立 base/candidate 快照覆盖并发、事务、缓存、消息、SQL、安全、性能和 CLEAN 对照，并自动校验路径、行号及真实变更范围。
 - 已使用确定性 JGit 生成器将快照转换为 8 个 `case-NNN` 分支，每个分支为 base/candidate 两次提交，并固定 revision 映射。
 - 已发布公开纯虚构仓库 `MMDXTMM/devmate-review-benchmark`；远端 HEAD 与清单一致，分支名不会泄漏缺陷类别。
@@ -252,7 +252,9 @@
 - 两个 `PARTIAL` 分别来自 TARGET 新增 import 和 BASE 删除 import 未进入当前 AST Chunk；类、方法和缺陷行仍有真实证据，后续单独设计 `FILE_HEADER/IMPORT` Chunk。
 - GitHub 临时网络错误可单场景排障重试；`--reuse-imports` 要求所有最近任务成功后再做完整 8 场景 Diff 复核，避免重新克隆让已成功分支再次暴露于网络抖动。最终报告明确记录导入模式，本轮没有调用模型或录入标准答案。
 - 隔离 MySQL 真实持久化验收同样为 `8 PASS / 6 FULL / 2 PARTIAL`：8 个项目 `READY`，8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务已落库；首次 GitHub 瞬时失败保留为 1 个可观察失败任务，随后重试成功。系统安装的 3306 未监听只作为本机运维问题继续处理。
-- 下一小任务先强化人工标准答案写入的服务端约束，确保文件属于对应 Diff、行范围命中目标变更且 DEFECT 行具备持久化 TARGET Chunk 证据；随后用 manifest 批量录入并复核 8 个 Diff。约束和录入完成后才运行真实 FIXED/AGENT A/B，目前不宣称准确率或 Agent 优于固定流水线。
+- 已强化人工标准答案写入约束：DEFECT 文件必须唯一属于对应 Diff 的目标版本，请求范围、目标变更行和带正数 Chunk ID 的 TARGET 符号必须形成三重交集；BASE-only、其他 Diff 文件和无交集位置会被拒绝。
+- V14 使用目标路径 SHA-256 和任务内联合索引保持 Git 路径大小写语义；历史 V13 Diff 通过空哈希精确匹配回退继续可用。TARGET 符号映射也改为按知识文档路径哈希定位并精确复核完整路径。
+- `PARTIAL` 文件只要缺陷行有 TARGET 证据仍可录入，覆盖缺口继续单独报告。下一小任务用 manifest 批量录入并回读复核 8 个 Diff；完成后才运行真实 FIXED/AGENT A/B，目前不宣称准确率或 Agent 优于固定流水线。
 
 ## 阶段 9：增量索引与异步任务
 

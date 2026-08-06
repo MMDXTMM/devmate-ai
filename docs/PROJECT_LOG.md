@@ -2,6 +2,20 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-06：强化人工标准答案的 Diff 与 TARGET 证据约束
+
+- 修复标准答案只校验相对路径格式和正数行号、却未确认位置真实属于指定 Diff 的缺口，避免虚构标注污染 Precision/Recall/F1。
+- DEFECT 文件按 `projectId + reviewTaskId + newPath` 精确绑定目标版本；其他 Diff 的同项目文件和删除侧 `oldPath` 不能作为目标答案。
+- 标注范围必须命中 `changedLines`，并与 `revisionSide=TARGET`、正数 `chunkId` 的符号范围形成同一行三重交集；BASE 内存符号不能冒充持久化目标证据。
+- 不要求文件整体为 `FULL`：`PARTIAL` 文件只要缺陷行本身有 TARGET 证据仍可录入，未映射行继续由覆盖清单暴露。
+- V14 为 `code_review_file` 增加 `new_path_hash` 和任务内联合索引，避免 MySQL 大小写不敏感排序规则混淆 Git 路径，也避免批量录入时反复扫描并反序列化整个 Diff。
+- TARGET 符号映射改为按已有的 `knowledge_document.path_hash` 查询，并在 Java 中再次精确比较完整路径，防止上游先把 `Foo.java` 与 `foo.java` 映射到错误 Chunk。
+- 新 Diff 写入路径原始大小写的 SHA-256；历史 V13 行保持空哈希并由 Java 精确匹配回退，不使用数据库专属哈希函数做不可移植回填。
+- 自动化测试补齐反向行范围、其他 Diff 文件、rename 旧路径、重复目标路径、未命中目标变更、BASE-only、无效 TARGET Chunk、严格三重交集、合法 PARTIAL、跨项目路径以及 TARGET 文档哈希查询和完整路径复核；后端 111 项、Node 16 项通过。
+- H2 已从空库执行 V1-V14；隔离 MySQL 26.7 已将包含 16 个成功历史 Diff 的 V13 数据目录原地迁移到 V14，应用健康为 `UP`，16 个历史文件均保留为空哈希兼容状态。
+- 隔离 MySQL 临时表验证表明，`utf8mb4_unicode_ci` 下按 `file_path` 查询会同时命中大小写变体，按原始路径 SHA-256 查询只命中正确文件；验证后未保留临时数据。
+- 本任务没有前端契约或模型调用，也未录入 manifest 或产生准确率。下一步批量录入并回读复核 8 个真实 Diff 的人工标准答案。
+
 ## 2026-08-06：完成 H2 与真实 MySQL 评测样本导入和 Diff 验收
 
 - 新增零第三方依赖的 `verify-live-imports.mjs`，通过现有 API 顺序完成 8 个项目的创建或精确复用、源码导入、状态回读、默认 Diff 和证据核对。

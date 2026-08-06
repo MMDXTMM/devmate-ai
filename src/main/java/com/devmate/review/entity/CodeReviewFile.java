@@ -13,6 +13,7 @@ public class CodeReviewFile {
     private Long projectId;
     private String oldPath;
     private String newPath;
+    private String newPathHash;
     private String changeType;
     private String coverageStatus;
     private Integer additions;
@@ -33,6 +34,8 @@ public class CodeReviewFile {
     public void setOldPath(String oldPath) { this.oldPath = oldPath; }
     public String getNewPath() { return newPath; }
     public void setNewPath(String newPath) { this.newPath = newPath; }
+    public String getNewPathHash() { return newPathHash; }
+    public void setNewPathHash(String newPathHash) { this.newPathHash = newPathHash; }
     public String getChangeType() { return changeType; }
     public void setChangeType(String changeType) { this.changeType = changeType; }
     public String getCoverageStatus() { return coverageStatus; }
