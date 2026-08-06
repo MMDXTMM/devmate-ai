@@ -90,5 +90,19 @@ class DatabaseSchemaTest {
                 Integer.class
         );
         assertThat(reusedFilesColumn).isZero();
+        for (String column : List.of(
+                "clone_duration_ms",
+                "scan_duration_ms",
+                "plan_duration_ms",
+                "parse_duration_ms",
+                "persist_duration_ms",
+                "total_duration_ms"
+        )) {
+            Long defaultMetric = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(MAX(" + column + "), 0) FROM index_task",
+                    Long.class
+            );
+            assertThat(defaultMetric).as("column %s should exist", column).isZero();
+        }
     }
 }

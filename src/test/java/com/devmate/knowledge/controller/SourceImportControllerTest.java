@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,7 +91,13 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data.revision").value(REVISION))
                 .andExpect(jsonPath("$.data.totalFiles").value(2))
                 .andExpect(jsonPath("$.data.processedFiles").value(2))
-                .andExpect(jsonPath("$.data.reusedFiles").value(0));
+                .andExpect(jsonPath("$.data.reusedFiles").value(0))
+                .andExpect(jsonPath("$.data.cloneDurationMs", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.scanDurationMs", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.planDurationMs", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.parseDurationMs", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.persistDurationMs", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.totalDurationMs", greaterThanOrEqualTo(0)));
 
         Project storedProject = projectMapper.selectById(project.id());
         assertThat(storedProject.getStatus()).isEqualTo("READY");
@@ -131,7 +138,11 @@ class SourceImportControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.taskType").value("INCREMENTAL"))
                 .andExpect(jsonPath("$.data.processedFiles").value(0))
-                .andExpect(jsonPath("$.data.reusedFiles").value(2));
+                .andExpect(jsonPath("$.data.reusedFiles").value(2))
+                .andExpect(jsonPath("$.data.scanDurationMs").value(0))
+                .andExpect(jsonPath("$.data.planDurationMs").value(0))
+                .andExpect(jsonPath("$.data.parseDurationMs").value(0))
+                .andExpect(jsonPath("$.data.totalDurationMs", greaterThanOrEqualTo(0)));
 
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, project.id()))).isEqualTo(2);
@@ -206,7 +217,10 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data.taskType").value("INCREMENTAL"))
                 .andExpect(jsonPath("$.data.totalFiles").value(3))
                 .andExpect(jsonPath("$.data.processedFiles").value(2))
-                .andExpect(jsonPath("$.data.reusedFiles").value(1));
+                .andExpect(jsonPath("$.data.reusedFiles").value(1))
+                .andExpect(jsonPath("$.data.planDurationMs", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.parseDurationMs", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.totalDurationMs", greaterThanOrEqualTo(0)));
 
         assertThat(documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
                         .eq(KnowledgeDocument::getProjectId, project.id())
@@ -242,6 +256,7 @@ class SourceImportControllerTest {
                 .last("LIMIT 1"));
         assertThat(task.getStatus()).isEqualTo("FAILED");
         assertThat(task.getFinishedAt()).isNotNull();
+        assertImportMetricsAreNonNegative(task);
     }
 
     @Test
@@ -265,10 +280,20 @@ class SourceImportControllerTest {
                 .last("LIMIT 1"));
         assertThat(task.getStatus()).isEqualTo("FAILED");
         assertThat(task.getErrorMessage()).contains("Broken.java");
+        assertImportMetricsAreNonNegative(task);
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, project.id()))).isZero();
         assertThat(chunkMapper.selectCount(Wrappers.lambdaQuery(KnowledgeChunk.class)
                 .eq(KnowledgeChunk::getProjectId, project.id()))).isZero();
+    }
+
+    private void assertImportMetricsAreNonNegative(IndexTask task) {
+        assertThat(task.getCloneDurationMs()).isNotNegative();
+        assertThat(task.getScanDurationMs()).isNotNegative();
+        assertThat(task.getPlanDurationMs()).isNotNegative();
+        assertThat(task.getParseDurationMs()).isNotNegative();
+        assertThat(task.getPersistDurationMs()).isNotNegative();
+        assertThat(task.getTotalDurationMs()).isNotNegative();
     }
 
     @Test

@@ -8,6 +8,7 @@ import RetrievalModal from './components/RetrievalModal.vue'
 import AiReviewModal from './components/AiReviewModal.vue'
 import ReviewEvaluationModal from './components/ReviewEvaluationModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
+import { runBasicAnalysis } from './services/basicAnalysisWorkflow'
 import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
 
 const pageData = ref<PageData<Project>>({ page: 1, size: 10, total: 0, pages: 0, items: [] })
@@ -21,6 +22,7 @@ const successMessage = ref('')
 const deletingId = ref<string | null>(null)
 const importingId = ref<string | null>(null)
 const embeddingId = ref<string | null>(null)
+const workflowId = ref<string | null>(null)
 const sourceProject = ref<Project | null>(null)
 const diffProject = ref<Project | null>(null)
 const analysisProject = ref<Project | null>(null)
@@ -128,7 +130,7 @@ async function importSource(project: Project) {
   try {
     const task = await projectApi.importSource(project.id)
     showSuccess(
-      `源码导入成功：共 ${task.totalFiles} 个文件，解析 ${task.processedFiles}，复用 ${task.reusedFiles}`,
+      `源码导入成功：共 ${task.totalFiles} 个文件，解析 ${task.processedFiles}，复用 ${task.reusedFiles}，耗时 ${task.totalDurationMs} ms`,
     )
     await loadProjects(pageData.value.page)
   } catch (error) {
@@ -150,6 +152,23 @@ async function indexEmbeddings(project: Project) {
     showError(error)
   } finally {
     embeddingId.value = null
+  }
+}
+
+async function analyzeProject(project: Project) {
+  workflowId.value = project.id
+  try {
+    const result = await runBasicAnalysis(project.id)
+    showSuccess(
+      `基础分析完成：${result.diff.changedFiles} 个变更文件，${result.staticAnalysis.findingCount} 个确定性问题，${result.embeddingIndex.processedChunks} 个新增向量`,
+    )
+    await loadProjects(pageData.value.page)
+    aiReviewProject.value = project
+  } catch (error) {
+    showError(error)
+    await loadProjects(pageData.value.page)
+  } finally {
+    workflowId.value = null
   }
 }
 
@@ -253,52 +272,58 @@ onMounted(() => loadProjects())
                 <td class="muted">{{ formatDate(project.updatedAt) }}</td>
                 <td class="row-actions">
                   <button
+                    class="ai-review-button"
+                    type="button"
+                    :disabled="project.sourceType !== 'GIT' || workflowId === project.id || importingId === project.id || deletingId === project.id"
+                    @click="analyzeProject(project)"
+                  >{{ workflowId === project.id ? '分析中' : '基础分析' }}</button>
+                  <button
                     class="import"
                     type="button"
-                    :disabled="project.sourceType !== 'GIT' || importingId === project.id || deletingId === project.id"
+                    :disabled="project.sourceType !== 'GIT' || workflowId === project.id || importingId === project.id || deletingId === project.id"
                     @click="importSource(project)"
                   >
                     {{ importingId === project.id ? '导入中' : project.status === 'READY' ? '重新导入' : '导入源码' }}
                   </button>
                   <button
                     type="button"
-                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
                     @click="sourceProject = project"
                   >结构</button>
                   <button
                     type="button"
-                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
                     @click="diffProject = project"
                   >Diff</button>
                   <button
                     type="button"
-                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
                     @click="analysisProject = project"
                   >静态分析</button>
                   <button
                     type="button"
-                    :disabled="project.status !== 'READY' || embeddingId === project.id || importingId === project.id || deletingId === project.id"
+                    :disabled="project.status !== 'READY' || workflowId === project.id || embeddingId === project.id || importingId === project.id || deletingId === project.id"
                     @click="indexEmbeddings(project)"
                   >{{ embeddingId === project.id ? '向量化中' : '向量化' }}</button>
                   <button
                     type="button"
-                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
                     @click="retrievalProject = project"
                   >检索</button>
                   <button
                     class="ai-review-button"
                     type="button"
-                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
                     @click="aiReviewProject = project"
                   >AI审查</button>
                   <button
                     class="evaluation-button"
                     type="button"
-                    :disabled="project.status !== 'READY' || importingId === project.id || deletingId === project.id"
+                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
                     @click="evaluationProject = project"
                   >评测</button>
-                  <button type="button" :disabled="importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
-                  <button class="danger" type="button" :disabled="deletingId === project.id || importingId === project.id" @click="removeProject(project)">
+                  <button type="button" :disabled="workflowId === project.id || importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
+                  <button class="danger" type="button" :disabled="workflowId === project.id || deletingId === project.id || importingId === project.id" @click="removeProject(project)">
                     {{ deletingId === project.id ? '删除中' : '删除' }}
                   </button>
                 </td>

@@ -51,36 +51,70 @@ public class SourceImportService {
     }
 
     public IndexTaskResponse importSource(Long projectId) {
+        long totalStartedNanos = System.nanoTime();
         SourceImportContext context = stateService.prepare(projectId);
+        SourceImportMetrics metrics = SourceImportMetrics.empty(totalStartedNanos);
         try {
             Path taskDirectory = workspaceManager.createTaskDirectory(projectId, context.taskId());
-            GitCloneResult clone = gitSourceClient.cloneRepository(
-                    context.repositoryUrl(),
-                    context.branch(),
-                    taskDirectory
-            );
-            if (Objects.equals(context.previousRevision(), clone.revision())) {
-                return stateService.completeUnchanged(context, clone.revision());
+            long cloneStartedNanos = System.nanoTime();
+            GitCloneResult clone;
+            try {
+                clone = gitSourceClient.cloneRepository(
+                        context.repositoryUrl(),
+                        context.branch(),
+                        taskDirectory
+                );
+            } catch (RuntimeException exception) {
+                metrics = metrics.withCloneDuration(SourceImportMetrics.elapsedMillis(cloneStartedNanos));
+                throw exception;
             }
-            List<ScannedSourceFile> files = sourceScanner.scan(clone.repositoryRoot());
+            metrics = metrics.withCloneDuration(SourceImportMetrics.elapsedMillis(cloneStartedNanos));
+            if (Objects.equals(context.previousRevision(), clone.revision())) {
+                return stateService.completeUnchanged(context, clone.revision(), metrics);
+            }
+            long scanStartedNanos = System.nanoTime();
+            List<ScannedSourceFile> files;
+            try {
+                files = sourceScanner.scan(clone.repositoryRoot());
+            } catch (RuntimeException exception) {
+                metrics = metrics.withScanDuration(SourceImportMetrics.elapsedMillis(scanStartedNanos));
+                throw exception;
+            }
+            metrics = metrics.withScanDuration(SourceImportMetrics.elapsedMillis(scanStartedNanos));
             if (files.stream().noneMatch(file -> file.fileType() == SourceFileType.JAVA)) {
                 throw new SourceImportException("仓库中没有找到Java源码文件");
             }
-            SourceImportPlan plan = stateService.planIncremental(context, files);
+            long planStartedNanos = System.nanoTime();
+            SourceImportPlan plan;
+            try {
+                plan = stateService.planIncremental(context, files);
+            } catch (RuntimeException exception) {
+                metrics = metrics.withPlanDuration(SourceImportMetrics.elapsedMillis(planStartedNanos));
+                throw exception;
+            }
+            metrics = metrics.withPlanDuration(SourceImportMetrics.elapsedMillis(planStartedNanos));
+            long parseStartedNanos = System.nanoTime();
             List<ParsedSourceFile> parsedFiles = new ArrayList<>(plan.reusedFiles());
-            parsedFiles.addAll(plan.filesToParse().stream()
-                    .map(this::parse)
-                    .toList());
+            try {
+                parsedFiles.addAll(plan.filesToParse().stream()
+                        .map(this::parse)
+                        .toList());
+            } catch (RuntimeException exception) {
+                metrics = metrics.withParseDuration(SourceImportMetrics.elapsedMillis(parseStartedNanos));
+                throw exception;
+            }
+            metrics = metrics.withParseDuration(SourceImportMetrics.elapsedMillis(parseStartedNanos));
             return stateService.complete(
                     context,
                     clone.revision(),
                     parsedFiles,
                     plan.filesToParse().size(),
-                    plan.reusedFiles().size()
+                    plan.reusedFiles().size(),
+                    metrics
             );
         } catch (RuntimeException exception) {
             String message = exception.getMessage() == null ? "源码导入失败" : exception.getMessage();
-            stateService.fail(context, message);
+            stateService.fail(context, message, metrics);
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, message);
         }
     }

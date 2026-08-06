@@ -105,6 +105,12 @@ public class SourceImportStateService {
         task.setProcessedFiles(0);
         task.setReusedFiles(0);
         task.setFailedFiles(0);
+        task.setCloneDurationMs(0L);
+        task.setScanDurationMs(0L);
+        task.setPlanDurationMs(0L);
+        task.setParseDurationMs(0L);
+        task.setPersistDurationMs(0L);
+        task.setTotalDurationMs(0L);
         task.setCreatedAt(now);
         task.setStartedAt(now);
         indexTaskMapper.insert(task);
@@ -170,8 +176,10 @@ public class SourceImportStateService {
             String revision,
             List<ParsedSourceFile> files,
             int processedFiles,
-            int reusedFiles
+            int reusedFiles,
+            SourceImportMetrics metrics
     ) {
+        long persistStartedNanos = System.nanoTime();
         if (files.size() != processedFiles + reusedFiles) {
             throw new IllegalArgumentException("源码导入文件计数不一致");
         }
@@ -188,6 +196,7 @@ public class SourceImportStateService {
         task.setProcessedFiles(processedFiles);
         task.setReusedFiles(reusedFiles);
         task.setFailedFiles(0);
+        applyMetrics(task, metrics, SourceImportMetrics.elapsedMillis(persistStartedNanos));
         task.setFinishedAt(now);
         indexTaskMapper.updateById(task);
 
@@ -201,7 +210,12 @@ public class SourceImportStateService {
     }
 
     @Transactional
-    public IndexTaskResponse completeUnchanged(SourceImportContext context, String revision) {
+    public IndexTaskResponse completeUnchanged(
+            SourceImportContext context,
+            String revision,
+            SourceImportMetrics metrics
+    ) {
+        long persistStartedNanos = System.nanoTime();
         long documentCount = documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, context.projectId())
                 .eq(KnowledgeDocument::getRevision, revision)
@@ -217,6 +231,7 @@ public class SourceImportStateService {
         task.setProcessedFiles(0);
         task.setReusedFiles((int) documentCount);
         task.setFailedFiles(0);
+        applyMetrics(task, metrics, SourceImportMetrics.elapsedMillis(persistStartedNanos));
         task.setFinishedAt(now);
         indexTaskMapper.updateById(task);
         projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
@@ -229,12 +244,14 @@ public class SourceImportStateService {
     }
 
     @Transactional
-    public void fail(SourceImportContext context, String errorMessage) {
+    public void fail(SourceImportContext context, String errorMessage, SourceImportMetrics metrics) {
+        long persistStartedNanos = System.nanoTime();
         LocalDateTime now = LocalDateTime.now();
         IndexTask task = requireTask(context.taskId());
         task.setStatus(IndexTaskStatus.FAILED.name());
         task.setFailedFiles(Math.max(task.getFailedFiles(), 1));
         task.setErrorMessage(truncate(errorMessage));
+        applyMetrics(task, metrics, SourceImportMetrics.elapsedMillis(persistStartedNanos));
         task.setFinishedAt(now);
         indexTaskMapper.updateById(task);
 
@@ -242,6 +259,15 @@ public class SourceImportStateService {
                 .eq(Project::getId, context.projectId())
                 .set(Project::getStatus, ProjectStatus.FAILED.name())
                 .set(Project::getUpdatedAt, now));
+    }
+
+    private void applyMetrics(IndexTask task, SourceImportMetrics metrics, long persistDurationMs) {
+        task.setCloneDurationMs(metrics.cloneDurationMs());
+        task.setScanDurationMs(metrics.scanDurationMs());
+        task.setPlanDurationMs(metrics.planDurationMs());
+        task.setParseDurationMs(metrics.parseDurationMs());
+        task.setPersistDurationMs(persistDurationMs);
+        task.setTotalDurationMs(metrics.totalDurationMs());
     }
 
     @Transactional(readOnly = true)
