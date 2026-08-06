@@ -40,7 +40,7 @@
 5. base 与 candidate 快照确实存在变更；
 6. CLEAN 场景没有缺陷定位，DEFECT 场景至少有一个标准答案。
 
-后续任务直接通过上述公开仓库执行源码导入、Diff、FIXED、AGENT 和 V13 评测接口的第一轮 A/B。
+后续任务通过上述公开仓库录入并复核人工标准答案，再执行 FIXED、AGENT 和 V13 评测接口的第一轮 A/B。
 
 ## 真实导入与 Diff 验收
 
@@ -67,4 +67,6 @@ node benchmarks/review-fixtures/verify-live-imports.mjs
 
 公开仓库不需要 Git Token。运行验收时不要为了方便把数据库密码、Git Token 或模型 Key 写进命令、脚本或报告；本阶段也不需要配置 `DASHSCOPE_API_KEY`。
 
-2026-08-06 使用 H2 `test` Profile 和真实公开 GitHub 仓库完成全量验收：8 个场景全部通过，6 个 `FULL`、2 个 `PARTIAL`、0 个 `SKIPPED`。`case-005` 的 TARGET 第 3 行新增 import、`case-008` 的 BASE 第 3 行删除 import，不在当前从 class 声明开始的 Chunk 内；两者的类、方法和缺陷目标行仍有真实映射证据。该结果不能替代本机 MySQL 的同链路持久化复验，也不包含模型效果指标。
+2026-08-06 先使用 H2 `test` Profile，再使用隔离空库 MySQL 26.7 和真实公开 GitHub 仓库完成同一全量验收。MySQL 从空库执行 Flyway V1-V13，应用健康检查为 `UP`；最终 8 个项目均为 `READY`，持久化 8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。`case-008` 首次导入遇到 GitHub 瞬时失败并保留 1 条可观察的 `FAILED` 任务，重试成功后完整复核结果为 8 个场景全部通过、6 个 `FULL`、2 个 `PARTIAL`、0 个 `SKIPPED`。
+
+`case-005` 的 TARGET 第 3 行新增 import、`case-008` 的 BASE 第 3 行删除 import，不在当前从 class 声明开始的 Chunk 内；两者的类、方法和缺陷目标行仍有真实映射证据。MySQL 最终报告位于被忽略的 `target/benchmark-results/known-defects-v1-mysql-import-diff.json`，`importMode` 为 `REUSE_LATEST_SUCCEEDED`。系统安装的 3306 服务仍未监听，这是独立的本机运维问题，不影响上述隔离 MySQL 对真实方言、迁移和持久化链路的验收结论。本轮不包含模型效果指标。

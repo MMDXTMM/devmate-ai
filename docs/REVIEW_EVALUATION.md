@@ -129,7 +129,7 @@ V13 同时为 `ai_review_task` 增加 `execution_mode=FIXED/AGENT`。模式由�
 - 相同 AI 任务和数据集哈希重复执行幂等返回；
 - H2 从空库执行 V1–V13，并在真实 MySQL 验证 V12→V13。
 
-当前验证结果：后端 107 项测试、前端 29 项测试、真实验收工具 16 项 Node 测试和 Vue 生产构建全部通过；本机 MySQL 此前已从 V12 成功迁移到 V13，并验证原项目可读，本轮 3306 未监听，因此 8 场景 MySQL 复验待服务恢复后补做。评测工作台和样本契约没有新增数据库结构，也没有调用真实模型。
+当前验证结果：后端 107 项测试、前端 29 项测试、真实验收工具 16 项 Node 测试和 Vue 生产构建全部通过；隔离空库 MySQL 26.7 已执行 V1-V13，生成 25 张表并完成 8 场景真实持久化验收。系统安装的 3306 服务仍未监听，属于独立的本机运维问题。评测工作台和样本契约没有新增数据库结构，也没有调用真实模型。
 
 ## 10. 第一版真实缺陷样本契约
 
@@ -181,7 +181,7 @@ main 根提交
 - 覆盖状态与汇总计数一致，不能出现 `SKIPPED`；
 - 每条 DEFECT 标准答案既命中真实目标 Diff，也命中 candidate 的 `TARGET` 符号范围。
 
-2026-08-06 使用 H2 `test` Profile（端口 8081）和真实公开 GitHub 仓库全量运行结果为：
+2026-08-06 先使用 H2 `test` Profile，再使用隔离空库 MySQL 26.7 和真实公开 GitHub 仓库全量运行，两种数据库的最终结果均为：
 
 ```text
 8 PASS
@@ -195,6 +195,8 @@ main 根提交
 
 真实运行曾遇到 GitHub TLS/克隆瞬时失败。工具允许使用 `--scenario` 做单场景排障重试；当每个项目的最近导入都恢复为 `SUCCEEDED` 后，`--reuse-imports` 会在不再次克隆的前提下，完整复核 8 个最新任务、项目 revision 和 candidate SHA，并重新创建 Diff。失败或缺失的最近任务仍会令验收失败，报告通过 `importMode` 与 `importTriggered` 区分“触发导入”和“复用已验证导入”。
 
-最终结论来自故障恢复后的完整 8 场景 `--reuse-imports` 运行，不是把单场景报告拼在一起。默认报告保存在被 Git 忽略的 `target/benchmark-results/known-defects-v1-import-diff.json`，不保存源码、凭证、Prompt 或模型内容。
+MySQL 从空库执行 Flyway V1-V13，生成 25 张表，应用健康检查为 `UP`。验收结束时 8 个项目均为 `READY`，存在 8 个 `knowledge_document`、46 个 `knowledge_chunk`、8 个成功导入任务和 16 个成功 Diff 任务。`case-008` 首次导入因 GitHub 瞬时错误留下 1 个可观察的失败任务，重试后恢复成功。
 
-本轮没有执行 Embedding、FIXED 或 AGENT，没有把 manifest 写入评测表，也没有生成或宣称任何准确率。H2 实跑证明 API、GitHub、JGit、解析和 Diff 证据链可工作；本机 MySQL 仍需在服务恢复后执行同一验收工具，单独确认真实持久化环境。
+最终结论来自故障恢复后的完整 8 场景 `--reuse-imports` 运行，不是把单场景报告拼在一起。H2 与 MySQL 报告分别保存在被 Git 忽略的 `target/benchmark-results/known-defects-v1-import-diff.json` 和 `target/benchmark-results/known-defects-v1-mysql-import-diff.json`；报告不保存源码、凭证、Prompt 或模型内容。MySQL 最终报告的 `importMode` 为 `REUSE_LATEST_SUCCEEDED`。
+
+本轮没有执行 Embedding、FIXED 或 AGENT，没有把 manifest 写入评测表，也没有生成或宣称任何准确率。H2 与 MySQL 实跑共同证明 API、GitHub、JGit、解析、Diff 和真实持久化证据链可工作。系统安装的 MySQL 3306 仍未监听，但这不再阻塞项目数据库链路验收；后续可按运维手册单独恢复。
