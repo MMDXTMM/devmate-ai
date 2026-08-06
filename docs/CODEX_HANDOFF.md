@@ -13,11 +13,11 @@
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
 | 最近合并 | PR #18，`main@da3a758` |
-| 本轮交付 | 分支 `codex/review-ab-runner`：Diff 绑定、付费请求 `attemptKey`、受控 A/B 执行器和前端竞态保护；尚待提交与 PR |
+| 本轮交付 | PR #19，提交 `a0d4055`：Diff 绑定、付费请求 `attemptKey`、受控 A/B 执行器和前端竞态保护；等待合并 |
 | 数据库 | H2 已从空库迁移到 V15；隔离 MySQL 26.7 已从 V14 原地迁移到 V15，应用健康与历史数据回读通过 |
 | 测试基线 | 后端 120 项、前端 37 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
 | 精确暂停点 | 零模型实现与快速回归完成；尚未执行真实 FIXED/AGENT canary，也未产生准确率、Token 或延迟结论 |
-| 下一小任务 | 提交并合并本轮 PR；之后确认密钥和额度再运行单场景 canary |
+| 下一小任务 | 合并 PR #19；之后确认密钥和额度再运行单场景 canary |
 
 ### 状态可信度顺序
 
