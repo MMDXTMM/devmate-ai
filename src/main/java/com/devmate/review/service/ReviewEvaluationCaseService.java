@@ -132,10 +132,36 @@ public class ReviewEvaluationCaseService {
             Long reviewTaskId
     ) {
         projectService.getProject(projectId);
+        if (reviewTaskId == null) {
+            return loadEnabledDatasetCases(projectId, datasetVersion.trim()).stream()
+                    .map(ReviewEvaluationCaseResponse::from)
+                    .toList();
+        }
         requireReviewTask(projectId, reviewTaskId);
         return loadEnabledCases(projectId, datasetVersion.trim(), reviewTaskId).stream()
                 .map(ReviewEvaluationCaseResponse::from)
                 .toList();
+    }
+
+    private List<ReviewEvaluationCase> loadEnabledDatasetCases(
+            Long projectId,
+            String datasetVersion
+    ) {
+        List<ReviewEvaluationCase> values = caseMapper.selectList(
+                Wrappers.lambdaQuery(ReviewEvaluationCase.class)
+                        .eq(ReviewEvaluationCase::getProjectId, projectId)
+                        .eq(ReviewEvaluationCase::getDatasetVersion, datasetVersion)
+                        .eq(ReviewEvaluationCase::getEnabled, 1)
+                        .orderByAsc(ReviewEvaluationCase::getCaseKey)
+                        .last("LIMIT " + (properties.getMaxCasesPerReview() + 1))
+        );
+        if (values.size() > properties.getMaxCasesPerReview()) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "单个项目评测集的启用用例不能超过" + properties.getMaxCasesPerReview() + "个"
+            );
+        }
+        return values;
     }
 
     @Transactional(readOnly = true)

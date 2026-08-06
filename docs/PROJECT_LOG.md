@@ -2,6 +2,17 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-06：完成 manifest 人工标准答案幂等同步与 MySQL 回读验收
+
+- 扩展 `verify-live-imports.mjs`，新增必须组合使用的 `--reuse-imports --reuse-diffs --record-gold-cases`；标准答案模式只能全量运行，不能与单场景排障混用。
+- 先验证全部 8 个项目、Import、latest Diff、revision、覆盖和 TARGET 证据，再跨 Diff 预检同一项目与数据集的已有用例；任一旧 Diff 绑定、重复/额外 caseKey 或字段漂移都会在零次 POST 时失败。
+- 预检完整镜像后端 DTO 的字符集、长度、类别、路径和行范围约束，只创建缺失项；POST 响应丢失后通过唯一键范围回读判断是否已提交，最后全量核对字符串 ID、项目、Diff、dataset、revision、类型、类别、路径、行号和依据。
+- V13 唯一键为 `(project_id, dataset_version, case_key)`，不包含 `review_task_id`，因此幂等重跑必须复用同一个 latest Diff。标准用例 GET 保留按 Diff 查询，并支持省略 `reviewTaskId` 做数据集级跨 Diff 预检。
+- 外部批处理不使用跨 8 个 HTTP 请求的长事务；全批预检减少可提前发现的部分写入，应用阶段依靠数据库唯一键、失败状态、精确回读和可恢复重跑。
+- Node 验收工具 28 项测试覆盖 DEFECT/CLEAN 映射、字段漂移、旧 Diff 冲突、整批门禁、非法 manifest、首次补录、零写入重跑、响应丢失恢复和失败计数；后端 111 项测试通过，`git diff --check` 通过。
+- 使用已迁移到 V14 的隔离 MySQL 26.7 和 8 个历史 Diff 完成真实验收：首次 `8 created / 8 verified`，立即重跑 `0 created / 8 reused / 8 verified`；数据库最终为 7 条 `DEFECT`、1 条 `CLEAN`，分别绑定 8 个项目和 8 个 Diff，必填证据字段无缺失。
+- 本任务没有调用 Embedding、FIXED、AGENT 或模型，也没有生成准确率。下一小任务是在相同项目、revision、Diff、模型和数据集条件下运行真实 FIXED/AGENT A/B，并人工解释失败案例。
+
 ## 2026-08-06：强化人工标准答案的 Diff 与 TARGET 证据约束
 
 - 修复标准答案只校验相对路径格式和正数行号、却未确认位置真实属于指定 Diff 的缺口，避免虚构标注污染 Precision/Recall/F1。

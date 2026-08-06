@@ -101,6 +101,12 @@ class ReviewEvaluationControllerTest {
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].caseKey").value("concurrency-oversell"));
 
+        mockMvc.perform(get("/api/projects/{projectId}/review-evaluation-cases", fixture.projectId())
+                        .param("datasetVersion", "known-defects-v1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].reviewTaskId").value(fixture.reviewTaskId().toString()));
+
         createDefectCase(
                 fixture, "known-defects-v1", "concurrency-oversell",
                 "CONCURRENCY", "src/OrderService.java", 20, 30

@@ -57,7 +57,8 @@ public class ReviewEvaluationController {
                     message = "评测集版本只能包含字母、数字、点、下划线和短横线"
             )
             @RequestParam String datasetVersion,
-            @Positive(message = "Diff任务ID必须大于0") @RequestParam Long reviewTaskId
+            @Positive(message = "Diff任务ID必须大于0")
+            @RequestParam(required = false) Long reviewTaskId
     ) {
         return ApiResponse.success(caseService.list(projectId, datasetVersion, reviewTaskId));
     }
