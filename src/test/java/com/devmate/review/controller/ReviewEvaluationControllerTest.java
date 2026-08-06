@@ -8,18 +8,24 @@ import com.devmate.knowledge.mapper.IndexTaskMapper;
 import com.devmate.project.dto.CreateProjectRequest;
 import com.devmate.project.dto.ProjectResponse;
 import com.devmate.project.service.ProjectService;
+import com.devmate.review.dto.MappedSymbolResponse;
 import com.devmate.review.entity.AiReviewTask;
+import com.devmate.review.entity.CodeReviewFile;
 import com.devmate.review.entity.CodeReviewTask;
 import com.devmate.review.entity.ReviewFinding;
 import com.devmate.review.entity.StaticAnalysisTask;
 import com.devmate.review.mapper.AiReviewTaskMapper;
+import com.devmate.review.mapper.CodeReviewFileMapper;
 import com.devmate.review.mapper.CodeReviewTaskMapper;
 import com.devmate.review.mapper.ReviewEvaluationCaseMapper;
 import com.devmate.review.mapper.ReviewEvaluationRunMapper;
 import com.devmate.review.mapper.ReviewFindingMapper;
 import com.devmate.review.mapper.StaticAnalysisTaskMapper;
+import com.devmate.review.model.LineRange;
 import com.devmate.tool.entity.ToolCallLog;
 import com.devmate.tool.mapper.ToolCallLogMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -29,7 +35,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -53,6 +64,8 @@ class ReviewEvaluationControllerTest {
     @Autowired
     private CodeReviewTaskMapper reviewTaskMapper;
     @Autowired
+    private CodeReviewFileMapper reviewFileMapper;
+    @Autowired
     private StaticAnalysisTaskMapper staticTaskMapper;
     @Autowired
     private AiInvocationLogMapper invocationMapper;
@@ -66,6 +79,8 @@ class ReviewEvaluationControllerTest {
     private ReviewEvaluationCaseMapper caseMapper;
     @Autowired
     private ReviewEvaluationRunMapper runMapper;
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void createsAndListsDefectCasesWithProjectAndDatasetIsolation() throws Exception {
@@ -116,6 +131,12 @@ class ReviewEvaluationControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("缺陷文件路径必须是项目内相对路径"));
 
+        createDefectCase(
+                fixture, "known-defects-v1", "reversed-lines",
+                "CONCURRENCY", "src/OrderService.java", 30, 20
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("结束行不能小于起始行"));
+
         mockMvc.perform(post("/api/projects/{projectId}/review-evaluation-cases", fixture.projectId())
                         .contentType(APPLICATION_JSON)
                         .content(cleanCaseJson(fixture.reviewTaskId(), "clean-v1", "clean-control")))
@@ -145,6 +166,213 @@ class ReviewEvaluationControllerTest {
                                 """.formatted(fixture.reviewTaskId())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("无缺陷用例不能填写缺陷类别、文件或行范围"));
+    }
+
+    @Test
+    void requiresDefectCasesToMatchChangedLinesAndPersistedTargetEvidence() throws Exception {
+        Fixture fixture = fixture("evaluation-target-evidence", "FIXED");
+        CodeReviewTask otherTask = insertReviewTask(fixture, 1);
+        insertReviewFile(
+                fixture.projectId(), otherTask.getId(), "src/OnlyOtherDiff.java",
+                10, 12, "FULL", true
+        );
+
+        createDefectCase(
+                fixture, "known-defects-v1", "wrong-diff-file",
+                "CONCURRENCY", "src/OnlyOtherDiff.java", 10, 12
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷文件不属于指定Diff的目标版本"));
+
+        createDefectCase(
+                fixture, "known-defects-v1", "outside-target-change",
+                "CONCURRENCY", "src/OrderService.java", 31, 32
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷行范围必须与目标版本变更行相交"));
+
+        CodeReviewFile orderServiceFile = reviewFileMapper.selectOne(
+                Wrappers.lambdaQuery(CodeReviewFile.class)
+                        .eq(CodeReviewFile::getReviewTaskId, fixture.reviewTaskId())
+                        .eq(CodeReviewFile::getNewPath, "src/OrderService.java")
+                        .last("LIMIT 1")
+        );
+        orderServiceFile.setCoverageStatus("PARTIAL");
+        reviewFileMapper.updateById(orderServiceFile);
+
+        createDefectCase(
+                fixture, "known-defects-v1", "partial-with-target-evidence",
+                "CONCURRENCY", "src/OrderService.java", 20, 22
+        ).andExpect(status().isOk());
+
+        insertReviewFile(
+                fixture.projectId(), fixture.reviewTaskId(), "src/NoTargetEvidence.java",
+                50, 55, "PARTIAL", false
+        );
+        CodeReviewTask mainTask = reviewTaskMapper.selectById(fixture.reviewTaskId());
+        mainTask.setChangedFiles(3);
+        mainTask.setFullyMappedFiles(1);
+        mainTask.setPartiallyMappedFiles(2);
+        reviewTaskMapper.updateById(mainTask);
+
+        createDefectCase(
+                fixture, "known-defects-v1", "without-target-evidence",
+                "CONCURRENCY", "src/NoTargetEvidence.java", 50, 51
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷行范围缺少持久化的TARGET代码证据"));
+
+        CodeReviewFile noTargetFile = reviewFileMapper.selectOne(
+                Wrappers.lambdaQuery(CodeReviewFile.class)
+                        .eq(CodeReviewFile::getReviewTaskId, fixture.reviewTaskId())
+                        .eq(CodeReviewFile::getNewPath, "src/NoTargetEvidence.java")
+                        .last("LIMIT 1")
+        );
+        noTargetFile.setMappedSymbolsJson(writeJson(List.of(new MappedSymbolResponse(
+                null,
+                "TARGET",
+                "METHOD",
+                "NoTargetEvidence.withoutChunk",
+                50,
+                55
+        ))));
+        reviewFileMapper.updateById(noTargetFile);
+
+        createDefectCase(
+                fixture, "known-defects-v1", "target-without-chunk-id",
+                "CONCURRENCY", "src/NoTargetEvidence.java", 50, 51
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷行范围缺少持久化的TARGET代码证据"));
+
+        noTargetFile.setMappedSymbolsJson(writeJson(List.of(new MappedSymbolResponse(
+                0L,
+                "TARGET",
+                "METHOD",
+                "NoTargetEvidence.nonPositiveChunk",
+                50,
+                55
+        ))));
+        reviewFileMapper.updateById(noTargetFile);
+
+        createDefectCase(
+                fixture, "known-defects-v1", "target-with-non-positive-chunk-id",
+                "CONCURRENCY", "src/NoTargetEvidence.java", 50, 51
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷行范围缺少持久化的TARGET代码证据"));
+
+        noTargetFile.setMappedSymbolsJson(writeJson(List.of(new MappedSymbolResponse(
+                noTargetFile.getId(),
+                "TARGET",
+                "METHOD",
+                "NoTargetEvidence.invalidRange",
+                0,
+                55
+        ))));
+        reviewFileMapper.updateById(noTargetFile);
+
+        createDefectCase(
+                fixture, "known-defects-v1", "target-with-invalid-symbol-range",
+                "CONCURRENCY", "src/NoTargetEvidence.java", 50, 51
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷行范围缺少持久化的TARGET代码证据"));
+
+        noTargetFile.setMappedSymbolsJson(writeJson(List.of(new MappedSymbolResponse(
+                noTargetFile.getId(),
+                "TARGET",
+                "METHOD",
+                "NoTargetEvidence.unrelated",
+                80,
+                90
+        ))));
+        reviewFileMapper.updateById(noTargetFile);
+
+        createDefectCase(
+                fixture, "known-defects-v1", "case-and-symbol-without-changed-symbol-overlap",
+                "CONCURRENCY", "src/NoTargetEvidence.java", 50, 80
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷行范围缺少持久化的TARGET代码证据"));
+
+        noTargetFile.setMappedSymbolsJson(writeJson(List.of(new MappedSymbolResponse(
+                noTargetFile.getId(),
+                "TARGET",
+                "METHOD",
+                "NoTargetEvidence.afterCase",
+                53,
+                55
+        ))));
+        reviewFileMapper.updateById(noTargetFile);
+
+        createDefectCase(
+                fixture, "known-defects-v1", "changed-and-symbol-without-case-symbol-overlap",
+                "CONCURRENCY", "src/NoTargetEvidence.java", 50, 52
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷行范围缺少持久化的TARGET代码证据"));
+
+        assertThat(caseMapper.selectCount(Wrappers.lambdaQuery(
+                com.devmate.review.entity.ReviewEvaluationCase.class
+        ).eq(com.devmate.review.entity.ReviewEvaluationCase::getProjectId, fixture.projectId())
+                .eq(com.devmate.review.entity.ReviewEvaluationCase::getDatasetVersion,
+                        "known-defects-v1"))).isEqualTo(1);
+    }
+
+    @Test
+    void usesTargetPathForRenamesAndRejectsAmbiguousTargetFiles() throws Exception {
+        Fixture fixture = fixture("evaluation-target-path", "FIXED");
+        insertReviewFile(
+                fixture.projectId(), fixture.reviewTaskId(),
+                "src/LegacyService.java", "src/RenamedService.java",
+                "RENAME", 60, 65, "FULL", true
+        );
+        updateReviewTaskCoverage(fixture.reviewTaskId(), 3, 3, 0);
+
+        CodeReviewFile renamedFile = reviewFileMapper.selectOne(
+                Wrappers.lambdaQuery(CodeReviewFile.class)
+                        .eq(CodeReviewFile::getReviewTaskId, fixture.reviewTaskId())
+                        .eq(CodeReviewFile::getNewPath, "src/RenamedService.java")
+                        .last("LIMIT 1")
+        );
+        renamedFile.setNewPathHash(sha256("src/renamedservice.java"));
+        reviewFileMapper.updateById(renamedFile);
+
+        createDefectCase(
+                fixture, "rename-v1", "wrong-path-case",
+                "CONCURRENCY", "src/renamedservice.java", 60, 61
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷文件不属于指定Diff的目标版本"));
+
+        reviewFileMapper.update(
+                null,
+                Wrappers.lambdaUpdate(CodeReviewFile.class)
+                        .set(CodeReviewFile::getNewPathHash, null)
+                        .eq(CodeReviewFile::getId, renamedFile.getId())
+        );
+
+        createDefectCase(
+                fixture, "rename-v1", "old-path",
+                "CONCURRENCY", "src/LegacyService.java", 60, 61
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷文件不属于指定Diff的目标版本"));
+
+        createDefectCase(
+                fixture, "rename-v1", "new-path",
+                "CONCURRENCY", "src/RenamedService.java", 60, 61
+        ).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.filePath").value("src/RenamedService.java"));
+
+        insertReviewFile(
+                fixture.projectId(), fixture.reviewTaskId(),
+                "src/AnotherLegacyService.java", "src/RenamedService.java",
+                "RENAME", 60, 65, "FULL", true
+        );
+        updateReviewTaskCoverage(fixture.reviewTaskId(), 4, 4, 0);
+
+        createDefectCase(
+                fixture, "ambiguous-path-v1", "duplicate-new-path",
+                "CONCURRENCY", "src/RenamedService.java", 60, 61
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("缺陷文件不属于指定Diff的目标版本"));
+
+        assertThat(caseMapper.selectCount(Wrappers.lambdaQuery(
+                com.devmate.review.entity.ReviewEvaluationCase.class
+        ).eq(com.devmate.review.entity.ReviewEvaluationCase::getProjectId, fixture.projectId())))
+                .isEqualTo(1);
     }
 
     @Test
@@ -340,6 +568,15 @@ class ReviewEvaluationControllerTest {
         reviewTask.setFinishedAt(now);
         reviewTaskMapper.insert(reviewTask);
 
+        insertReviewFile(
+                project.id(), reviewTask.getId(), "src/OrderService.java",
+                20, 30, "FULL", true
+        );
+        insertReviewFile(
+                project.id(), reviewTask.getId(), "src/OrderMapper.java",
+                40, 45, "FULL", true
+        );
+
         StaticAnalysisTask staticTask = new StaticAnalysisTask();
         staticTask.setProjectId(project.id());
         staticTask.setReviewTaskId(reviewTask.getId());
@@ -393,6 +630,127 @@ class ReviewEvaluationControllerTest {
 
         return new Fixture(project.id(), reviewTask.getId(), staticTask.getId(),
                 invocation.getId(), aiTask.getId(), revision);
+    }
+
+    private CodeReviewTask insertReviewTask(Fixture fixture, int changedFiles) {
+        CodeReviewTask original = reviewTaskMapper.selectById(fixture.reviewTaskId());
+        LocalDateTime now = LocalDateTime.now();
+        CodeReviewTask task = new CodeReviewTask();
+        task.setProjectId(fixture.projectId());
+        task.setIndexTaskId(original.getIndexTaskId());
+        task.setBaseRevision(original.getBaseRevision());
+        task.setTargetRevision(original.getTargetRevision());
+        task.setTriggerType("MANUAL");
+        task.setStatus("SUCCEEDED");
+        task.setChangedFiles(changedFiles);
+        task.setFullyMappedFiles(changedFiles);
+        task.setPartiallyMappedFiles(0);
+        task.setSkippedFiles(0);
+        task.setCreatedAt(now);
+        task.setStartedAt(now);
+        task.setFinishedAt(now);
+        reviewTaskMapper.insert(task);
+        return task;
+    }
+
+    private void insertReviewFile(
+            Long projectId,
+            Long reviewTaskId,
+            String filePath,
+            int startLine,
+            int endLine,
+            String coverageStatus,
+            boolean includeTargetEvidence
+    ) {
+        insertReviewFile(
+                projectId,
+                reviewTaskId,
+                filePath,
+                filePath,
+                "MODIFY",
+                startLine,
+                endLine,
+                coverageStatus,
+                includeTargetEvidence
+        );
+    }
+
+    private void insertReviewFile(
+            Long projectId,
+            Long reviewTaskId,
+            String oldPath,
+            String newPath,
+            String changeType,
+            int startLine,
+            int endLine,
+            String coverageStatus,
+            boolean includeTargetEvidence
+    ) {
+        CodeReviewFile file = new CodeReviewFile();
+        file.setReviewTaskId(reviewTaskId);
+        file.setProjectId(projectId);
+        file.setOldPath(oldPath);
+        file.setNewPath(newPath);
+        file.setNewPathHash(sha256(newPath));
+        file.setChangeType(changeType);
+        file.setCoverageStatus(coverageStatus);
+        file.setAdditions(endLine - startLine + 1);
+        file.setDeletions(1);
+        file.setBaseChangedLinesJson(writeJson(List.of(new LineRange(startLine, startLine))));
+        file.setChangedLinesJson(writeJson(List.of(new LineRange(startLine, endLine))));
+        List<MappedSymbolResponse> mappedSymbols;
+        if (includeTargetEvidence) {
+            mappedSymbols = List.of(new MappedSymbolResponse(
+                    reviewTaskId + startLine,
+                    "TARGET",
+                    "METHOD",
+                    newPath + "#targetMethod",
+                    startLine - 2,
+                    endLine + 5
+            ));
+        } else {
+            mappedSymbols = List.of(new MappedSymbolResponse(
+                    reviewTaskId + startLine,
+                    "BASE",
+                    "METHOD",
+                    oldPath + "#baseMethod",
+                    startLine,
+                    endLine
+            ));
+        }
+        file.setMappedSymbolsJson(writeJson(mappedSymbols));
+        file.setCreatedAt(LocalDateTime.now());
+        reviewFileMapper.insert(file);
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前JDK不支持SHA-256", exception);
+        }
+    }
+
+    private void updateReviewTaskCoverage(
+            Long reviewTaskId,
+            int changedFiles,
+            int fullyMappedFiles,
+            int partiallyMappedFiles
+    ) {
+        CodeReviewTask task = reviewTaskMapper.selectById(reviewTaskId);
+        task.setChangedFiles(changedFiles);
+        task.setFullyMappedFiles(fullyMappedFiles);
+        task.setPartiallyMappedFiles(partiallyMappedFiles);
+        reviewTaskMapper.updateById(task);
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("构造评测Diff测试数据失败", exception);
+        }
     }
 
     private void insertFinding(

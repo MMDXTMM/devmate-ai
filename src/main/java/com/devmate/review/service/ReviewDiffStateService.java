@@ -23,7 +23,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 
 @Service
@@ -92,6 +97,7 @@ public class ReviewDiffStateService {
             file.setProjectId(context.projectId());
             file.setOldPath(mapped.changedFile().oldPath());
             file.setNewPath(mapped.changedFile().newPath());
+            file.setNewPathHash(pathHash(mapped.changedFile().newPath()));
             file.setChangeType(mapped.changedFile().changeType());
             file.setCoverageStatus(mapped.coverageStatus());
             file.setAdditions(mapped.changedFile().additions());
@@ -156,6 +162,51 @@ public class ReviewDiffStateService {
         return toResponse(task, listFiles(task.getId()));
     }
 
+    @Transactional(readOnly = true)
+    public List<ReviewFileResponse> findTargetFiles(Long projectId, Long taskId, String newPath) {
+        List<CodeReviewFile> matches = new ArrayList<>();
+        addExactPathMatches(
+                matches,
+                fileMapper.selectList(Wrappers.lambdaQuery(CodeReviewFile.class)
+                        .eq(CodeReviewFile::getProjectId, projectId)
+                        .eq(CodeReviewFile::getReviewTaskId, taskId)
+                        .eq(CodeReviewFile::getNewPathHash, pathHash(newPath))
+                        .orderByAsc(CodeReviewFile::getId)),
+                newPath
+        );
+        if (matches.size() < 2) {
+            addExactPathMatches(
+                    matches,
+                    fileMapper.selectList(Wrappers.lambdaQuery(CodeReviewFile.class)
+                            .eq(CodeReviewFile::getProjectId, projectId)
+                            .eq(CodeReviewFile::getReviewTaskId, taskId)
+                            .isNull(CodeReviewFile::getNewPathHash)
+                            .eq(CodeReviewFile::getNewPath, newPath)
+                            .orderByAsc(CodeReviewFile::getId)),
+                    newPath
+            );
+        }
+        return matches.stream()
+                .limit(2)
+                .map(this::toFileResponse)
+                .toList();
+    }
+
+    private void addExactPathMatches(
+            List<CodeReviewFile> matches,
+            List<CodeReviewFile> candidates,
+            String newPath
+    ) {
+        for (CodeReviewFile candidate : candidates) {
+            if (matches.size() >= 2) {
+                return;
+            }
+            if (newPath.equals(candidate.getNewPath())) {
+                matches.add(candidate);
+            }
+        }
+    }
+
     private List<CodeReviewFile> listFiles(Long reviewTaskId) {
         return fileMapper.selectList(Wrappers.lambdaQuery(CodeReviewFile.class)
                 .eq(CodeReviewFile::getReviewTaskId, reviewTaskId)
@@ -199,6 +250,18 @@ public class ReviewDiffStateService {
             return objectMapper.readValue(StringUtils.hasText(value) ? value : "[]", type);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("读取Diff覆盖信息失败", exception);
+        }
+    }
+
+    private String pathHash(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前JDK不支持SHA-256", exception);
         }
     }
 

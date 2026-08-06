@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 最近合并 | PR #15，`main@5e6ea09`；当前分支 `codex/live-benchmark-import-verification` |
-| 本轮交付 | 草稿 PR #16，commit `9bc0c6d`、`f98c3d4`；真实导入/Diff 验收已完成，等待文档收尾与合并 |
-| 数据库 | 隔离空库 MySQL 26.7 已执行 V1-V13 和 8 场景验收；系统 3306 未监听是本机运维问题 |
-| 测试基线 | 后端 107 项；前端 29 项；Node 16 项；Vue 生产构建通过 |
-| 精确暂停点 | 8 个真实项目已导入并完成 Diff：6 FULL、2 PARTIAL；未录标准答案、未调用模型 |
-| 下一小任务 | 强化标准答案的 Diff 归属、目标变更行和 TARGET 证据校验，再批量录入 manifest |
+| 最近合并 | PR #16，`main@ae7395c` |
+| 本轮交付 | 分支 `codex/review-gold-evidence-validation`：标准答案服务端三重证据约束 |
+| 数据库 | 8 场景在隔离 MySQL 26.7 V13 验收，随后原地迁移 V14；系统 3306 未监听是本机运维问题 |
+| 测试基线 | 后端 111 项；前端 29 项；Node 16 项；Vue 生产构建通过 |
+| 精确暂停点 | 标准答案证据约束已完成；8 个真实 Diff 尚未录入 manifest，未调用模型 |
+| 下一小任务 | 批量录入并回读复核 8 个 Diff 的 manifest 人工标准答案 |
 
 ### 状态可信度顺序
 
@@ -74,9 +74,9 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
 | 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史与 H2/MySQL 真实 Diff 验收 | 8 PASS、6 FULL、2 PARTIAL；标准答案落库和真实 A/B 待完成 |
 
-当前数据库版本为 V13。H2 已验证从空库执行 V1-V13；本机此前也完成过 MySQL V12→V13 和原项目读取。2026-08-06 另用隔离空库 MySQL 26.7 完成 V1-V13 与 8 场景真实持久化验收：25 张表、8 个 `READY` 项目、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
+当前数据库版本为 V14。H2 已验证从空库执行 V1-V14；本机此前也完成过 MySQL V12→V13 和原项目读取。2026-08-06 另用隔离空库 MySQL 26.7 完成 V1-V13 与 8 场景真实持久化验收：25 张表、8 个 `READY` 项目、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。随后同一数据目录成功执行 V13→V14，应用健康为 `UP`，16 个历史 `code_review_file` 保持可读。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
 
-当前自动化基线：后端 107 项、前端 29 项、真实验收工具 16 项 Node 测试通过；Vue 生产构建通过。
+当前自动化基线：后端 111 项、前端 29 项、真实验收工具 16 项 Node 测试通过；Vue 生产构建通过。
 
 ## 3. 当前核心代码入口
 
@@ -99,7 +99,8 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - 评测接口：`src/main/java/com/devmate/review/controller/ReviewEvaluationController.java`
 - 评测计算：`src/main/java/com/devmate/review/service/ReviewFindingMatcher.java`
 - 评测业务：`src/main/java/com/devmate/review/service/ReviewEvaluationService.java`
-- 评测迁移：`src/main/resources/db/migration/V13__add_review_evaluation_schema.sql`
+- 标准答案证据校验：`src/main/java/com/devmate/review/service/ReviewEvaluationCaseService.java`
+- 评测迁移：`src/main/resources/db/migration/V13__add_review_evaluation_schema.sql`、`V14__add_review_file_path_hash.sql`
 - 评测设计：`docs/REVIEW_EVALUATION.md`
 - 评测 Vue：`frontend/src/components/ReviewEvaluationModal.vue`
 - 评测请求与类型：`frontend/src/services/projectApi.ts`、`frontend/src/types/project.ts`
@@ -133,7 +134,7 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1
 
 `case-005` 是 TARGET 新增 import、`case-008` 是 BASE 删除 import 未进入当前 class/method Chunk。两者的业务方法和缺陷目标行仍有映射证据；后续应设计 `FILE_HEADER/IMPORT` Chunk，不能篡改覆盖状态。真实运行发生过 GitHub 瞬时克隆失败；失败分支单独恢复成功后，使用 `--reuse-imports` 要求 8 个最近任务全部成功并重新执行完整 Diff，最终全量复核通过。
 
-MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务；首次瞬时网络失败保留 1 条 `FAILED` 导入记录，重试后完整复核通过。本轮尚未向 V13 录入 manifest 标准答案，也未调用 Embedding、FIXED 或 AGENT。
+MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务；首次瞬时网络失败保留 1 条 `FAILED` 导入记录，重试后完整复核通过。标准答案创建现已强制校验目标 Diff 文件、目标变更行和持久化 TARGET Chunk 三重交集；尚未向 V13 批量录入 manifest，也未调用 Embedding、FIXED 或 AGENT。
 
 当前交互限制是 AI 接口只提供最近任务，因此完整 A/B 顺序为：
 
@@ -150,8 +151,8 @@ MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个�
 阶段 8 的目标是证明效果，不继续堆框架。建议按以下小任务推进：
 
 1. 已在 H2 和隔离 MySQL 完成公开仓库 8 个项目的源码导入、默认 `HEAD^ → HEAD` Diff 与证据核对。
-2. 强化 `ReviewEvaluationCaseService` 的写入约束，服务端必须校验标准答案文件属于对应 Diff、行范围与目标变更相交，并且 DEFECT 行具有持久化 TARGET Chunk 证据。
-3. 通过验收脚本为每个成功 Diff 录入 manifest 中的人工标准答案，不复制完整源码到评测表，并逐项回读复核。
+2. 已强化 `ReviewEvaluationCaseService` 的写入约束，服务端会拒绝其他 Diff 文件、未命中目标变更以及没有共同 TARGET Chunk 证据的位置。
+3. 下一步通过验收脚本为每个成功 Diff 录入 manifest 中的人工标准答案，不复制完整源码到评测表，并逐项回读复核。
 4. 同一项目、revision 和 Diff 分别运行固定流水线与 Agent 路径。
 5. 使用现有 Vue 评测页分别保存 FIXED/AGENT 运行，核对项目、Diff、revision、模型和数据集一致。
 6. 人工复核 `partialMetrics` 中不能自动匹配的 Finding，并记录失败原因；之后才允许按失败案例调整 Tool、检索和 Prompt 版本。
@@ -162,7 +163,7 @@ MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个�
 
 完整 Codex、ChatGPT 和紧急精简提示词见 [跨账号启动提示词](ACCOUNT_HANDOFF_PROMPTS.md)。当前阶段最短可用版本：
 
-> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md、benchmarks/review-fixtures/README.md、manifest.json、revisions.json 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区。H2 和隔离 MySQL 均已验收 8 PASS、6 FULL、2 PARTIAL；下一小任务强化人工标准答案的 Diff 文件归属、目标变更行和持久化 TARGET Chunk 证据校验，再批量录入 manifest。禁止先调用模型、修改 Prompt、把 PARTIAL 改成 FULL 或宣称准确率。
+> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md、benchmarks/review-fixtures/README.md、manifest.json、revisions.json 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区。H2 和隔离 MySQL 均已验收 8 PASS、6 FULL、2 PARTIAL，标准答案三重证据约束已完成；下一小任务扩展验收脚本，把 manifest 批量录入对应的 8 个 Diff 并逐项回读复核。禁止先调用模型、修改 Prompt、把 PARTIAL 改成 FULL 或宣称准确率。
 
 ## 8. 账号切换前的收尾要求
 

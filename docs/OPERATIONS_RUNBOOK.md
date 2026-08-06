@@ -99,7 +99,7 @@ npm run dev
 
 ### 审查评测无法创建或指标不完整
 
-- 确认 Flyway 当前版本至少为 V13，并存在 `review_evaluation_case/review_evaluation_run`。
+- 确认 Flyway 当前版本至少为 V14，并存在 `review_evaluation_case/review_evaluation_run`，且 `code_review_file.new_path_hash` 索引可用。
 - 用例必须绑定同项目、同目标 revision 的成功 Diff；`DEFECT` 必须提供类别、相对文件和有效行区间。
 - 同一数据集只能是一个 `CLEAN` 对照或一组 `DEFECT`，不能混合。
 - 评测只能绑定成功 AI 审查；执行模式来自服务端任务快照，不能由客户端指定。

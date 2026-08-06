@@ -13,7 +13,11 @@ import com.devmate.review.model.LineRange;
 import com.devmate.review.source.GitRevisionSourceReader;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,14 +84,15 @@ public class DiffSymbolMapper {
             accumulator.addUnmapped(file.targetLineRanges());
             return;
         }
+        String targetPath = file.newPath();
         KnowledgeDocument document = documentMapper.selectOne(
                 Wrappers.lambdaQuery(KnowledgeDocument.class)
                         .eq(KnowledgeDocument::getProjectId, projectId)
-                        .eq(KnowledgeDocument::getFilePath, file.newPath())
+                        .eq(KnowledgeDocument::getPathHash, sha256(targetPath))
                         .eq(KnowledgeDocument::getRevision, targetRevision)
                         .last("LIMIT 1")
         );
-        if (document == null) {
+        if (document == null || !targetPath.equals(document.getFilePath())) {
             accumulator.addUnmapped(file.targetLineRanges());
             return;
         }
@@ -97,6 +102,15 @@ public class DiffSymbolMapper {
                         .orderByAsc(KnowledgeChunk::getChunkIndex)
         );
         accumulator.mapPersisted(file.targetLineRanges(), chunks);
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前JDK不支持SHA-256", exception);
+        }
     }
 
     private void mapBase(

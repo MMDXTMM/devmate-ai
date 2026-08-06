@@ -50,5 +50,19 @@ class DatabaseSchemaTest {
                     .as("table %s should exist and be queryable", table)
                     .isZero();
         }
+
+        Integer pathHashColumn = jdbcTemplate.queryForObject(
+                "SELECT COUNT(new_path_hash) FROM code_review_file",
+                Integer.class
+        );
+        assertThat(pathHashColumn).isZero();
+        Integer pathHashIndexColumns = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.index_columns
+                WHERE table_name = 'code_review_file'
+                  AND index_name = 'idx_code_review_file_task_path_hash'
+                  AND column_name IN ('review_task_id', 'new_path_hash')
+                """, Integer.class);
+        assertThat(pathHashIndexColumns).isEqualTo(2);
     }
 }
