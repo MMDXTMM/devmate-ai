@@ -12,6 +12,7 @@ public record AiReviewResponse(
         @JsonSerialize(using = ToStringSerializer.class) Long reviewTaskId,
         @JsonSerialize(using = ToStringSerializer.class) Long staticAnalysisTaskId,
         @JsonSerialize(using = ToStringSerializer.class) Long invocationId,
+        String attemptKey,
         String revision,
         String provider,
         String modelName,

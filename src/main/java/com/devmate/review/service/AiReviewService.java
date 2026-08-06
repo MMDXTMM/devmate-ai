@@ -12,6 +12,7 @@ import com.devmate.common.error.ErrorCode;
 import com.devmate.knowledge.dto.RetrievalSearchResponse;
 import com.devmate.knowledge.retrieval.RetrievalMode;
 import com.devmate.review.dto.AiReviewResponse;
+import com.devmate.review.dto.CreateAiReviewRequest;
 import com.devmate.review.dto.ReviewContextRequest;
 import com.devmate.review.model.AiFindingValidationResult;
 import com.devmate.review.model.ReviewExecutionMode;
@@ -45,10 +46,14 @@ public class AiReviewService {
         this.findingValidator = findingValidator;
     }
 
-    public AiReviewResponse create(Long projectId) {
+    public AiReviewResponse create(Long projectId, CreateAiReviewRequest request) {
+        stateService.validateExpectedDiff(projectId, request.reviewTaskId(), request.revision());
         AiReviewModel model = modelRegistry.current();
         AiReviewContext context = stateService.prepare(
                 projectId,
+                request.reviewTaskId(),
+                request.revision(),
+                request.attemptKey(),
                 model.providerName(),
                 model.modelName(),
                 properties.getPromptVersion(),
@@ -103,6 +108,10 @@ public class AiReviewService {
 
     public AiReviewResponse getLatest(Long projectId) {
         return stateService.getLatest(projectId);
+    }
+
+    public AiReviewResponse getByAttemptKey(Long projectId, String attemptKey) {
+        return stateService.getByAttemptKey(projectId, attemptKey);
     }
 
     private long elapsedMillis(long startedAt) {

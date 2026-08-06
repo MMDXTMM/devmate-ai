@@ -40,7 +40,7 @@ import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -79,27 +79,31 @@ public class AiReviewStateService {
         this.properties = properties;
     }
 
+    @Transactional(readOnly = true)
+    public void validateExpectedDiff(
+            Long projectId,
+            Long expectedReviewTaskId,
+            String expectedRevision
+    ) {
+        requireExpectedReviewTask(projectId, expectedReviewTaskId, expectedRevision);
+    }
+
     @Transactional
     public AiReviewContext prepare(
             Long projectId,
+            Long expectedReviewTaskId,
+            String expectedRevision,
+            String attemptKey,
             String provider,
             String modelName,
             String promptVersion,
             ReviewExecutionMode executionMode
     ) {
-        if (projectMapper.selectById(projectId) == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
-        }
-        CodeReviewTask reviewTask = reviewTaskMapper.selectOne(
-                Wrappers.lambdaQuery(CodeReviewTask.class)
-                        .eq(CodeReviewTask::getProjectId, projectId)
-                        .eq(CodeReviewTask::getStatus, "SUCCEEDED")
-                        .orderByDesc(CodeReviewTask::getCreatedAt)
-                        .last("LIMIT 1")
+        CodeReviewTask reviewTask = requireExpectedReviewTask(
+                projectId,
+                expectedReviewTaskId,
+                expectedRevision
         );
-        if (reviewTask == null) {
-            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先生成成功的Diff覆盖报告");
-        }
         StaticAnalysisTask staticTask = staticTaskMapper.selectOne(
                 Wrappers.lambdaQuery(StaticAnalysisTask.class)
                         .eq(StaticAnalysisTask::getProjectId, projectId)
@@ -110,6 +114,14 @@ public class AiReviewStateService {
         );
         if (staticTask == null) {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先为当前Diff完成静态分析");
+        }
+        AiReviewTask existingAttempt = aiReviewTaskMapper.selectOne(
+                Wrappers.lambdaQuery(AiReviewTask.class)
+                        .eq(AiReviewTask::getAttemptKey, attemptKey)
+                        .last("LIMIT 1")
+        );
+        if (existingAttempt != null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "请求标识已使用，请查询原任务结果");
         }
         String runningKey = projectId + ":" + reviewTask.getId();
         AiReviewTask existing = aiReviewTaskMapper.selectOne(Wrappers.lambdaQuery(AiReviewTask.class)
@@ -124,7 +136,7 @@ public class AiReviewStateService {
         }
 
         AiInvocationLog invocation = new AiInvocationLog();
-        invocation.setTraceId(UUID.randomUUID().toString());
+        invocation.setTraceId(attemptKey);
         invocation.setProjectId(projectId);
         invocation.setProvider(provider);
         invocation.setModelName(modelName);
@@ -143,6 +155,7 @@ public class AiReviewStateService {
         task.setReviewTaskId(reviewTask.getId());
         task.setStaticAnalysisTaskId(staticTask.getId());
         task.setInvocationId(invocation.getId());
+        task.setAttemptKey(attemptKey);
         task.setRevision(reviewTask.getTargetRevision());
         task.setProvider(provider);
         task.setModelName(modelName);
@@ -158,6 +171,10 @@ public class AiReviewStateService {
         try {
             aiReviewTaskMapper.insert(task);
         } catch (DataIntegrityViolationException exception) {
+            if (aiReviewTaskMapper.selectCount(Wrappers.lambdaQuery(AiReviewTask.class)
+                    .eq(AiReviewTask::getAttemptKey, attemptKey)) > 0) {
+                throw new BusinessException(ErrorCode.CONFLICT, "请求标识已使用，请查询原任务结果");
+            }
             throw new BusinessException(ErrorCode.CONFLICT, "当前Diff已有AI审查任务正在运行");
         }
 
@@ -171,6 +188,32 @@ public class AiReviewStateService {
         return new AiReviewContext(
                 projectId, task.getId(), invocation.getId(), staticTask.getId(), reviewTask, staticFindings
         );
+    }
+
+    private CodeReviewTask requireExpectedReviewTask(
+            Long projectId,
+            Long expectedReviewTaskId,
+            String expectedRevision
+    ) {
+        if (projectMapper.selectById(projectId) == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
+        }
+        CodeReviewTask reviewTask = reviewTaskMapper.selectOne(
+                Wrappers.lambdaQuery(CodeReviewTask.class)
+                        .eq(CodeReviewTask::getProjectId, projectId)
+                        .eq(CodeReviewTask::getStatus, "SUCCEEDED")
+                        .orderByDesc(CodeReviewTask::getCreatedAt)
+                        .orderByDesc(CodeReviewTask::getId)
+                        .last("LIMIT 1")
+        );
+        if (reviewTask == null) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先生成成功的Diff覆盖报告");
+        }
+        if (!Objects.equals(reviewTask.getId(), expectedReviewTaskId)
+                || !Objects.equals(reviewTask.getTargetRevision(), expectedRevision)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Diff已发生变化，请刷新后重试");
+        }
+        return reviewTask;
     }
 
     @Transactional
@@ -267,10 +310,28 @@ public class AiReviewStateService {
                 Wrappers.lambdaQuery(AiReviewTask.class)
                         .eq(AiReviewTask::getProjectId, projectId)
                         .orderByDesc(AiReviewTask::getCreatedAt)
+                        .orderByDesc(AiReviewTask::getId)
                         .last("LIMIT 1")
         );
         if (task == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目暂无AI审查任务");
+        }
+        return toResponse(task, requireInvocation(task.getInvocationId()), listFindings(task.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public AiReviewResponse getByAttemptKey(Long projectId, String attemptKey) {
+        if (projectMapper.selectById(projectId) == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
+        }
+        AiReviewTask task = aiReviewTaskMapper.selectOne(
+                Wrappers.lambdaQuery(AiReviewTask.class)
+                        .eq(AiReviewTask::getProjectId, projectId)
+                        .eq(AiReviewTask::getAttemptKey, attemptKey)
+                        .last("LIMIT 1")
+        );
+        if (task == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "请求对应的AI审查任务不存在");
         }
         return toResponse(task, requireInvocation(task.getInvocationId()), listFindings(task.getId()));
     }
@@ -291,7 +352,7 @@ public class AiReviewStateService {
         Map<Long, CodeReviewFeedback> feedbackByFindingId = listFeedbackByFindingId(findings);
         return new AiReviewResponse(
                 task.getId(), task.getProjectId(), task.getReviewTaskId(), task.getStaticAnalysisTaskId(),
-                task.getInvocationId(), task.getRevision(), task.getProvider(), task.getModelName(),
+                task.getInvocationId(), task.getAttemptKey(), task.getRevision(), task.getProvider(), task.getModelName(),
                 task.getPromptVersion(), task.getExecutionMode(), task.getRetrievalConfigVersion(), task.getRetrievalMode(),
                 task.getStatus(), task.getContextChunks(), task.getFindingCount(), task.getRejectedFindings(),
                 invocation.getPromptTokens(), invocation.getCompletionTokens(), invocation.getTotalTokens(),

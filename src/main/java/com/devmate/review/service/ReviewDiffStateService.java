@@ -140,6 +140,7 @@ public class ReviewDiffStateService {
         CodeReviewTask task = taskMapper.selectOne(Wrappers.lambdaQuery(CodeReviewTask.class)
                 .eq(CodeReviewTask::getProjectId, projectId)
                 .orderByDesc(CodeReviewTask::getCreatedAt)
+                .orderByDesc(CodeReviewTask::getId)
                 .last("LIMIT 1"));
         if (task == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目暂无Diff任务");

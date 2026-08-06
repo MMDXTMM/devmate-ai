@@ -243,7 +243,7 @@
 - 已计算 TP、FP、FN、Precision、Recall、F1，并同时保存 Token、延迟和 Tool 调用成功率；相同 AI 任务和数据集哈希幂等返回。
 - Vue 已支持绑定最近成功 Diff 录入标准答案、评测最近已保存 AI 任务，并排展示 FIXED/AGENT 的质量、Token、耗时和 Tool 成功率。
 - 执行模式由后端任务固定，评测界面不会调用模型；部分匹配明确标记为不完整指标。
-- 后端 111 项测试、前端 29 项测试、28 项 Node 验收工具测试与生产构建通过；H2 已从空库执行 V1-V14，隔离 MySQL 26.7 的 25 张表已从 V13 原地迁移到 V14。
+- 本轮全量验证已通过后端 120 项、前端 37 项、48 项 Node 验收/A-B 工具测试与生产构建；H2 已从空库执行 V1-V15，隔离 MySQL 26.7 已验证 V13→V14→V15，应用健康及历史项目/Diff 回读通过。
 - 已建立 `known-defects-v1` 样本契约，以独立 base/candidate 快照覆盖并发、事务、缓存、消息、SQL、安全、性能和 CLEAN 对照，并自动校验路径、行号及真实变更范围。
 - 已使用确定性 JGit 生成器将快照转换为 8 个 `case-NNN` 分支，每个分支为 base/candidate 两次提交，并固定 revision 映射。
 - 已发布公开纯虚构仓库 `MMDXTMM/devmate-review-benchmark`；远端 HEAD 与清单一致，分支名不会泄漏缺陷类别。
@@ -257,8 +257,10 @@
 - 已完成 manifest 标准答案同步工具：强制全量复用 Import/Diff，先验证 8 个证据闭环并预检全部已有用例，再只补缺失项并全量回读；字段漂移、旧 Diff 绑定、重复或额外 caseKey 均在零 POST 时失败，响应丢失可恢复重跑。
 - 隔离 MySQL 首次得到 `8 created / 8 verified`，立即重跑为 `0 created / 8 reused / 8 verified`；最终落库 7 条 `DEFECT`、1 条 `CLEAN`，分别绑定 8 个项目和 8 个 Diff。
 - `PARTIAL` 文件只要缺陷行有 TARGET 证据仍可录入，覆盖缺口继续单独报告。
-- 真实批量运行前先实现受控 A/B 执行器和服务端预期 Diff ID/revision 校验，避免“自动选择最近 Diff”的竞态以及 POST 响应丢失后的重复付费；执行器需要零模型预检、逐项目成对运行、失败即停、可恢复回读和微平均聚合测试。
-- 执行器通过 Mock/Fake 验收后先运行 1 个真实 canary，再完成 8 组 FIXED/AGENT A/B；结果稳定前仍不宣称准确率或 Agent 优于固定流水线。
+- FIXED/AGENT 创建请求已显式携带预期 Diff ID、revision 和 UUID v4 attemptKey；服务端先执行只读校验，再在创建审计与任务状态的短事务内重复校验，Diff 在两次校验间漂移时会在模型调用前失败且不留下 AI 审计状态。
+- 已完成受控 A/B 执行器：完整运行先对 8 个项目、revision、Diff、静态分析和标准答案做零模型全批预检，再按项目执行 `FIXED → 评测 → AGENT → 评测`；任一预检漂移时零付费 POST，执行失败后停止全部后续场景。
+- 已通过 Mock/Fake 覆盖预期 Diff 绑定、全批漂移拒绝、AI/评测响应丢失、并发同配置任务隔离、失败即停、微平均聚合和失败报告脱敏。付费 POST 不自动重试；V15 保存唯一 attemptKey，恢复只按该键读取并再次校验项目、Diff、revision、模式和模型。
+- 下一步仅在显式确认运行环境已配置模型密钥且额度充足后执行 1 个真实 canary；canary 完整通过后才执行 8 组真实 FIXED/AGENT A/B。当前尚未产生真实指标，结果稳定前仍不宣称准确率或 Agent 优于固定流水线。
 
 ## 阶段 9：增量索引与异步任务
 

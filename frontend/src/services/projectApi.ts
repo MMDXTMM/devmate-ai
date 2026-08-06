@@ -10,6 +10,7 @@ import type {
   SourceSymbol,
   SourceReference,
   ReviewDiff,
+  CreateAiReviewRequest,
   StaticAnalysis,
   RetrievalSearch,
   RetrievalSearchForm,
@@ -145,15 +146,17 @@ export const projectApi = {
     return request(`/api/projects/${encodeURIComponent(id)}/static-analyses/latest`)
   },
 
-  createAiReview(id: string): Promise<AiReview> {
+  createAiReview(id: string, form: CreateAiReviewRequest): Promise<AiReview> {
     return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews`, {
       method: 'POST',
+      body: JSON.stringify(form),
     })
   },
 
-  createAgentAiReview(id: string): Promise<AiReview> {
+  createAgentAiReview(id: string, form: CreateAiReviewRequest): Promise<AiReview> {
     return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews/agent`, {
       method: 'POST',
+      body: JSON.stringify(form),
     })
   },
 

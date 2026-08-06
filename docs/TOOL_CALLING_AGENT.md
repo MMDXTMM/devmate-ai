@@ -6,7 +6,9 @@
 
 ```text
 POST /api/projects/{projectId}/ai-reviews/agent
-  → 固定最新成功 Diff、静态分析和 revision
+  → 客户端提交预期 reviewTaskId、revision 与 attemptKey
+  → 模型解析前预检：确认它们仍指向当前最近成功 Diff
+  → prepare 短事务二次校验并固定 Diff、静态分析和 revision
   → Agent 模型选择只读 Tool
   → Java 白名单执行并回填 tool result
   → 合并 searchCode 返回的 Chunk 证据
@@ -16,6 +18,18 @@ POST /api/projects/{projectId}/ai-reviews/agent
 ```
 
 固定接口 `POST /api/projects/{projectId}/ai-reviews` 保留，后续使用相同缺陷集比较固定检索与 Agent 多步取证的成本和效果。
+
+Agent 请求体与固定流水线使用同一契约：
+
+```json
+{
+  "reviewTaskId": "2084116785588308000",
+  "revision": "0123456789abcdef0123456789abcdef01234567",
+  "attemptKey": "123e4567-e89b-42d3-a456-426614174000"
+}
+```
+
+`reviewTaskId` 是 `BIGINT`，前端和 JSON 中以字符串传输；`revision` 必须是 40 位小写 Git SHA；`attemptKey` 是每次用户操作新生成的小写 UUID v4。服务端不会自动改用更新的 Diff。参数格式错误返回 HTTP 400；预检或 `prepare` 发现 ID/revision 漂移时返回 HTTP 409、业务码 `40900`，并保证不创建 `ai_review_task` 或 `ai_invocation_log`。预检位于模型注册表访问之前，二次校验用于关闭预检与任务创建之间的竞态窗口。
 
 ## 2. 当前工具白名单
 
@@ -67,12 +81,16 @@ V11 扩展 `tool_call_log`：
 
 ## 6. 状态和失败路径
 
+- Diff 漂移：在模型解析前或 `prepare` 二次校验时拒绝，返回 409，不创建 AI 任务或调用日志。
 - 正常：准备任务 → 多轮工具执行 → 最终模型 → 证据校验 → `SUCCEEDED`。
 - 模型不检索代码：任务和调用日志进入 `FAILED`，释放 `running_key`。
 - 未知工具/参数错误/工具超时：该步骤写入失败审计；模型可以在总步数内纠正。
 - 重复循环/超过步数：整个 Agent 任务失败并释放幂等键。
 - 最终模型伪造 Chunk：该 Finding 被拒绝，不写入 `review_finding`。
 - 进程中断：沿用阶段 6 的超时 RUNNING 回收机制。
+- 客户端响应丢失：不重发付费 POST，使用 V15 唯一 `attemptKey` 精确读取本次任务；并发同配置任务不会被误认。
+
+相关 latest 查询统一使用 `created_at DESC, id DESC` 作为稳定顺序，但不改变接口原有状态语义：`/review-diffs/latest` 仍返回最近一次任意状态的 Diff，便于展示失败；Agent 创建流程内部只接受当前最近成功 Diff；静态分析和 AI 审查 latest 仍返回各自最近一次任务。
 
 ## 7. 配置
 
@@ -85,6 +103,9 @@ V11 扩展 `tool_call_log`：
 - Qwen 工具定义请求、tool call 解析、最终消息和缺少 Key。
 - Agent 成功检索、工具链审计、Token 汇总与结构化 Finding。
 - Agent 没有代码证据时失败关闭。
+- 旧 Diff ID、错误 revision 和预检后二次漂移在模型调用前返回 409，且 AI 任务与调用日志零落库。
+- 同时间戳任务按较大 ID 稳定选择，同时保留 FAILED 状态的可见性。
+- 重复 `attemptKey` 返回 409，按 attempt 精确回读只返回该项目和该请求对应的任务。
 - 原固定流水线回归、数据库 V11 迁移、Vue 显式触发与工具链展示。
 
 当前没有配置真实 DashScope Key，因此只完成了 Mock 协议和工程闭环验证，不能宣称已量化真实 Agent 效果。阶段 8 将使用固定缺陷集比较固定流水线与 Agent 的命中、漏报、误报、耗时和 Token。
@@ -98,3 +119,4 @@ V11 扩展 `tool_call_log`：
 5. 为什么工具调用日志不保存完整参数和输出？
 6. 为什么必须先获得 `searchCode` Chunk 才允许最终审查？
 7. 固定流水线和 Agent 路径各有什么优缺点，如何用数据比较？
+8. 为什么模型解析前预检后，`prepare` 中还必须再次验证 Diff？

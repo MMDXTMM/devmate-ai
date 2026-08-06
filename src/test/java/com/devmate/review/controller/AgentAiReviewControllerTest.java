@@ -50,6 +50,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -88,7 +91,7 @@ class AgentAiReviewControllerTest {
                 finalTurn(20)
         );
 
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews/agent", fixture.projectId()))
+        mockMvc.perform(agentAiReviewPost(fixture))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.executionMode").value("AGENT"))
@@ -112,6 +115,31 @@ class AgentAiReviewControllerTest {
     }
 
     @Test
+    void rejectsWrongRevisionBeforeResolvingModelsOrCreatingAuditState() throws Exception {
+        Fixture fixture = fixture("agent-wrong-revision");
+        AiReviewModel finalModel = mock(AiReviewModel.class);
+        ReviewAgentModel agentModel = mock(ReviewAgentModel.class);
+        given(finalModelRegistry.current()).willReturn(finalModel);
+        given(agentModelRegistry.current()).willReturn(agentModel);
+
+        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews/agent", fixture.projectId())
+                        .contentType(APPLICATION_JSON)
+                        .content(aiReviewRequest(fixture.reviewTaskId(), "f".repeat(40))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(40900))
+                .andExpect(jsonPath("$.message").value("Diff已发生变化，请刷新后重试"));
+
+        verify(finalModelRegistry, never()).current();
+        verify(agentModelRegistry, never()).current();
+        verify(finalModel, never()).review(any());
+        verify(agentModel, never()).next(any(), any());
+        assertThat(aiReviewTaskMapper.selectCount(Wrappers.lambdaQuery(AiReviewTask.class)
+                .eq(AiReviewTask::getProjectId, fixture.projectId()))).isZero();
+        assertThat(invocationMapper.selectCount(Wrappers.lambdaQuery(AiInvocationLog.class)
+                .eq(AiInvocationLog::getProjectId, fixture.projectId()))).isZero();
+    }
+
+    @Test
     void agentFailsClosedWhenItStopsWithoutCodeEvidence() throws Exception {
         Fixture fixture = fixture("agent-without-evidence");
         AiReviewModel finalModel = finalModel(fixture.chunkId());
@@ -120,7 +148,7 @@ class AgentAiReviewControllerTest {
         given(agentModelRegistry.current()).willReturn(agentModel);
         given(agentModel.next(any(), any())).willReturn(finalTurn(10));
 
-        mockMvc.perform(post("/api/projects/{projectId}/ai-reviews/agent", fixture.projectId()))
+        mockMvc.perform(agentAiReviewPost(fixture))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.message").value("Agent未获得可验证的代码检索证据"));
 
@@ -268,7 +296,9 @@ class AgentAiReviewControllerTest {
         staticTask.setFinishedAt(now);
         staticTaskMapper.insert(staticTask);
 
-        return new Fixture(project.id(), chunk.getId(), revision, document.getFilePath());
+        return new Fixture(
+                project.id(), reviewTask.getId(), chunk.getId(), revision, document.getFilePath()
+        );
     }
 
     private RetrievalSearchResponse retrieval(Fixture fixture) {
@@ -285,6 +315,20 @@ class AgentAiReviewControllerTest {
         );
     }
 
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder agentAiReviewPost(
+            Fixture fixture
+    ) {
+        return post("/api/projects/{projectId}/ai-reviews/agent", fixture.projectId())
+                .contentType(APPLICATION_JSON)
+                .content(aiReviewRequest(fixture.reviewTaskId(), fixture.revision()));
+    }
+
+    private String aiReviewRequest(Long reviewTaskId, String revision) {
+        return """
+                {"reviewTaskId":"%s","revision":"%s","attemptKey":"%s"}
+                """.formatted(reviewTaskId, revision, UUID.randomUUID());
+    }
+
     private AiReviewTask latestTask(Long projectId) {
         return aiReviewTaskMapper.selectOne(Wrappers.lambdaQuery(AiReviewTask.class)
                 .eq(AiReviewTask::getProjectId, projectId)
@@ -292,6 +336,12 @@ class AgentAiReviewControllerTest {
                 .last("LIMIT 1"));
     }
 
-    private record Fixture(Long projectId, Long chunkId, String revision, String filePath) {
+    private record Fixture(
+            Long projectId,
+            Long reviewTaskId,
+            Long chunkId,
+            String revision,
+            String filePath
+    ) {
     }
 }

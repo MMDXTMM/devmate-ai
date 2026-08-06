@@ -13,6 +13,7 @@ public class AiReviewTask {
     private Long reviewTaskId;
     private Long staticAnalysisTaskId;
     private Long invocationId;
+    private String attemptKey;
     private String revision;
     private String provider;
     private String modelName;
@@ -40,6 +41,8 @@ public class AiReviewTask {
     public void setStaticAnalysisTaskId(Long staticAnalysisTaskId) { this.staticAnalysisTaskId = staticAnalysisTaskId; }
     public Long getInvocationId() { return invocationId; }
     public void setInvocationId(Long invocationId) { this.invocationId = invocationId; }
+    public String getAttemptKey() { return attemptKey; }
+    public void setAttemptKey(String attemptKey) { this.attemptKey = attemptKey; }
     public String getRevision() { return revision; }
     public void setRevision(String revision) { this.revision = revision; }
     public String getProvider() { return provider; }

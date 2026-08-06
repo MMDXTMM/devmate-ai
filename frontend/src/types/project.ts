@@ -164,6 +164,12 @@ export interface ReviewDiff {
   files: ReviewFile[]
 }
 
+export interface CreateAiReviewRequest {
+  reviewTaskId: string
+  revision: string
+  attemptKey: string
+}
+
 export type FindingSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
 export interface StaticFinding {
@@ -250,6 +256,7 @@ export interface AiReview {
   reviewTaskId: string
   staticAnalysisTaskId: string
   invocationId: string
+  attemptKey: string
   revision: string
   provider: string
   modelName: string

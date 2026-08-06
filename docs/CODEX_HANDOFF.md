@@ -2,7 +2,7 @@
 
 更新时间：2026-08-06
 
-本文件用于在 Codex 账号、会话或电脑切换后快速恢复开发上下文。它记录“现在做到哪里”，可直接复制的启动提示词统一放在 [跨账号启动提示词](ACCOUNT_HANDOFF_PROMPTS.md)。
+本文件用于在 Codex 账号、会话或电脑切换后快速恢复开发上下文。账号切换时只执行一次 [历史恢复流程](ACCOUNT_HANDOFF_PROMPTS.md)，恢复完成后不重复粘贴提示词。
 
 ## 0. 30 秒恢复卡
 
@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 最近合并 | PR #17，`main@7e8a92e` |
-| 本轮交付 | PR #18（待合并），分支 `codex/review-manifest-ingestion`，提交 `25db123`：manifest 标准答案幂等同步与真实 MySQL 回读 |
-| 数据库 | 隔离 MySQL 26.7 已迁移到 V14；8 个真实 Diff 已录入 7 条 `DEFECT` 和 1 条 `CLEAN`；系统 3306 未监听是本机运维问题 |
-| 测试基线 | 后端 111 项；前端 29 项；Node 28 项；Vue 生产构建通过 |
-| 精确暂停点 | manifest 首次 `8 created / 8 verified`、立即重跑 `0 created / 8 reused / 8 verified`；尚未调用真实模型 |
-| 下一小任务 | 先实现受控 A/B 执行器和 AI 审查预期 Diff 绑定校验；通过零模型测试后再运行 canary 与完整真实 A/B |
+| 最近合并 | PR #18，`main@da3a758` |
+| 本轮交付 | PR #19，提交 `a0d4055`：Diff 绑定、付费请求 `attemptKey`、受控 A/B 执行器和前端竞态保护；等待合并 |
+| 数据库 | H2 已从空库迁移到 V15；隔离 MySQL 26.7 已从 V14 原地迁移到 V15，应用健康与历史数据回读通过 |
+| 测试基线 | 后端 120 项、前端 37 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
+| 精确暂停点 | 零模型实现与快速回归完成；尚未执行真实 FIXED/AGENT canary，也未产生准确率、Token 或延迟结论 |
+| 下一小任务 | 合并 PR #19；之后确认密钥和额度再运行单场景 canary |
 
 ### 状态可信度顺序
 
@@ -72,11 +72,11 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | AI 审查 | 完成工程闭环 | DashScope JSON 输出、Chunk 白名单、结构化 Finding、任务审计 |
 | Tool Calling Agent | 完成工程闭环 | 四个只读 Tool、Qwen 多轮协议、限制与审计、Vue 调用链 |
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
-| 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史、H2/MySQL 真实 Diff 与标准答案验收 | 8 PASS、6 FULL、2 PARTIAL；7 条 `DEFECT`、1 条 `CLEAN` 已落库，真实 A/B 待完成 |
+| 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史、真实 Diff/标准答案与受控执行器 | 8 PASS、6 FULL、2 PARTIAL；7 条 `DEFECT`、1 条 `CLEAN` 已落库，真实 A/B 待完成 |
 
-当前数据库版本为 V14。H2 已验证从空库执行 V1-V14；本机此前也完成过 MySQL V12→V13 和原项目读取。2026-08-06 另用隔离空库 MySQL 26.7 完成 V1-V13 与 8 场景真实持久化验收：25 张表、8 个 `READY` 项目、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。随后同一数据目录成功执行 V13→V14，应用健康为 `UP`，16 个历史 `code_review_file` 保持可读。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
+当前代码数据库版本为 V15。H2 已验证从空库执行 V1-V15；本机此前完成过 MySQL V12→V13 和原项目读取。2026-08-06 另用隔离空库 MySQL 26.7 完成 V1-V13 与 8 场景真实持久化验收：25 张表、8 个 `READY` 项目、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。随后同一数据目录依次成功执行 V13→V14→V15，应用健康为 `UP`。V15 的 `attempt_key` 列和唯一索引均存在，8 个项目与 16 个成功 Diff 保持可读；历史库没有 AI 审查任务，因此没有旧行回填问题。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
 
-当前自动化基线：后端 111 项、前端 29 项、真实验收工具 28 项 Node 测试通过；Vue 生产构建通过。
+最终自动化基线在本轮全量测试后更新；不能用修改前的 `111/29/28` 代替当前证据。
 
 ## 3. 当前核心代码入口
 
@@ -113,6 +113,9 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - 公开样本仓库：`https://github.com/MMDXTMM/devmate-review-benchmark`
 - 真实导入验收：`benchmarks/review-fixtures/verify-live-imports.mjs`
 - 验收工具测试：`benchmarks/review-fixtures/verify-live-imports.test.mjs`
+- 受控 A/B 执行器：`benchmarks/review-fixtures/run-review-ab.mjs`
+- A/B 执行器测试：`benchmarks/review-fixtures/run-review-ab.test.mjs`
+- 付费请求关联迁移：`src/main/resources/db/migration/V15__add_ai_review_attempt_key.sql`
 - 标准答案同步模式：`--reuse-imports --reuse-diffs --record-gold-cases`
 - H2 运行报告：`target/benchmark-results/known-defects-v1-import-diff.json`（被 Git 忽略）
 - MySQL 运行报告：`target/benchmark-results/known-defects-v1-mysql-import-diff.json`（被 Git 忽略）
@@ -138,17 +141,19 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1
 
 MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务；首次瞬时网络失败保留 1 条 `FAILED` 导入记录，重试后完整复核通过。标准答案创建强制校验目标 Diff 文件、目标变更行和持久化 TARGET Chunk 三重交集。manifest 已向对应 8 个 Diff 录入 7 条 `DEFECT` 和 1 条 `CLEAN`，首次同步为 `8 created / 8 verified`，立即重跑为 `0 created / 8 reused / 8 verified`；尚未调用 Embedding、FIXED、AGENT 或真实模型。
 
-当前 AI 创建接口会自动选择最近成功 Diff，查询接口也只返回最近任务。这个范围适合人工单次使用，但不能可靠支撑 8 个项目的付费批量实验：执行期间若出现新 Diff，审查可能绑定错误；POST 响应丢失后也难以判断任务是否已成功，盲目重试会重复消耗额度。
+本轮已经补齐受控执行闭环。AI 创建请求必须携带 `reviewTaskId`、40 位 `revision` 和 UUID v4 `attemptKey`。模型解析前预检最近成功 Diff，创建任务的短事务内再次校验，漂移时返回 409 且不创建 AI 任务或调用日志。V15 将 `attemptKey` 持久化并建立唯一索引，响应丢失后可通过 `/ai-reviews/attempts/{attemptKey}` 精确回读，不再依赖 latest 猜测任务归属。
 
-真实运行前先补一个受控执行闭环：请求携带预期 Diff ID/revision 并由服务端校验；批量工具执行零模型全批预检、逐项目成对运行、结果回读和中断恢复。完整 A/B 顺序为：
+完整 A/B 顺序固定为：
 
 ```text
-运行 FIXED → 在评测页评测最近任务
-运行 AGENT → 在评测页评测最近任务
-返回评测页查看两种历史快照
+全批 8 项零模型预检
+  → FIXED → 评测
+  → AGENT → 评测
+  → 下一场景
+  → 汇总微平均、Token、延迟与 Tool 指标
 ```
 
-先用 Mock/Fake 覆盖 Diff 漂移、响应丢失、失败即停止和微平均聚合，再运行 1 个真实 canary。canary 可恢复且绑定信息正确后，才允许完成 8 组真实运行。
+执行器为同步多轮 Agent 提供可配置的长请求与恢复窗口，付费 POST 出现模糊响应时不重试，只按 `attemptKey` 轮询。失败报告只保存受控错误类别，不保存任意服务端文本、源码、Prompt 或凭证。Mock/Fake 已覆盖 Diff 漂移、并发同配置任务、AI/评测响应丢失、失败即停止、微平均聚合和失败文本脱敏；真实 canary 仍未执行。
 
 ## 6. 下一阶段：受控执行器与第一轮真实 A/B
 
@@ -157,19 +162,17 @@ MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个�
 1. 已在 H2 和隔离 MySQL 完成公开仓库 8 个项目的源码导入、默认 `HEAD^ → HEAD` Diff 与证据核对。
 2. 已强化 `ReviewEvaluationCaseService` 的写入约束，服务端会拒绝其他 Diff 文件、未命中目标变更以及没有共同 TARGET Chunk 证据的位置。
 3. 已通过验收脚本为每个成功 Diff 录入 manifest 人工标准答案，不复制完整源码到评测表，并完成幂等重跑和全字段回读。
-4. 下一步让两个 AI 创建入口接收预期 Diff ID/revision，并在任何模型调用前由服务端拒绝过期或漂移输入。
-5. 实现受控 A/B 执行器：全批零模型预检、每项目 FIXED→评测→AGENT→评测、响应丢失回读恢复、失败后停止继续消耗额度，以及 8 项总体报告。
-6. 先使用 Mock/Fake 验证正常、漂移、失败和恢复路径，再运行 1 个真实 canary；通过后才在相同项目、revision、Diff、模型配置和数据集条件下完成 8 组真实 A/B。两条路径可以使用不同 Prompt 和检索流程，但必须冻结并分别记录各自版本。
+4. 已让两个 AI 创建入口接收预期 Diff ID/revision/attemptKey，并在任何模型调用前由服务端拒绝过期或漂移输入。
+5. 已实现受控 A/B 执行器：全批零模型预检、每项目 FIXED→评测→AGENT→评测、精确响应丢失恢复、失败后停止继续消耗额度，以及 8 项总体报告。
+6. 已使用 Mock/Fake 验证正常、漂移、失败、并发归属、恢复和脱敏路径，完成 V15 真实 MySQL 验收以及后端 120 项、前端 37 项、Benchmark Node 48 项和 Vue 生产构建；下一步提交 PR，再确认模型密钥和额度后运行 1 个真实 canary。通过后才在相同项目、revision、Diff、模型配置和数据集条件下完成 8 组真实 A/B。两条路径可以使用不同 Prompt 和检索流程，但必须冻结并分别记录各自版本。
 7. 总体质量使用累计 TP/FP/FN 计算微平均 Precision/Recall/F1，不直接平均每个场景 F1；同时记录 Token、延迟、Tool 成功率和 manifest/revisions 哈希。
 8. 人工复核 `partialMetrics` 中不能自动匹配的 Finding，并记录失败原因；之后才允许按失败案例调整 Tool、检索和 Prompt 版本。
 
 阶段 8 完成前不能在简历中宣称准确率，也不能宣称 Agent 优于固定流水线。
 
-## 7. 新 Codex 会话首条任务建议
+## 7. 新账号一次性恢复
 
-完整 Codex、ChatGPT 和紧急精简提示词见 [跨账号启动提示词](ACCOUNT_HANDOFF_PROMPTS.md)。当前阶段最短可用版本：
-
-> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md、benchmarks/review-fixtures/README.md、manifest.json、revisions.json 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区。H2 和隔离 MySQL 均已验收 8 PASS、6 FULL、2 PARTIAL；manifest 标准答案首次同步为 8 created/verified，立即重跑为 8 reused/verified。下一小任务先实现受控 A/B 执行器和服务端预期 Diff ID/revision 校验，使用 Mock/Fake 验证全批预检、漂移拒绝、响应丢失恢复、失败停止和微平均聚合，本任务不调用真实模型。完成后再确认密钥与额度，运行 canary 和完整真实 A/B；不得修改 Prompt、把 PARTIAL 改成 FULL 或在结果稳定前宣称准确率。
+新账号不需要反复粘贴启动提示词。第一次进入仓库时执行 [一次性账号切换恢复流程](ACCOUNT_HANDOFF_PROMPTS.md)，输出恢复报告后直接继续本文件记录的下一小任务。旧聊天只在仓库缺少设计原因时定向读取一次，不能覆盖 Git、测试和数据库证据。
 
 ## 8. 账号切换前的收尾要求
 
@@ -187,6 +190,7 @@ MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个�
 
 ```bash
 node --test benchmarks/review-fixtures/verify-live-imports.test.mjs
+node --test benchmarks/review-fixtures/run-review-ab.test.mjs
 ./mvnw test
 
 cd frontend
@@ -196,6 +200,9 @@ npm run build
 # 需要重新做真实 MySQL 验收时，在仓库根目录执行
 cd ..
 node benchmarks/review-fixtures/verify-live-imports.mjs
+
+# 确认密钥、额度和后端状态后才运行，不属于零模型回归
+node benchmarks/review-fixtures/run-review-ab.mjs --scenario case-001
 ```
 
 真实 MySQL 验证使用 `local` Profile；`application-local.yml` 被 Git 忽略。系统安装的 3306 服务仍需单独恢复，但隔离 MySQL 已完成项目链路验收。真实模型测试还需要在进程环境配置 `DASHSCOPE_API_KEY`，当前阶段没有用 Mock 结果冒充真实模型效果。
