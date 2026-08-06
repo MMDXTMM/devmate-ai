@@ -36,6 +36,7 @@ export interface EmbeddingIndexTask {
   totalChunks: number
   processedChunks: number
   skippedChunks: number
+  reusedChunks: number
   failedChunks: number
   errorMessage?: string
   createdAt: string

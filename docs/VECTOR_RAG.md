@@ -14,7 +14,7 @@
   → 使用固定评测集比较检索模式
 ```
 
-向量索引和源码导入是两个独立步骤。源码重新导入产生新 revision 后，旧向量不会参与新版本检索，必须为新版本重新建立索引。
+向量索引和源码导入是两个独立步骤。源码重新导入产生新 revision 后，旧向量不会直接参与新版本检索；新版本仍需建立独立索引，但可以复用最近一次同项目、同 Provider、同模型和同维度成功索引中输入完全一致的向量值。
 
 ## 2. 两种 Embedding Provider
 
@@ -67,6 +67,9 @@ GET /api/projects/{projectId}/embeddings/tasks/latest
 
 - `vector_id` 由项目、Chunk、provider、模型、维度和内容哈希共同计算。
 - 已成功保存的批次再次执行时会跳过，失败任务可以续建。
+- V16 为完整 Embedding 输入保存 SHA-256 `input_hash`。只有文件路径、Chunk 类型、符号名和内容全部一致时才跨 revision 复用；内容相同但移动文件或重命名符号仍会重新向量化。
+- 跨 revision 只读取最近一次同配置成功任务，避免扫描全部历史向量；复用时为新 Chunk 建立独立向量记录，旧 revision 保留用于历史审查。
+- `processed_chunks` 表示实际调用 Provider 生成的数量，`reused_chunks` 表示跨 revision 复用数量，`skipped_chunks` 表示当前 revision 已存在而跳过的数量，三者不能混为一个“缓存命中”。
 - 远端请求不占用长数据库事务；每个批次使用短事务保存向量并更新进度。
 - `embedding_index_task` 保存总数、成功数、跳过数、失败数和脱敏错误。
 - `knowledge_chunk.vector_id` 只在向量记录保存成功后更新。
@@ -97,4 +100,6 @@ GET /api/projects/{projectId}/embeddings/tasks/latest
 - RRF 如何融合不同量纲的排序结果。
 - 为什么外部模型调用不能包在数据库长事务里。
 - 幂等向量 ID、分批保存和失败续建如何工作。
+- 为什么不能只按源码内容哈希复用向量：当前 Embedding 输入还包含路径、类型和符号名，复用键必须覆盖真实模型输入。
+- 跨 revision 复用为什么复制向量值但保留新 Chunk 的独立绑定，以及它如何维持 revision 隔离。
 - MySQL 线性扫描方案的边界，以及未来替换专业向量库的条件。

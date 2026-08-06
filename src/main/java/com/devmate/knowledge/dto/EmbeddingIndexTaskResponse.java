@@ -15,6 +15,7 @@ public record EmbeddingIndexTaskResponse(
         int totalChunks,
         int processedChunks,
         int skippedChunks,
+        int reusedChunks,
         int failedChunks,
         String errorMessage,
         LocalDateTime createdAt,
@@ -25,7 +26,7 @@ public record EmbeddingIndexTaskResponse(
         return new EmbeddingIndexTaskResponse(
                 task.getId(), task.getProjectId(), task.getRevision(), task.getProvider(),
                 task.getModelName(), task.getDimensions(), task.getStatus(), task.getTotalChunks(),
-                task.getProcessedChunks(), task.getSkippedChunks(), task.getFailedChunks(),
+                task.getProcessedChunks(), task.getSkippedChunks(), task.getReusedChunks(), task.getFailedChunks(),
                 task.getErrorMessage(), task.getCreatedAt(), task.getStartedAt(), task.getFinishedAt()
         );
     }

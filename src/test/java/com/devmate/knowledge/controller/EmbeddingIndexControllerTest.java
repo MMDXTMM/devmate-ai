@@ -33,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class EmbeddingIndexControllerTest {
 
     private static final String REVISION = "dddddddddddddddddddddddddddddddddddddddd";
+    private static final String NEXT_REVISION = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
     @Autowired
     private MockMvc mockMvc;
@@ -104,7 +105,8 @@ class EmbeddingIndexControllerTest {
                 .andExpect(jsonPath("$.data.modelName").value("code-hash-v1"))
                 .andExpect(jsonPath("$.data.totalChunks").value(2))
                 .andExpect(jsonPath("$.data.processedChunks").value(2))
-                .andExpect(jsonPath("$.data.skippedChunks").value(0));
+                .andExpect(jsonPath("$.data.skippedChunks").value(0))
+                .andExpect(jsonPath("$.data.reusedChunks").value(0));
 
         org.assertj.core.api.Assertions.assertThat(vectorMapper.selectCount(null)).isEqualTo(2);
         KnowledgeChunk indexed = chunkMapper.selectById(searchChunk.getId());
@@ -133,7 +135,8 @@ class EmbeddingIndexControllerTest {
         mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.processedChunks").value(0))
-                .andExpect(jsonPath("$.data.skippedChunks").value(2));
+                .andExpect(jsonPath("$.data.skippedChunks").value(2))
+                .andExpect(jsonPath("$.data.reusedChunks").value(0));
 
         mockMvc.perform(get("/api/projects/{projectId}/embeddings/tasks/latest", project.getId()))
                 .andExpect(status().isOk())
@@ -166,12 +169,104 @@ class EmbeddingIndexControllerTest {
         org.assertj.core.api.Assertions.assertThat(taskMapper.selectCount(null)).isEqualTo(2);
     }
 
+    @Test
+    void reusesOnlyUnchangedEmbeddingInputsAcrossRevisions() throws Exception {
+        mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.processedChunks").value(2));
+
+        String originalVector = vectorMapper.selectById(
+                chunkMapper.selectById(searchChunk.getId()).getVectorId()
+        ).getVectorJson();
+        project.setCurrentRevision(NEXT_REVISION);
+        project.setUpdatedAt(LocalDateTime.now());
+        projectMapper.updateById(project);
+
+        KnowledgeDocument unchangedPath = insertDocument(
+                "src/main/java/com/example/SearchService.java",
+                "embedding-next-document",
+                NEXT_REVISION,
+                2
+        );
+        KnowledgeChunk reusedChunk = insertChunk(
+                unchangedPath.getId(), 1, "com.example.SearchService#semanticSearch(String)",
+                "public List<Result> semanticSearch(String question) { return vectorStore.search(question); }",
+                "embedding-chunk-search", NEXT_REVISION
+        );
+        insertChunk(
+                unchangedPath.getId(), 2, "com.example.SearchService#health()",
+                "public String health() { return \"HEALTHY\"; }",
+                "embedding-chunk-health-changed", NEXT_REVISION
+        );
+        KnowledgeDocument movedPath = insertDocument(
+                "src/main/java/com/example/internal/SearchService.java",
+                "embedding-moved-document",
+                NEXT_REVISION,
+                1
+        );
+        insertChunk(
+                movedPath.getId(), 1, "com.example.SearchService#semanticSearch(String)",
+                "public List<Result> semanticSearch(String question) { return vectorStore.search(question); }",
+                "embedding-chunk-search", NEXT_REVISION
+        );
+
+        mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalChunks").value(3))
+                .andExpect(jsonPath("$.data.processedChunks").value(2))
+                .andExpect(jsonPath("$.data.skippedChunks").value(0))
+                .andExpect(jsonPath("$.data.reusedChunks").value(1));
+
+        KnowledgeChunk storedReuse = chunkMapper.selectById(reusedChunk.getId());
+        org.assertj.core.api.Assertions.assertThat(storedReuse.getVectorId()).startsWith("vec_");
+        org.assertj.core.api.Assertions.assertThat(
+                vectorMapper.selectById(storedReuse.getVectorId()).getVectorJson()
+        ).isEqualTo(originalVector);
+        org.assertj.core.api.Assertions.assertThat(vectorMapper.selectCount(null)).isEqualTo(5);
+    }
+
+    private KnowledgeDocument insertDocument(
+            String filePath,
+            String contentHash,
+            String revision,
+            int chunkCount
+    ) {
+        LocalDateTime now = LocalDateTime.now();
+        KnowledgeDocument document = new KnowledgeDocument();
+        document.setProjectId(project.getId());
+        document.setSourceKind("SOURCE_CODE");
+        document.setFileName("SearchService.java");
+        document.setFilePath(filePath);
+        document.setPathHash(contentHash + "-path");
+        document.setFileType("JAVA");
+        document.setContentHash(contentHash);
+        document.setRevision(revision);
+        document.setStatus("PARSED");
+        document.setChunkCount(chunkCount);
+        document.setDeleted(0);
+        document.setCreatedAt(now);
+        document.setUpdatedAt(now);
+        documentMapper.insert(document);
+        return document;
+    }
+
     private KnowledgeChunk insertChunk(
             Long documentId,
             int index,
             String symbol,
             String content,
             String contentHash
+    ) {
+        return insertChunk(documentId, index, symbol, content, contentHash, REVISION);
+    }
+
+    private KnowledgeChunk insertChunk(
+            Long documentId,
+            int index,
+            String symbol,
+            String content,
+            String contentHash,
+            String revision
     ) {
         KnowledgeChunk chunk = new KnowledgeChunk();
         chunk.setProjectId(project.getId());
@@ -184,7 +279,7 @@ class EmbeddingIndexControllerTest {
         chunk.setContentHash(contentHash);
         chunk.setStartLine(index * 10);
         chunk.setEndLine(index * 10 + 2);
-        chunk.setRevision(REVISION);
+        chunk.setRevision(revision);
         chunk.setCreatedAt(LocalDateTime.now());
         chunkMapper.insert(chunk);
         return chunk;

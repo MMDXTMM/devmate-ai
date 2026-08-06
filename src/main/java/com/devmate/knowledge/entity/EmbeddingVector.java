@@ -17,6 +17,7 @@ public class EmbeddingVector {
     private String modelName;
     private Integer dimensions;
     private String contentHash;
+    private String inputHash;
     private String vectorJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -37,6 +38,8 @@ public class EmbeddingVector {
     public void setDimensions(Integer dimensions) { this.dimensions = dimensions; }
     public String getContentHash() { return contentHash; }
     public void setContentHash(String contentHash) { this.contentHash = contentHash; }
+    public String getInputHash() { return inputHash; }
+    public void setInputHash(String inputHash) { this.inputHash = inputHash; }
     public String getVectorJson() { return vectorJson; }
     public void setVectorJson(String vectorJson) { this.vectorJson = vectorJson; }
     public LocalDateTime getCreatedAt() { return createdAt; }

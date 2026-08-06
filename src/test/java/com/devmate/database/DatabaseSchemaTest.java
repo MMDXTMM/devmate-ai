@@ -64,5 +64,26 @@ class DatabaseSchemaTest {
                   AND column_name IN ('review_task_id', 'new_path_hash')
                 """, Integer.class);
         assertThat(pathHashIndexColumns).isEqualTo(2);
+
+        Integer embeddingInputHashColumn = jdbcTemplate.queryForObject(
+                "SELECT COUNT(input_hash) FROM embedding_vector",
+                Integer.class
+        );
+        assertThat(embeddingInputHashColumn).isZero();
+        Integer embeddingReusedChunksColumn = jdbcTemplate.queryForObject(
+                "SELECT COUNT(reused_chunks) FROM embedding_index_task",
+                Integer.class
+        );
+        assertThat(embeddingReusedChunksColumn).isZero();
+        Integer embeddingReuseIndexColumns = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.index_columns
+                WHERE table_name = 'embedding_vector'
+                  AND index_name = 'idx_embedding_vector_reuse'
+                  AND column_name IN (
+                    'project_id', 'revision', 'provider', 'model_name', 'dimensions', 'input_hash'
+                  )
+                """, Integer.class);
+        assertThat(embeddingReuseIndexColumns).isEqualTo(6);
     }
 }

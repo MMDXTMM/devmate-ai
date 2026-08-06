@@ -141,7 +141,9 @@ async function indexEmbeddings(project: Project) {
   embeddingId.value = project.id
   try {
     const task = await projectApi.indexEmbeddings(project.id)
-    showSuccess(`向量索引完成：新增 ${task.processedChunks}，复用 ${task.skippedChunks} 个 Chunk`)
+    showSuccess(
+      `向量索引完成：新增 ${task.processedChunks}，跨版本复用 ${task.reusedChunks}，当前版本跳过 ${task.skippedChunks} 个 Chunk`,
+    )
   } catch (error) {
     showError(error)
   } finally {

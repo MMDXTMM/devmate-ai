@@ -19,6 +19,7 @@ public class EmbeddingIndexTask {
     private Integer totalChunks;
     private Integer processedChunks;
     private Integer skippedChunks;
+    private Integer reusedChunks;
     private Integer failedChunks;
     private String errorMessage;
     private LocalDateTime createdAt;
@@ -45,6 +46,8 @@ public class EmbeddingIndexTask {
     public void setProcessedChunks(Integer processedChunks) { this.processedChunks = processedChunks; }
     public Integer getSkippedChunks() { return skippedChunks; }
     public void setSkippedChunks(Integer skippedChunks) { this.skippedChunks = skippedChunks; }
+    public Integer getReusedChunks() { return reusedChunks; }
+    public void setReusedChunks(Integer reusedChunks) { this.reusedChunks = reusedChunks; }
     public Integer getFailedChunks() { return failedChunks; }
     public void setFailedChunks(Integer failedChunks) { this.failedChunks = failedChunks; }
     public String getErrorMessage() { return errorMessage; }

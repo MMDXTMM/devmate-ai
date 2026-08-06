@@ -486,6 +486,7 @@ describe('projectApi', () => {
         totalChunks: 10,
         processedChunks: 10,
         skippedChunks: 0,
+        reusedChunks: 0,
         failedChunks: 0,
         createdAt: '2026-08-04T00:00:00Z',
       },
