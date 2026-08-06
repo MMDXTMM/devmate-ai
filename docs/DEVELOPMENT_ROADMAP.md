@@ -256,7 +256,9 @@
 - V14 使用目标路径 SHA-256 和任务内联合索引保持 Git 路径大小写语义；历史 V13 Diff 通过空哈希精确匹配回退继续可用。TARGET 符号映射也改为按知识文档路径哈希定位并精确复核完整路径。
 - 已完成 manifest 标准答案同步工具：强制全量复用 Import/Diff，先验证 8 个证据闭环并预检全部已有用例，再只补缺失项并全量回读；字段漂移、旧 Diff 绑定、重复或额外 caseKey 均在零 POST 时失败，响应丢失可恢复重跑。
 - 隔离 MySQL 首次得到 `8 created / 8 verified`，立即重跑为 `0 created / 8 reused / 8 verified`；最终落库 7 条 `DEFECT`、1 条 `CLEAN`，分别绑定 8 个项目和 8 个 Diff。
-- `PARTIAL` 文件只要缺陷行有 TARGET 证据仍可录入，覆盖缺口继续单独报告。下一小任务是在相同项目、revision、Diff 和模型配置上运行真实 FIXED/AGENT A/B；目前仍不宣称准确率或 Agent 优于固定流水线。
+- `PARTIAL` 文件只要缺陷行有 TARGET 证据仍可录入，覆盖缺口继续单独报告。
+- 真实批量运行前先实现受控 A/B 执行器和服务端预期 Diff ID/revision 校验，避免“自动选择最近 Diff”的竞态以及 POST 响应丢失后的重复付费；执行器需要零模型预检、逐项目成对运行、失败即停、可恢复回读和微平均聚合测试。
+- 执行器通过 Mock/Fake 验收后先运行 1 个真实 canary，再完成 8 组 FIXED/AGENT A/B；结果稳定前仍不宣称准确率或 Agent 优于固定流水线。
 
 ## 阶段 9：增量索引与异步任务
 

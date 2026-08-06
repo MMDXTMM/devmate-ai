@@ -2,6 +2,13 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-06：真实 A/B 前增加受控执行与绑定门禁
+
+- 只读审计确认两个 AI 创建入口都会自动选择最近成功 Diff，且查询接口只返回最近任务；这适合人工单次操作，但 8 项付费批量实验会受到新 Diff 竞态、POST 响应丢失和中断恢复不确定性的影响。
+- 调整开发顺序：先让请求携带预期 Diff ID/revision 并在模型调用前由服务端校验，再实现零模型全批预检、逐项目 FIXED→评测→AGENT→评测、失败即停、回读恢复和总体报告的受控执行器。
+- 总体质量按累计 TP/FP/FN 计算微平均 Precision/Recall/F1，不直接平均各场景 F1；报告同时固定 manifest/revisions 哈希，并记录模型、两条路径各自的 Prompt/检索版本、Token、延迟和 Tool 成功率。
+- 执行器先使用 Mock/Fake 覆盖正常、Diff 漂移、响应丢失和中断恢复，再运行 1 个真实 canary；canary 通过且用户确认密钥与额度后，才执行 8 组、16 个真实审查任务。本次规划调整不调用模型。
+
 ## 2026-08-06：完成 manifest 人工标准答案幂等同步与 MySQL 回读验收
 
 - 扩展 `verify-live-imports.mjs`，新增必须组合使用的 `--reuse-imports --reuse-diffs --record-gold-cases`；标准答案模式只能全量运行，不能与单场景排障混用。
@@ -11,7 +18,7 @@
 - 外部批处理不使用跨 8 个 HTTP 请求的长事务；全批预检减少可提前发现的部分写入，应用阶段依靠数据库唯一键、失败状态、精确回读和可恢复重跑。
 - Node 验收工具 28 项测试覆盖 DEFECT/CLEAN 映射、字段漂移、旧 Diff 冲突、整批门禁、非法 manifest、首次补录、零写入重跑、响应丢失恢复和失败计数；后端 111 项测试通过，`git diff --check` 通过。
 - 使用已迁移到 V14 的隔离 MySQL 26.7 和 8 个历史 Diff 完成真实验收：首次 `8 created / 8 verified`，立即重跑 `0 created / 8 reused / 8 verified`；数据库最终为 7 条 `DEFECT`、1 条 `CLEAN`，分别绑定 8 个项目和 8 个 Diff，必填证据字段无缺失。
-- 本任务没有调用 Embedding、FIXED、AGENT 或模型，也没有生成准确率。下一小任务是在相同项目、revision、Diff、模型和数据集条件下运行真实 FIXED/AGENT A/B，并人工解释失败案例。
+- 本任务没有调用 Embedding、FIXED、AGENT 或模型，也没有生成准确率。下一小任务先实现受控 A/B 执行器和预期 Diff 绑定校验，再运行 canary 与完整真实 FIXED/AGENT A/B。
 
 ## 2026-08-06：强化人工标准答案的 Diff 与 TARGET 证据约束
 

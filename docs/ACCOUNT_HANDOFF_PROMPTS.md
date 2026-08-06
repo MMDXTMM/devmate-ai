@@ -66,11 +66,11 @@ Codex 任务历史与 ChatGPT 历史分开，并与登录账号/工作区关联�
 
 项目是 Spring Boot 模块化单体的智能 Java 代码审查 Agent 平台。保持 Controller → Service → Mapper、DTO 隔离、构造器注入、短事务、受控只读 Tool、Flyway 只增不改、BIGINT 前端字符串等边界。不要新增微服务、MQ、Redis、专业向量库、任意 Shell/SQL 或自动改码，除非当前需求有验证依据。不要记录或提交密码、Token、完整 Prompt 和完整私有源码。
 
-当前已完成至 V13 评测工作台、可复现 Git fixture，以及 H2 和隔离 MySQL 26.7 的真实导入/Diff 验收；当前数据库结构为 V14。公开样本仓库是 https://github.com/MMDXTMM/devmate-review-benchmark，case-001 至 case-008 已发布。最近合并基线为 PR #16、main@ae7395c；当前标准答案证据约束分支会把文件、目标变更行和持久化 TARGET Chunk 绑定，并用大小写敏感路径哈希兼容 MySQL 排序规则。自动化基线为后端 111 项、前端 29 项、Node 16 项和 Vue 生产构建通过。
+当前已完成 V13 评测工作台、可复现 Git fixture、H2 和隔离 MySQL 26.7 的真实导入/Diff 验收，以及 V14 标准答案证据约束。公开样本仓库是 https://github.com/MMDXTMM/devmate-review-benchmark，case-001 至 case-008 已发布。最近合并基线为 PR #17、main@7e8a92e；PR #18 已从 codex/review-manifest-ingestion 打开，提交 25db123 已实现 manifest 标准答案幂等同步。自动化基线为后端 111 项、前端 29 项、Node 28 项和 Vue 生产构建通过。
 
-H2 与隔离 MySQL 均已完成 8 个 case 的真实 GitHub 导入和默认 HEAD^ → HEAD Diff，结果为 8 PASS、6 FULL、2 PARTIAL。ReviewEvaluationCaseService 已强制标准答案文件属于对应 Diff，并要求标注范围、目标变更行和持久化 TARGET Chunk 形成三重交集。下一任务扩展验收脚本，用 manifest 批量录入 8 个 Diff 并回读复核数量、revision、类别、路径和行号。先不调用模型，不改 Prompt，不把 PARTIAL 改成 FULL，不宣称准确率，不扩展历史接口。
+H2 与隔离 MySQL 均已完成 8 个 case 的真实 GitHub 导入和默认 HEAD^ → HEAD Diff，结果为 8 PASS、6 FULL、2 PARTIAL。ReviewEvaluationCaseService 已强制标准答案文件属于对应 Diff，并要求标注范围、目标变更行和持久化 TARGET Chunk 形成三重交集。隔离 MySQL 首次同步标准答案为 8 created/verified，立即重跑为 8 reused/verified；最终为 7 条 DEFECT、1 条 CLEAN。下一任务先实现受控 A/B 执行器和服务端预期 Diff ID/revision 校验，使用 Mock/Fake 验证全批预检、漂移拒绝、响应丢失恢复、失败即停和微平均聚合；本任务不调用真实模型。之后才在相同项目、revision、Diff、模型配置和数据集条件下运行真实 FIXED 与 AGENT，冻结并分别记录两条路径各自的 Prompt/检索版本，保存评测快照并人工解释失败案例。
 
-开始实现前先用简短中文汇报你核实到的仓库状态、输入/输出、状态变化、失败路径和测试方案。完成一个小任务后更新 docs/CODEX_HANDOFF.md 和必要的 PROJECT_LOG/设计文档，运行相关测试与 git diff --check，提交独立 codex/ 分支并创建 PR。最终用中文说明完成内容、验证结果、下一步，以及我为了 Java 面试必须理解的 3—5 个核心点。
+开始执行前先用简短中文汇报你核实到的仓库状态、A/B 可比条件、调用顺序、失败路径和验收方案。执行器完成前不要调用真实模型。真实运行属于显式、有成本的后续操作：先确认 DASHSCOPE_API_KEY 只存在于进程环境，并向用户说明将运行 16 个审查任务、Agent 可能产生多轮模型请求及其费用风险；不要把 Mock 当真实结果。完成一个小任务后更新 docs/CODEX_HANDOFF.md 和必要的 PROJECT_LOG/设计文档，运行相关测试与 git diff --check，提交独立 codex/ 分支并创建 PR。最终用中文说明完成内容、验证结果、失败案例、下一步，以及我为了 Java 面试必须理解的 3—5 个核心点。
 ```
 
 ## 4. 新 ChatGPT 账号首条提示词
