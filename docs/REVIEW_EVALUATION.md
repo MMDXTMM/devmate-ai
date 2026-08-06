@@ -4,7 +4,7 @@
 
 阶段 8 的评测不是证明模型“会输出文本”，而是使用固定标准答案比较固定流水线和 Agent 在同一 Diff 上的实际表现。每次运行必须绑定项目、Diff、revision、执行模式、模型、Prompt、检索配置和数据集哈希，确保结果可以复现。
 
-本阶段不调用模型，只评估已经成功完成的 `ai_review_task`。这样评测失败不会重复消耗 Token，也不会把模型调用和指标计算混在同一个事务中。
+评测计算接口本身不调用模型，只评估已经成功完成的 `ai_review_task`。FIXED/AGENT A/B 会先显式运行两条真实审查路径，再分别调用评测接口；这样评测失败不会重复消耗 Token，也不会把模型调用和指标计算混在同一个事务中。
 
 ## 2. 数据集用例
 
@@ -92,6 +92,10 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 
 `GET /api/projects/{projectId}/review-evaluation-cases?datasetVersion=...&reviewTaskId=...`
 
+`reviewTaskId` 可省略。带该参数时查询指定 Diff 的启用用例，供评测工作台使用；省略时查询项目和数据集下跨 Diff 的启用用例，供批量录入工具在 V13 唯一键范围内发现旧 Diff 漂移。
+
+当前没有禁用标准用例的 API，数据集级查询只覆盖系统管理的启用记录，并沿用单次评测用例上限。若后续增加禁用/恢复或让同一项目的数据集跨大量 Diff，必须增加分页或专用唯一键冲突查询；不能继续把该便捷查询当作完整数据库约束视图。
+
 ### 执行评测
 
 `POST /api/projects/{projectId}/review-evaluation-runs`
@@ -113,7 +117,7 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 3. 对最近一次已持久化的 AI 审查执行评测；
 4. 并排查看最近 FIXED/AGENT 的质量、成本与 Tool 指标。
 
-工作台不会调用模型，也不允许请求携带执行模式。当前 AI 接口只提供最近任务，因此第一版 A/B 操作顺序是“运行 FIXED → 评测 → 运行 AGENT → 评测”；两个运行快照随后在同一数据集下并排显示。这一限制优先保证小而可解释的接口范围，后续只有在真实评测流程需要时才增加历史任务选择接口。
+工作台不会调用模型，也不允许请求携带执行模式。当前 AI 创建接口会自动选择最近成功 Diff，查询接口也只提供最近任务；人工单次操作可以按“运行 FIXED → 评测 → 运行 AGENT → 评测”完成，但 8 项付费批量实验存在 Diff 漂移和响应丢失后重复执行的风险。真实全量运行前必须增加预期 Diff ID/revision 的服务端校验和受控执行器，并先通过零模型恢复路径测试。
 
 ## 8. 事务和安全边界
 
@@ -124,6 +128,7 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 - 项目、Diff、AI 任务和 Finding 归属全部由服务端验证。
 - 标准答案绑定已保存的 Diff 证据快照，不在用例创建事务中重新访问 Git、文件系统或模型。
 - V14 通过 `(review_task_id, new_path_hash)` 索引保持 Git 路径大小写语义；历史 V13 空哈希行回退为 Java 精确比较。Diff 的 TARGET 证据生成也按已有 `knowledge_document.path_hash` 查询并复核完整路径，避免先生成错误 Chunk 快照再被标准答案校验接受。
+- 批量工具不跨 8 个 HTTP 请求持有数据库长事务。它先全批预检，消除可提前发现的部分写入；应用阶段依靠唯一键、精确回读和可恢复重跑处理响应丢失或中途失败。
 
 ## 9. 测试方案
 
@@ -135,9 +140,12 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 - 多候选进入人工复核且指标标记为部分结果；
 - 无缺陷且无 Finding 得到完整通过；
 - 相同 AI 任务和数据集哈希重复执行幂等返回；
+- manifest 请求字段完整镜像后端 DTO 约束，后一个非法条目也必须在整批零 POST 时失败；
+- Import/Diff 任一失败时标准答案零 POST；已有用例的 revision、类别、路径、行号、依据、重复或额外 caseKey 漂移均在全批预检失败；
+- 首次只补录缺失用例，POST 响应丢失后可回读恢复，立即重跑为零创建且全部复用；
 - H2 从空库执行 V1–V14，并在真实 MySQL 验证 V13→V14 与历史 Diff 兼容。
 
-当前验证结果：后端 111 项测试、前端 29 项测试、真实验收工具 16 项 Node 测试和 Vue 生产构建全部通过；隔离空库 MySQL 26.7 先在 V13 完成 25 张表和 8 场景真实持久化验收，随后包含 16 个历史 Diff 文件的数据目录成功迁移到 V14，应用健康为 `UP`。隔离 MySQL 临时表实测确认大小写不敏感 `file_path` 会命中两个变体，而 SHA-256 只命中正确原始路径。本轮没有调用真实模型。系统安装的 3306 服务仍未监听，属于独立的本机运维问题。
+当前验证结果：后端 111 项测试、前端 29 项测试、真实验收工具 28 项 Node 测试和 Vue 生产构建全部通过；隔离空库 MySQL 26.7 先在 V13 完成 25 张表和 8 场景真实持久化验收，随后包含 16 个历史 Diff 文件的数据目录成功迁移到 V14，应用健康为 `UP`。隔离 MySQL 临时表实测确认大小写不敏感 `file_path` 会命中两个变体，而 SHA-256 只命中正确原始路径。本轮没有调用真实模型。系统安装的 3306 服务仍未监听，属于独立的本机运维问题。
 
 ## 10. 第一版真实缺陷样本契约
 
@@ -156,7 +164,7 @@ DEFECT 位置校验只使用 `newPath/changedLines`，不会用删除文件的 `
 
 `manifest.json` 是人工标准答案源，行号绑定 candidate 快照。自动契约测试会拒绝重复键、路径逃逸、越界行号、未发生真实变更的快照，以及没有覆盖目标变更行的标准答案。该目录产生真实运行后冻结；修改标准答案必须创建新版本。
 
-当前已完成样本定义、自动校验、确定性 Git 历史、公开仓库发布及 8 个场景的真实导入/Diff 验收；尚未向 V13 录入人工标准答案，也未产生真实 FIXED/AGENT 指标。
+当前已完成样本定义、自动校验、确定性 Git 历史、公开仓库发布、8 个场景的真实导入/Diff 验收，以及 7 条 `DEFECT`、1 条 `CLEAN` 人工标准答案的 MySQL 录入与幂等回读；尚未产生真实 FIXED/AGENT 指标。
 
 ## 11. 可复现 Git 历史
 
@@ -180,7 +188,7 @@ main 根提交
 
 样本仓库只包含虚构 Java 代码和中性 README；缺陷名称、类别、路径、行号和人工依据只保存在主仓库 manifest，不进入待审查仓库。
 
-## 12. 真实导入与 Diff 验收
+## 12. 真实导入、Diff 与标准答案验收
 
 `verify-live-imports.mjs` 通过现有 API 顺序执行项目创建或精确复用、源码导入、项目与任务回读、默认 Diff 和 Diff 回读。它同时核对：
 
@@ -188,6 +196,7 @@ main 根提交
 - Diff base/target SHA、唯一 Java `MODIFY`、文件路径和双方变更行一致；
 - 覆盖状态与汇总计数一致，不能出现 `SKIPPED`；
 - 每条 DEFECT 标准答案既命中真实目标 Diff，也命中 candidate 的 `TARGET` 符号范围。
+- 标准答案模式复用已验证的 Import 和 latest Diff，先全批预检再只补缺失项，最终按字符串 ID 和全部业务字段严格回读。
 
 2026-08-06 先使用 H2 `test` Profile，再使用隔离空库 MySQL 26.7 和真实公开 GitHub 仓库全量运行，两种数据库的最终结果均为：
 
@@ -201,10 +210,12 @@ main 根提交
 
 `case-005` 的 candidate 新增 import，因此 TARGET 第 3 行未进入当前 Chunk；`case-008` 的 base 删除 import，因此 BASE 第 3 行未进入当前 Chunk。当前 Java Chunk 从 class 声明开始，这两个 `PARTIAL` 是真实覆盖缺口，不能为了结果好看改写成 `FULL`。缺陷方法行仍有 candidate 映射证据；后续若补齐，应新增具有明确语义的 `FILE_HEADER/IMPORT` Chunk，而不是扩大类 Chunk 伪造覆盖。
 
-真实运行曾遇到 GitHub TLS/克隆瞬时失败。工具允许使用 `--scenario` 做单场景排障重试；当每个项目的最近导入都恢复为 `SUCCEEDED` 后，`--reuse-imports` 会在不再次克隆的前提下，完整复核 8 个最新任务、项目 revision 和 candidate SHA，并重新创建 Diff。失败或缺失的最近任务仍会令验收失败，报告通过 `importMode` 与 `importTriggered` 区分“触发导入”和“复用已验证导入”。
+真实运行曾遇到 GitHub TLS/克隆瞬时失败。工具允许使用 `--scenario` 做单场景排障重试；当每个项目的最近导入都恢复为 `SUCCEEDED` 后，`--reuse-imports` 会在不再次克隆的前提下，完整复核 8 个最新任务、项目 revision 和 candidate SHA。默认模式重新创建 Diff；`--reuse-diffs` 则复用并严格验证 latest Diff。失败或缺失的最近任务仍会令验收失败，报告通过 `importMode/diffMode` 区分证据来源。
 
 MySQL 从空库执行 Flyway V1-V13，生成 25 张表，应用健康检查为 `UP`。验收结束时 8 个项目均为 `READY`，存在 8 个 `knowledge_document`、46 个 `knowledge_chunk`、8 个成功导入任务和 16 个成功 Diff 任务。`case-008` 首次导入因 GitHub 瞬时错误留下 1 个可观察的失败任务，重试后恢复成功。
 
-最终结论来自故障恢复后的完整 8 场景 `--reuse-imports` 运行，不是把单场景报告拼在一起。H2 与 MySQL 报告分别保存在被 Git 忽略的 `target/benchmark-results/known-defects-v1-import-diff.json` 和 `target/benchmark-results/known-defects-v1-mysql-import-diff.json`；报告不保存源码、凭证、Prompt 或模型内容。MySQL 最终报告的 `importMode` 为 `REUSE_LATEST_SUCCEEDED`。
+标准答案模式必须同时传入 `--reuse-imports --reuse-diffs --record-gold-cases`，且禁止单场景运行。原因是 V13 唯一键为 `(project_id, dataset_version, case_key)`，不包含 `review_task_id`；创建新 Diff 后继续使用相同 caseKey 会破坏重复运行语义。
 
-本轮没有执行 Embedding、FIXED 或 AGENT，没有把 manifest 写入评测表，也没有生成或宣称任何准确率。H2 与 MySQL 实跑共同证明 API、GitHub、JGit、解析、Diff 和真实持久化证据链可工作。系统安装的 MySQL 3306 仍未监听，但这不再阻塞项目数据库链路验收；后续可按运维手册单独恢复。
+最终结论来自完整 8 场景运行，不是把单场景报告拼在一起。MySQL 首次标准答案运行得到 `8 created / 8 verified`，立即重跑得到 `0 created / 8 reused / 8 verified`；数据库为 7 条 `DEFECT`、1 条 `CLEAN`，8 个字符串 ID、项目、Diff、revision、类别、路径、行号和依据均通过回读。报告保存在被 Git 忽略的 `target/benchmark-results/known-defects-v1-mysql-gold-cases*.json`，不包含源码、凭证、Prompt 或模型内容。
+
+本轮没有执行 Embedding、FIXED、AGENT 或模型，也没有生成或宣称任何准确率。H2 与 MySQL 实跑共同证明 API、GitHub、JGit、解析、Diff、人工标准答案和真实持久化证据链可工作。系统安装的 MySQL 3306 仍未监听，但这不再阻塞项目数据库链路验收；后续可按运维手册单独恢复。

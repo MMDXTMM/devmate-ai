@@ -11,6 +11,18 @@ const DEFAULT_REPORT_PATH = fileURLToPath(
 );
 const DEFAULT_BASE_URL = "http://localhost:8080";
 const DEFAULT_TIMEOUT_MS = 120_000;
+const EVALUATION_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
+const EVALUATION_CATEGORIES = new Set([
+  "CONCURRENCY",
+  "TRANSACTION",
+  "CACHE",
+  "MESSAGE",
+  "SQL",
+  "SECURITY",
+  "ARCHITECTURE",
+  "PERFORMANCE",
+  "RELIABILITY",
+]);
 
 export class VerificationError extends Error {
   constructor(message) {
@@ -278,6 +290,325 @@ export function verifyScenarioEvidence(expected, evidence) {
   };
 }
 
+function expectedEvaluationCaseCount(scenario) {
+  return scenario.expectationType === "CLEAN" ? 1 : (scenario.defects ?? []).length;
+}
+
+function initialGoldCaseStatus(scenario, status = "PENDING") {
+  return {
+    status,
+    expectedCount: expectedEvaluationCaseCount(scenario),
+    verifiedCount: 0,
+    createdCount: 0,
+    recoveredCount: 0,
+    reusedCount: 0,
+    caseIds: [],
+    caseKeys: [],
+  };
+}
+
+function requireManifestText(value, label, options = {}) {
+  requireCondition(typeof value === "string" && value.length > 0, `${label} is required`);
+  requireCondition(value === value.trim(), `${label} must not contain surrounding whitespace`);
+  if (options.maxLength !== undefined) {
+    requireCondition(value.length <= options.maxLength, `${label} exceeds ${options.maxLength} characters`);
+  }
+  if (options.pattern !== undefined) {
+    requireCondition(options.pattern.test(value), `${label} contains unsupported characters`);
+  }
+}
+
+export function buildExpectedEvaluationCases(scenario, result) {
+  requireCondition(result.projectId, `${scenario.scenarioKey} project ID is required`);
+  requireCondition(result.reviewTaskId, `${scenario.scenarioKey} review task ID is required`);
+  requireManifestText(scenario.scenarioKey, "Scenario key", {
+    maxLength: 100,
+    pattern: EVALUATION_KEY_PATTERN,
+  });
+  requireManifestText(scenario.datasetVersion, `${scenario.scenarioKey} dataset version`, {
+    maxLength: 64,
+    pattern: EVALUATION_KEY_PATTERN,
+  });
+  requireManifestText(scenario.name, `${scenario.scenarioKey} name`, { maxLength: 200 });
+  requireManifestText(scenario.rationale, `${scenario.scenarioKey} rationale`, { maxLength: 1000 });
+  requireManifestText(
+    scenario.candidateRevision,
+    `${scenario.scenarioKey} candidate revision`,
+    { maxLength: 64 },
+  );
+
+  const common = {
+    scenarioKey: scenario.scenarioKey,
+    projectId: String(result.projectId),
+    reviewTaskId: String(result.reviewTaskId),
+    datasetVersion: scenario.datasetVersion,
+    name: scenario.name,
+    targetRevision: scenario.candidateRevision,
+  };
+  const defects = scenario.defects ?? [];
+  if (scenario.expectationType === "CLEAN") {
+    requireCondition(defects.length === 0, `${scenario.scenarioKey} CLEAN scenario contains defects`);
+    return [{
+      ...common,
+      caseKey: scenario.scenarioKey,
+      expectationType: "CLEAN",
+      category: null,
+      filePath: null,
+      startLine: null,
+      endLine: null,
+      rationale: scenario.rationale,
+    }];
+  }
+
+  requireCondition(
+    scenario.expectationType === "DEFECT",
+    `${scenario.scenarioKey} has an unknown expectation type`,
+  );
+  requireCondition(defects.length > 0, `${scenario.scenarioKey} DEFECT scenario has no defects`);
+  return defects.map((defect) => {
+    requireManifestText(defect.caseKey, `${scenario.scenarioKey} defect case key`, {
+      maxLength: 100,
+      pattern: EVALUATION_KEY_PATTERN,
+    });
+    requireManifestText(defect.category, `${scenario.scenarioKey}/${defect.caseKey} category`);
+    requireCondition(
+      EVALUATION_CATEGORIES.has(defect.category),
+      `${scenario.scenarioKey}/${defect.caseKey} category is unsupported`,
+    );
+    requireManifestText(
+      defect.filePath,
+      `${scenario.scenarioKey}/${defect.caseKey} file path`,
+      { maxLength: 1000 },
+    );
+    requireManifestText(
+      defect.rationale,
+      `${scenario.scenarioKey}/${defect.caseKey} rationale`,
+      { maxLength: 1000 },
+    );
+    requireCondition(
+      Number.isInteger(defect.startLine) && defect.startLine > 0,
+      `${scenario.scenarioKey}/${defect.caseKey} start line must be a positive integer`,
+    );
+    requireCondition(
+      Number.isInteger(defect.endLine) && defect.endLine >= defect.startLine,
+      `${scenario.scenarioKey}/${defect.caseKey} end line must not precede the start line`,
+    );
+    return {
+      ...common,
+      caseKey: defect.caseKey,
+      expectationType: "DEFECT",
+      category: defect.category,
+      filePath: defect.filePath,
+      startLine: defect.startLine,
+      endLine: defect.endLine,
+      rationale: defect.rationale,
+    };
+  });
+}
+
+export function toEvaluationCaseRequest(expected) {
+  const request = {
+    reviewTaskId: expected.reviewTaskId,
+    datasetVersion: expected.datasetVersion,
+    caseKey: expected.caseKey,
+    name: expected.name,
+    expectationType: expected.expectationType,
+    rationale: expected.rationale,
+  };
+  if (expected.expectationType === "DEFECT") {
+    Object.assign(request, {
+      category: expected.category,
+      filePath: expected.filePath,
+      startLine: expected.startLine,
+      endLine: expected.endLine,
+    });
+  }
+  return request;
+}
+
+function requireEvaluationCaseMatch(expected, actual) {
+  requireCondition(
+    typeof actual?.id === "string" && actual.id.length > 0,
+    `${expected.scenarioKey}/${expected.caseKey} saved case ID is not a string`,
+  );
+  const fields = [
+    "projectId",
+    "reviewTaskId",
+    "datasetVersion",
+    "caseKey",
+    "name",
+    "targetRevision",
+    "expectationType",
+    "category",
+    "filePath",
+    "startLine",
+    "endLine",
+    "rationale",
+  ];
+  for (const field of fields) {
+    const expectedValue = expected[field] ?? null;
+    const actualValue = actual[field] ?? null;
+    requireCondition(
+      actualValue === expectedValue,
+      `${expected.scenarioKey}/${expected.caseKey} ${field} differs`,
+    );
+  }
+}
+
+export function planEvaluationCaseSync(expectedCases, actualCases, scenarioKey) {
+  requireCondition(expectedCases.length > 0, `${scenarioKey} has no expected evaluation cases`);
+  requireCondition(Array.isArray(actualCases), `${scenarioKey} evaluation cases must be an array`);
+
+  const expectedByKey = new Map();
+  for (const expected of expectedCases) {
+    requireCondition(
+      !expectedByKey.has(expected.caseKey),
+      `${scenarioKey} contains duplicate expected case key ${expected.caseKey}`,
+    );
+    expectedByKey.set(expected.caseKey, expected);
+  }
+
+  const actualByKey = new Map();
+  for (const actual of actualCases) {
+    requireCondition(
+      !actualByKey.has(actual.caseKey),
+      `${scenarioKey} contains duplicate saved case key ${actual.caseKey}`,
+    );
+    const expected = expectedByKey.get(actual.caseKey);
+    requireCondition(expected, `${scenarioKey} contains unexpected saved case ${actual.caseKey}`);
+    requireEvaluationCaseMatch(expected, actual);
+    actualByKey.set(actual.caseKey, actual);
+  }
+
+  return {
+    scenarioKey,
+    expectedCases,
+    existingCases: actualCases,
+    missingCases: expectedCases.filter((expected) => !actualByKey.has(expected.caseKey)),
+  };
+}
+
+export function verifyEvaluationCases(expectedCases, actualCases, scenarioKey) {
+  const plan = planEvaluationCaseSync(expectedCases, actualCases, scenarioKey);
+  requireCondition(
+    plan.missingCases.length === 0,
+    `${scenarioKey} is missing ${plan.missingCases.length} evaluation cases`,
+  );
+  requireCondition(
+    actualCases.length === expectedCases.length,
+    `${scenarioKey} evaluation case count differs`,
+  );
+  return [...actualCases].sort((left, right) => left.caseKey.localeCompare(right.caseKey));
+}
+
+async function applyEvaluationCasePlan(client, plan) {
+  let createdCount = 0;
+  let recoveredCount = 0;
+  try {
+    for (const expected of plan.missingCases) {
+      try {
+        await client.post(
+          `/api/projects/${expected.projectId}/review-evaluation-cases`,
+          toEvaluationCaseRequest(expected),
+        );
+        createdCount += 1;
+      } catch (error) {
+        const current = await client.listReviewEvaluationCases(
+          expected.projectId,
+          expected.datasetVersion,
+        );
+        const recoveryPlan = planEvaluationCaseSync(
+          plan.expectedCases,
+          current,
+          plan.scenarioKey,
+        );
+        if (recoveryPlan.missingCases.some((value) => value.caseKey === expected.caseKey)) {
+          throw error;
+        }
+        recoveredCount += 1;
+      }
+    }
+
+    const saved = await client.listReviewEvaluationCases(
+      plan.expectedCases[0].projectId,
+      plan.expectedCases[0].datasetVersion,
+    );
+    const verified = verifyEvaluationCases(plan.expectedCases, saved, plan.scenarioKey);
+    return {
+      scenarioKey: plan.scenarioKey,
+      status: "VERIFIED",
+      expectedCount: plan.expectedCases.length,
+      verifiedCount: verified.length,
+      createdCount,
+      recoveredCount,
+      reusedCount: plan.existingCases.length,
+      caseIds: verified.map((value) => value.id),
+      caseKeys: verified.map((value) => value.caseKey),
+    };
+  } catch (error) {
+    const failure = error instanceof Error ? error : new VerificationError(String(error));
+    failure.evaluationOutcome = {
+      scenarioKey: plan.scenarioKey,
+      status: "FAILED",
+      expectedCount: plan.expectedCases.length,
+      verifiedCount: 0,
+      createdCount,
+      recoveredCount,
+      reusedCount: plan.existingCases.length,
+      caseIds: plan.existingCases.map((value) => value.id),
+      caseKeys: plan.existingCases.map((value) => value.caseKey),
+    };
+    throw failure;
+  }
+}
+
+export async function syncEvaluationCaseBatch(client, entries) {
+  const plans = [];
+  for (const entry of entries) {
+    try {
+      const expectedCases = buildExpectedEvaluationCases(entry.scenario, entry.result);
+      const actualCases = await client.listReviewEvaluationCases(
+        entry.result.projectId,
+        entry.scenario.datasetVersion,
+      );
+      plans.push(planEvaluationCaseSync(
+        expectedCases,
+        actualCases,
+        entry.scenario.scenarioKey,
+      ));
+    } catch (error) {
+      return {
+        outcomes: [],
+        failure: {
+          scenarioKey: entry.scenario.scenarioKey,
+          phase: "PREFLIGHT",
+          error: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }
+
+  const outcomes = [];
+  for (const plan of plans) {
+    try {
+      outcomes.push(await applyEvaluationCasePlan(client, plan));
+    } catch (error) {
+      if (error?.evaluationOutcome) {
+        outcomes.push(error.evaluationOutcome);
+      }
+      return {
+        outcomes,
+        failure: {
+          scenarioKey: plan.scenarioKey,
+          phase: "APPLY",
+          error: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }
+  return { outcomes, failure: null };
+}
+
 export class DevMateClient {
   constructor(baseUrl, fetchImplementation = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS) {
     requireCondition(typeof fetchImplementation === "function", "A fetch implementation is required");
@@ -341,6 +672,14 @@ export class DevMateClient {
     } while (page <= totalPages);
     return projects;
   }
+
+  listReviewEvaluationCases(projectId, datasetVersion, reviewTaskId = null) {
+    const query = new URLSearchParams({ datasetVersion });
+    if (reviewTaskId !== null) {
+      query.set("reviewTaskId", String(reviewTaskId));
+    }
+    return this.get(`/api/projects/${projectId}/review-evaluation-cases?${query}`);
+  }
 }
 
 async function loadScenarioPlan() {
@@ -380,7 +719,10 @@ async function ensureProject(client, scenario, allowCreate) {
   return { project, reused: false };
 }
 
-export async function verifyOneScenario(client, scenario, reuseImports = false) {
+export async function verifyOneScenario(client, scenario, options = {}) {
+  const reuseImports = options.reuseImports ?? false;
+  const reuseDiffs = options.reuseDiffs ?? false;
+  requireCondition(!reuseDiffs || reuseImports, "Reusing Diffs requires reusing imports");
   const { project: initialProject, reused } = await ensureProject(client, scenario, !reuseImports);
   const projectId = initialProject.id;
   const importTask = reuseImports
@@ -389,8 +731,12 @@ export async function verifyOneScenario(client, scenario, reuseImports = false) 
   const latestImportTask = await client.get(`/api/projects/${projectId}/imports/latest`);
   const project = await client.get(`/api/projects/${projectId}`);
   verifyImportEvidence(scenario, { project, importTask, latestImportTask });
-  const reviewDiff = await client.post(`/api/projects/${projectId}/review-diffs`, {});
-  const latestReviewDiff = await client.get(`/api/projects/${projectId}/review-diffs/latest`);
+  const reviewDiff = reuseDiffs
+    ? await client.get(`/api/projects/${projectId}/review-diffs/latest`)
+    : await client.post(`/api/projects/${projectId}/review-diffs`, {});
+  const latestReviewDiff = reuseDiffs
+    ? reviewDiff
+    : await client.get(`/api/projects/${projectId}/review-diffs/latest`);
   const verified = verifyScenarioEvidence(scenario, {
     project,
     importTask,
@@ -404,6 +750,7 @@ export async function verifyOneScenario(client, scenario, reuseImports = false) 
     projectId,
     projectReused: reused,
     importTriggered: !reuseImports,
+    diffTriggered: !reuseDiffs,
     importTaskId: importTask.id,
     reviewTaskId: reviewDiff.id,
     expectedBaseRevision: scenario.baseRevision,
@@ -421,6 +768,8 @@ export function parseArguments(args) {
     reportPath: DEFAULT_REPORT_PATH,
     scenario: null,
     reuseImports: false,
+    reuseDiffs: false,
+    recordGoldCases: false,
   };
   const readValue = (index, option) => {
     const value = args[index + 1];
@@ -440,6 +789,10 @@ export function parseArguments(args) {
       index += 1;
     } else if (argument === "--reuse-imports") {
       options.reuseImports = true;
+    } else if (argument === "--reuse-diffs") {
+      options.reuseDiffs = true;
+    } else if (argument === "--record-gold-cases") {
+      options.recordGoldCases = true;
     } else if (argument === "--help") {
       options.help = true;
     } else {
@@ -448,6 +801,15 @@ export function parseArguments(args) {
   }
   requireCondition(options.baseUrl, "--base-url requires a value");
   requireCondition(options.reportPath, "--report requires a value");
+  requireCondition(!options.reuseDiffs || options.reuseImports, "--reuse-diffs requires --reuse-imports");
+  requireCondition(
+    !options.recordGoldCases || options.reuseDiffs,
+    "--record-gold-cases requires --reuse-diffs",
+  );
+  requireCondition(
+    !options.recordGoldCases || !options.scenario,
+    "--record-gold-cases cannot be combined with --scenario",
+  );
   return options;
 }
 
@@ -459,9 +821,13 @@ Options:
   --report PATH    JSON report path (default: target/benchmark-results/...)
   --scenario KEY   Run one scenario key or case-NNN branch
   --reuse-imports  Require and verify each project's latest successful import
+  --reuse-diffs    Reuse and verify each project's latest Diff; requires --reuse-imports
+  --record-gold-cases
+                   Record or verify all manifest cases; requires --reuse-diffs and all scenarios
   --help           Show this help
 
 This command imports all public benchmark branches and creates HEAD^ -> HEAD Diffs.
+Gold-case mode reuses existing imports and Diffs before writing evaluation cases.
 It never calls embedding or AI endpoints.`);
 }
 
@@ -470,9 +836,16 @@ async function writeReport(reportPath, report) {
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 }
 
-export async function runLiveVerification(options) {
-  const plan = await loadScenarioPlan();
-  const client = new DevMateClient(options.baseUrl);
+export async function runLiveVerification(options, dependencies = {}) {
+  requireCondition(!options.reuseDiffs || options.reuseImports, "Reusing Diffs requires reusing imports");
+  requireCondition(!options.recordGoldCases || options.reuseDiffs, "Recording gold cases requires reused Diffs");
+  requireCondition(
+    !options.recordGoldCases || !options.scenario,
+    "Recording gold cases requires the full dataset",
+  );
+  const plan = dependencies.plan ?? await loadScenarioPlan();
+  const client = dependencies.client ?? new DevMateClient(options.baseUrl);
+  const reportWriter = dependencies.reportWriter ?? writeReport;
   const startedAt = new Date().toISOString();
   const results = [];
   const scenarios = options.scenario
@@ -488,17 +861,64 @@ export async function runLiveVerification(options) {
   for (const scenario of scenarios) {
     process.stdout.write(`[${scenario.repositoryBranch}] ${scenario.scenarioKey} ... `);
     try {
-      const result = await verifyOneScenario(client, scenario, options.reuseImports);
+      const result = await verifyOneScenario(client, scenario, options);
+      if (options.recordGoldCases) {
+        result.goldCases = initialGoldCaseStatus(scenario);
+      }
       results.push(result);
       console.log(result.warnings.length === 0 ? "PASS" : `PASS (${result.coverageStatus})`);
     } catch (error) {
-      results.push({
+      const failedResult = {
         scenarioKey: scenario.scenarioKey,
         repositoryBranch: scenario.repositoryBranch,
         status: "FAIL",
         error: error instanceof Error ? error.message : String(error),
-      });
+      };
+      if (options.recordGoldCases) {
+        failedResult.goldCases = initialGoldCaseStatus(scenario, "NOT_APPLIED");
+      }
+      results.push(failedResult);
       console.log("FAIL");
+    }
+  }
+
+  if (options.recordGoldCases) {
+    const resultByScenario = new Map(results.map((result) => [result.scenarioKey, result]));
+    if (results.every((result) => result.status === "PASS")) {
+      console.log("[evaluation-cases] preflight and record manifest cases ...");
+      const sync = await syncEvaluationCaseBatch(
+        client,
+        scenarios.map((scenario) => ({
+          scenario,
+          result: resultByScenario.get(scenario.scenarioKey),
+        })),
+      );
+      for (const outcome of sync.outcomes) {
+        resultByScenario.get(outcome.scenarioKey).goldCases = outcome;
+      }
+      if (sync.failure) {
+        const failed = resultByScenario.get(sync.failure.scenarioKey);
+        failed.status = "FAIL";
+        failed.failurePhase = `EVALUATION_CASE_${sync.failure.phase}`;
+        failed.error = sync.failure.error;
+        failed.goldCases = {
+          ...failed.goldCases,
+          status: "FAILED",
+          failurePhase: sync.failure.phase,
+          error: sync.failure.error,
+        };
+      }
+      for (const result of results) {
+        if (result.goldCases.status === "PENDING") {
+          result.goldCases.status = "NOT_APPLIED";
+        }
+      }
+    } else {
+      for (const result of results) {
+        if (result.goldCases?.status === "PENDING") {
+          result.goldCases.status = "NOT_APPLIED";
+        }
+      }
     }
   }
 
@@ -507,6 +927,8 @@ export async function runLiveVerification(options) {
     repositoryUrl: plan.repositoryUrl,
     baseUrl: options.baseUrl,
     importMode: options.reuseImports ? "REUSE_LATEST_SUCCEEDED" : "TRIGGER_IMPORT",
+    diffMode: options.reuseDiffs ? "REUSE_LATEST" : "CREATE",
+    goldCaseMode: options.recordGoldCases ? "VERIFY_OR_CREATE" : "NOT_REQUESTED",
     startedAt,
     finishedAt: new Date().toISOString(),
     summary: {
@@ -515,12 +937,37 @@ export async function runLiveVerification(options) {
       failed: results.filter((result) => result.status === "FAIL").length,
       fullCoverage: results.filter((result) => result.coverageStatus === "FULL").length,
       partialCoverage: results.filter((result) => result.coverageStatus === "PARTIAL").length,
+      goldCasesExpected: results.reduce(
+        (total, result) => total + (result.goldCases?.expectedCount ?? 0),
+        0,
+      ),
+      goldCasesVerified: results.reduce(
+        (total, result) => total + (result.goldCases?.verifiedCount ?? 0),
+        0,
+      ),
+      goldCasesCreated: results.reduce(
+        (total, result) => total + (result.goldCases?.createdCount ?? 0),
+        0,
+      ),
+      goldCasesRecovered: results.reduce(
+        (total, result) => total + (result.goldCases?.recoveredCount ?? 0),
+        0,
+      ),
+      goldCasesReused: results.reduce(
+        (total, result) => total + (result.goldCases?.reusedCount ?? 0),
+        0,
+      ),
     },
     results,
   };
-  await writeReport(options.reportPath, report);
+  await reportWriter(options.reportPath, report);
   console.log(`Report: ${options.reportPath}`);
   requireCondition(report.summary.failed === 0, `${report.summary.failed} benchmark scenarios failed`);
+  requireCondition(
+    !options.recordGoldCases
+      || report.summary.goldCasesVerified === report.summary.goldCasesExpected,
+    "Not all manifest evaluation cases were verified",
+  );
   return report;
 }
 
