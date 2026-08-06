@@ -13,11 +13,11 @@
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
 | 最近合并 | PR #20，`main@8446d01` |
-| 本轮交付 | 分支 `codex/incremental-source-import`：V17 文件级增量解析、同 revision 零重写和引用重绑定；开发中 |
+| 本轮交付 | PR #21，提交 `fcab67a`：V17 文件级增量解析、同 revision 零重写和引用重绑定；等待合并 |
 | 数据库 | H2 已从空库迁移到 V17；隔离 MySQL 26.7 已完成 V16→V17 原地迁移，健康检查与历史数据回读通过 |
 | 测试基线 | 后端 122 项、前端 37 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
 | 精确暂停点 | 零模型实现与快速回归完成；尚未执行真实 FIXED/AGENT canary，也未产生准确率、Token 或延迟结论 |
-| 下一小任务 | 提交增量源码导入独立 PR；之后记录同步任务分阶段耗时并设计可恢复后台执行，真实 AI canary 继续等待显式额度确认 |
+| 下一小任务 | 合并 PR #21；之后记录同步任务分阶段耗时并设计可恢复后台执行，真实 AI canary 继续等待显式额度确认 |
 
 ### 状态可信度顺序
 
