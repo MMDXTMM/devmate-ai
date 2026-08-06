@@ -66,7 +66,7 @@ Codex 任务历史与 ChatGPT 历史分开，并与登录账号/工作区关联�
 
 项目是 Spring Boot 模块化单体的智能 Java 代码审查 Agent 平台。保持 Controller → Service → Mapper、DTO 隔离、构造器注入、短事务、受控只读 Tool、Flyway 只增不改、BIGINT 前端字符串等边界。不要新增微服务、MQ、Redis、专业向量库、任意 Shell/SQL 或自动改码，除非当前需求有验证依据。不要记录或提交密码、Token、完整 Prompt 和完整私有源码。
 
-当前已完成至 V13 评测工作台、可复现 Git fixture 和 H2 真实导入/Diff 验收。公开样本仓库是 https://github.com/MMDXTMM/devmate-review-benchmark，case-001 至 case-008 已发布。最近合并基线为 PR #15，main@5e6ea09；自动化基线为后端 107 项、前端 29 项、Node 16 项和 Vue 生产构建通过。
+当前已完成至 V13 评测工作台、可复现 Git fixture 和 H2 真实导入/Diff 验收。公开样本仓库是 https://github.com/MMDXTMM/devmate-review-benchmark，case-001 至 case-008 已发布。最近合并基线为 PR #15，main@5e6ea09；本轮草稿 PR #16、commit 9bc0c6d 等待 MySQL 复验。自动化基线为后端 107 项、前端 29 项、Node 16 项和 Vue 生产构建通过。
 
 H2 与真实 GitHub 已完成 8 个 case 的导入和默认 HEAD^ → HEAD Diff，结果为 8 PASS、6 FULL、2 PARTIAL。下一任务先检查并恢复本机 MySQL，用 verify-live-imports.mjs 完成同链路复验；通过后把 manifest 人工标准答案录入对应 Diff，并核对文件、目标变更行和 TARGET 符号证据。先不调用模型，不改 Prompt，不把 PARTIAL 改成 FULL，不录入或宣称准确率，不扩展历史接口。
 

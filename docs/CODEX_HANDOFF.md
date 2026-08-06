@@ -13,6 +13,7 @@
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
 | 最近合并 | PR #15，`main@5e6ea09`；当前分支 `codex/live-benchmark-import-verification` |
+| 本轮交付 | 草稿 PR #16，commit `9bc0c6d`；等待 MySQL 同链路复验 |
 | 数据库 | Flyway V13 历史已验收；本轮 MySQL 3306 未监听，H2 真实外部链路已验收 |
 | 测试基线 | 后端 107 项；前端 29 项；Node 16 项；Vue 生产构建通过 |
 | 精确暂停点 | 8 个真实项目已导入并完成 Diff：6 FULL、2 PARTIAL；未录标准答案、未调用模型 |
