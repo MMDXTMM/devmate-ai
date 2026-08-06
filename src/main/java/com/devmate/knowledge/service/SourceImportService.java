@@ -17,7 +17,9 @@ import com.devmate.knowledge.source.WorkspaceManager;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class SourceImportService {
@@ -57,14 +59,25 @@ public class SourceImportService {
                     context.branch(),
                     taskDirectory
             );
+            if (Objects.equals(context.previousRevision(), clone.revision())) {
+                return stateService.completeUnchanged(context, clone.revision());
+            }
             List<ScannedSourceFile> files = sourceScanner.scan(clone.repositoryRoot());
             if (files.stream().noneMatch(file -> file.fileType() == SourceFileType.JAVA)) {
                 throw new SourceImportException("仓库中没有找到Java源码文件");
             }
-            List<ParsedSourceFile> parsedFiles = files.stream()
+            SourceImportPlan plan = stateService.planIncremental(context, files);
+            List<ParsedSourceFile> parsedFiles = new ArrayList<>(plan.reusedFiles());
+            parsedFiles.addAll(plan.filesToParse().stream()
                     .map(this::parse)
-                    .toList();
-            return stateService.complete(context, clone.revision(), parsedFiles);
+                    .toList());
+            return stateService.complete(
+                    context,
+                    clone.revision(),
+                    parsedFiles,
+                    plan.filesToParse().size(),
+                    plan.reusedFiles().size()
+            );
         } catch (RuntimeException exception) {
             String message = exception.getMessage() == null ? "源码导入失败" : exception.getMessage();
             stateService.fail(context, message);

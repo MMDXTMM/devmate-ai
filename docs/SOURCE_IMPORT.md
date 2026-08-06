@@ -18,7 +18,7 @@ JGit 浅克隆指定分支到独立任务目录
         ↓
 扫描 Java、YAML、Properties 和迁移目录 SQL，并应用分类数量、单文件和总容量限制
         ↓
-使用 JDK AST 解析 Java；安全展平 YAML/Properties；限时解析 SQL DDL
+与上一 revision 按路径和内容哈希比较；未变文件复用结构元数据，变更文件使用 JDK AST、配置或 SQL 解析器
         ↓
 计算路径/内容哈希并写入 knowledge_document、knowledge_chunk、code_reference
         ↓
@@ -35,7 +35,9 @@ index_task = SUCCEEDED，project = READY
 - `knowledge_chunk`：保存类、方法、配置项或数据库表/列/索引，包含符号名、安全摘要、哈希和起止行。
 - `code_reference`：保存方法调用、数据访问以及 Java 到配置/数据库定义的关系。
 
-同一项目、同一路径、同一 revision 重复导入时使用已有文档记录，不重复插入。这是第一版幂等边界。
+同一 revision 重复导入时直接复用已有 Document、Chunk、Reference 和向量绑定，不再删除重建。新 revision 会扫描并计算全部允许文件的哈希，但只解析新增、修改或移动的文件；路径、类型和内容哈希都一致的文件从上一 revision 重建结构元数据，并把原始引用重新绑定到新 revision 的 Chunk。删除文件不会写入新 revision，因此不会参与当前检索；旧 revision 保留用于复现历史审查。
+
+`index_task` 使用 `FULL/INCREMENTAL` 区分首次与后续导入，并分别记录 `processed_files` 和 `reused_files`。复用表示跳过了解析，不表示新 revision 直接引用旧 Chunk ID。
 
 ## 事务边界
 
@@ -86,7 +88,7 @@ unset DEVMATE_GIT_USERNAME
 
 ## 当前限制
 
-- 当前同步执行，适合学习和小型仓库；大仓库将在异步任务阶段通过 MQ 处理。
+- 当前仍同步执行 Git 克隆、全量文件扫描和变更文件解析，适合学习和小型仓库；是否通过 MQ 异步化要由真实耗时、吞吐和失败恢复数据决定。
 - 当前不会自动读取 GitHub CLI 或系统钥匙串；私有仓库必须显式设置环境变量。
 - 当前只有一组进程级 Git 凭证；多用户生产版本后续改为 GitHub App Installation Token。
 - JDK AST 当前完成语法结构解析，不执行仓库代码，也不解析完整跨文件类型绑定。

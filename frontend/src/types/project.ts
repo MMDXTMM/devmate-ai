@@ -52,6 +52,7 @@ export interface IndexTask {
   status: IndexTaskStatus
   totalFiles: number
   processedFiles: number
+  reusedFiles: number
   failedFiles: number
   errorMessage?: string
   createdAt: string

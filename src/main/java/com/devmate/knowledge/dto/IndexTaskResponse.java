@@ -14,6 +14,7 @@ public record IndexTaskResponse(
         String status,
         Integer totalFiles,
         Integer processedFiles,
+        Integer reusedFiles,
         Integer failedFiles,
         String errorMessage,
         LocalDateTime createdAt,
@@ -24,7 +25,7 @@ public record IndexTaskResponse(
         return new IndexTaskResponse(
                 task.getId(), task.getProjectId(), task.getTaskType(), task.getRevision(),
                 task.getStatus(), task.getTotalFiles(), task.getProcessedFiles(),
-                task.getFailedFiles(), task.getErrorMessage(), task.getCreatedAt(),
+                task.getReusedFiles(), task.getFailedFiles(), task.getErrorMessage(), task.getCreatedAt(),
                 task.getStartedAt(), task.getFinishedAt()
         );
     }
