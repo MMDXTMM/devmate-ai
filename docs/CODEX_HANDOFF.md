@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 最近合并 | PR #22，`main@3ca3959` |
-| 本轮交付 | `codex/auth-project-access`：JWT 登录、Vue 会话、项目成员隔离和 429 可读失败处理，待提交 PR |
+| 开发基线 | PR #22，`main@3ca3959` |
+| 本轮交付 | PR #23（`codex/auth-project-access`）：JWT 登录、Vue 会话、项目成员隔离和 429 可读失败处理 |
 | 数据库 | H2 已从空库迁移到 V18；隔离 MySQL 26.7 已完成 V17→V18，健康检查与历史数据回读通过 |
 | 测试基线 | 后端 130 项、前端 46 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
 | 精确暂停点 | 认证与项目隔离闭环完成并通过隔离 MySQL；尚未执行真实 FIXED/AGENT canary，也未产生准确率结论 |
-| 下一小任务 | 提交并合并认证 PR，随后以项目理解和面试讲解为主；真实 AI canary 继续等待显式额度确认 |
+| 下一小任务 | 以项目理解和面试讲解为主，从“3 分钟项目介绍 → 认证与权限闭环 → 源码审查闭环”逐步训练；真实 AI canary 继续等待显式额度确认 |
 
 ### 状态可信度顺序
 
