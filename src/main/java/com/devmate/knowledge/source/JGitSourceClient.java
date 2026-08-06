@@ -49,8 +49,8 @@ public class JGitSourceClient implements GitSourceClient {
             return new GitCloneResult(targetDirectory, head.name());
         } catch (GitAPIException | java.io.IOException exception) {
             String message = credentialsProviderFactory.isConfigured()
-                    ? "Git仓库克隆失败，请检查地址、分支以及Token的仓库读取权限"
-                    : "Git仓库克隆失败；如果是私有仓库，请配置Git访问Token";
+                    ? "Git仓库克隆失败，请检查网络、地址、分支以及Token的仓库读取权限"
+                    : "Git仓库克隆失败，请检查网络、地址和分支；私有仓库还需配置Git访问Token";
             throw new SourceImportException(message, exception);
         }
     }

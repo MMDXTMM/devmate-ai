@@ -1,6 +1,6 @@
 # DevMate AI 跨账号开发交接
 
-更新时间：2026-08-05
+更新时间：2026-08-06
 
 本文件用于在 Codex 账号、会话或电脑切换后快速恢复开发上下文。它记录“现在做到哪里”，可直接复制的启动提示词统一放在 [跨账号启动提示词](ACCOUNT_HANDOFF_PROMPTS.md)。
 
@@ -12,11 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 最近合并 | PR #14，merge commit `e708481aff1136b6353f6ddc29aec0fd9c4acdb3` |
-| 数据库 | Flyway V13；本机 MySQL 已验收 |
-| 测试基线 | 后端 107 项；前端 29 项；Vue 生产构建通过 |
-| 精确暂停点 | 8 个 fixture 分支已发布；尚未创建 8 个 DevMate 评测项目，也未运行真实模型 |
-| 下一小任务 | 导入 8 个真实样本并执行 Diff，核对 candidate revision；禁止调用模型 |
+| 最近合并 | PR #15，`main@5e6ea09`；当前分支 `codex/live-benchmark-import-verification` |
+| 本轮交付 | 草稿 PR #16，commit `9bc0c6d`、`f98c3d4`；真实导入/Diff 验收已完成，等待文档收尾与合并 |
+| 数据库 | 隔离空库 MySQL 26.7 已执行 V1-V13 和 8 场景验收；系统 3306 未监听是本机运维问题 |
+| 测试基线 | 后端 107 项；前端 29 项；Node 16 项；Vue 生产构建通过 |
+| 精确暂停点 | 8 个真实项目已导入并完成 Diff：6 FULL、2 PARTIAL；未录标准答案、未调用模型 |
+| 下一小任务 | 强化标准答案的 Diff 归属、目标变更行和 TARGET 证据校验，再批量录入 manifest |
 
 ### 状态可信度顺序
 
@@ -71,11 +72,11 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | AI 审查 | 完成工程闭环 | DashScope JSON 输出、Chunk 白名单、结构化 Finding、任务审计 |
 | Tool Calling Agent | 完成工程闭环 | 四个只读 Tool、Qwen 多轮协议、限制与审计、Vue 调用链 |
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
-| 效果评测 | 完成数据、计算、Vue 工作台、样本与 Git 历史 | A/B 展示、8 个固定样本、确定性 revision、公开 fixture 仓库 |
+| 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史与 H2/MySQL 真实 Diff 验收 | 8 PASS、6 FULL、2 PARTIAL；标准答案落库和真实 A/B 待完成 |
 
-当前数据库版本为 V13。H2 已验证从空库执行 V1–V13；本机 MySQL 已从 V12 成功迁移到 V13，健康检查为 `UP`，原项目 `2084116785588305922` 保持可读。
+当前数据库版本为 V13。H2 已验证从空库执行 V1-V13；本机此前也完成过 MySQL V12→V13 和原项目读取。2026-08-06 另用隔离空库 MySQL 26.7 完成 V1-V13 与 8 场景真实持久化验收：25 张表、8 个 `READY` 项目、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
 
-当前自动化基线：后端 107 项测试通过；前端 29 项测试通过；Vue 生产构建通过。
+当前自动化基线：后端 107 项、前端 29 项、真实验收工具 16 项 Node 测试通过；Vue 生产构建通过。
 
 ## 3. 当前核心代码入口
 
@@ -109,6 +110,10 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 - Git 历史生成器：`src/test/java/com/devmate/review/benchmark/ReviewBenchmarkRepositoryBuilder.java`
 - Git 历史测试：`src/test/java/com/devmate/review/benchmark/ReviewBenchmarkGitHistoryTest.java`
 - 公开样本仓库：`https://github.com/MMDXTMM/devmate-review-benchmark`
+- 真实导入验收：`benchmarks/review-fixtures/verify-live-imports.mjs`
+- 验收工具测试：`benchmarks/review-fixtures/verify-live-imports.test.mjs`
+- H2 运行报告：`target/benchmark-results/known-defects-v1-import-diff.json`（被 Git 忽略）
+- MySQL 运行报告：`target/benchmark-results/known-defects-v1-mysql-import-diff.json`（被 Git 忽略）
 
 ## 4. 必须保持的架构边界
 
@@ -124,7 +129,11 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 
 ## 5. 当前精确暂停点
 
-V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1` 的 8 个 base/candidate 样本已生成确定性 Git 历史并发布到公开 fixture 仓库；main 与 `case-001` 至 `case-008` 已推送，远端 HEAD 与 revision 清单一致。尚未创建 8 个 DevMate 评测项目，也没有运行真实模型。
+V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1` 的 8 个 base/candidate 样本已发布，并分别使用 H2 与隔离 MySQL 26.7 完成真实公开 GitHub 导入和默认 Diff：8 个 import/project/candidate revision 和 Diff base/target revision 均与清单一致，两次结果均为 6 个 `FULL`、2 个 `PARTIAL`、0 个 `SKIPPED`。
+
+`case-005` 是 TARGET 新增 import、`case-008` 是 BASE 删除 import 未进入当前 class/method Chunk。两者的业务方法和缺陷目标行仍有映射证据；后续应设计 `FILE_HEADER/IMPORT` Chunk，不能篡改覆盖状态。真实运行发生过 GitHub 瞬时克隆失败；失败分支单独恢复成功后，使用 `--reuse-imports` 要求 8 个最近任务全部成功并重新执行完整 Diff，最终全量复核通过。
+
+MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务；首次瞬时网络失败保留 1 条 `FAILED` 导入记录，重试后完整复核通过。本轮尚未向 V13 录入 manifest 标准答案，也未调用 Embedding、FIXED 或 AGENT。
 
 当前交互限制是 AI 接口只提供最近任务，因此完整 A/B 顺序为：
 
@@ -140,9 +149,9 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1
 
 阶段 8 的目标是证明效果，不继续堆框架。建议按以下小任务推进：
 
-1. 使用公开仓库和 `case-001` 至 `case-008` 分支创建独立 DevMate 项目并执行源码导入。
-2. 为每个项目执行默认 `HEAD^ → HEAD` Diff，核对 target revision 等于 `revisions.json` 的 candidate SHA。
-3. 通过现有 API 为每个成功 Diff 录入 manifest 中的人工标准答案，不复制完整源码到评测表。
+1. 已在 H2 和隔离 MySQL 完成公开仓库 8 个项目的源码导入、默认 `HEAD^ → HEAD` Diff 与证据核对。
+2. 强化 `ReviewEvaluationCaseService` 的写入约束，服务端必须校验标准答案文件属于对应 Diff、行范围与目标变更相交，并且 DEFECT 行具有持久化 TARGET Chunk 证据。
+3. 通过验收脚本为每个成功 Diff 录入 manifest 中的人工标准答案，不复制完整源码到评测表，并逐项回读复核。
 4. 同一项目、revision 和 Diff 分别运行固定流水线与 Agent 路径。
 5. 使用现有 Vue 评测页分别保存 FIXED/AGENT 运行，核对项目、Diff、revision、模型和数据集一致。
 6. 人工复核 `partialMetrics` 中不能自动匹配的 Finding，并记录失败原因；之后才允许按失败案例调整 Tool、检索和 Prompt 版本。
@@ -153,7 +162,7 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1
 
 完整 Codex、ChatGPT 和紧急精简提示词见 [跨账号启动提示词](ACCOUNT_HANDOFF_PROMPTS.md)。当前阶段最短可用版本：
 
-> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md、benchmarks/review-fixtures/README.md、manifest.json、revisions.json 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区状态；8 个样本已发布到 `MMDXTMM/devmate-review-benchmark` 的 `case-001` 至 `case-008`。下一小任务只做“真实样本导入与 Diff 验收”：创建 8 个 DevMate 项目、导入对应分支、执行 Diff，并自动核对项目状态、实际 revision、覆盖清单和 revisions.json；先不调用模型。不要改 Prompt、引入 MQ/微服务或把测试指标写进简历。完成后更新文档、运行全量测试并提交独立 PR。
+> 阅读 AGENTS.md、docs/CODEX_HANDOFF.md、docs/ENGINEERING_STANDARDS.md、docs/DEVELOPMENT_ROADMAP.md、docs/REVIEW_EVALUATION.md、benchmarks/review-fixtures/README.md、manifest.json、revisions.json 和 docs/PROJECT_LOG.md。先检查 main、未合并 PR 与工作区。H2 和隔离 MySQL 均已验收 8 PASS、6 FULL、2 PARTIAL；下一小任务强化人工标准答案的 Diff 文件归属、目标变更行和持久化 TARGET Chunk 证据校验，再批量录入 manifest。禁止先调用模型、修改 Prompt、把 PARTIAL 改成 FULL 或宣称准确率。
 
 ## 8. 账号切换前的收尾要求
 
@@ -170,14 +179,19 @@ V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1
 ## 9. 验证命令
 
 ```bash
+node --test benchmarks/review-fixtures/verify-live-imports.test.mjs
 ./mvnw test
 
 cd frontend
 npm test -- --run
 npm run build
+
+# 需要重新做真实 MySQL 验收时，在仓库根目录执行
+cd ..
+node benchmarks/review-fixtures/verify-live-imports.mjs
 ```
 
-真实 MySQL 验证使用默认 `local` Profile；`application-local.yml` 被 Git 忽略。真实模型测试还需要在进程环境配置 `DASHSCOPE_API_KEY`，当前阶段没有用 Mock 结果冒充真实模型效果。
+真实 MySQL 验证使用 `local` Profile；`application-local.yml` 被 Git 忽略。系统安装的 3306 服务仍需单独恢复，但隔离 MySQL 已完成项目链路验收。真实模型测试还需要在进程环境配置 `DASHSCOPE_API_KEY`，当前阶段没有用 Mock 结果冒充真实模型效果。
 
 ## 10. 开发经验与踩坑记录
 
@@ -197,3 +211,7 @@ npm run build
 - 评测页面打开和加载数据不应产生模型费用；模型运行与指标计算是两个显式步骤，便于重试、审计和控制额度。
 - 固定缺陷集必须把“样本代码”和“人工标准答案”分离；目标源码内不能放泄漏答案的 Bug 标记，标准答案必须自动校验确实覆盖目标 Diff。
 - 可复现 Git 样本不仅要固定文件，还要固定父提交、作者、时间和消息；远端分支 HEAD 必须与 revision 清单核对，防止强制推送造成数据集漂移。
+- fixture 契约测试通过不代表真实导入链路可用；必须同时核对任务、项目 revision、Diff 双方 SHA、变更行和 candidate 证据。
+- GitHub 瞬时失败允许单场景重试排障，但最终验收必须重跑完整数据集，不能拼接多次局部成功。
+- `--reuse-imports` 只复核最近的 `SUCCEEDED` 导入并重新创建 Diff；缺失、失败或 revision 漂移仍会失败，报告必须保留导入模式。
+- `PARTIAL` 可能来自 BASE 或 TARGET 文件头；应记录未映射行并补充专用 Chunk，不能通过扩大类范围伪造 `FULL`。
