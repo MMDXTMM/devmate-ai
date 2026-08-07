@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 开发基线 | PR #27，`main@7585747` |
-| 本轮交付 | PR #27 已合并：安全请求 ID、MDC 日志关联和前端错误定位；`codex/github-actions-ci` 正在补远端 CI |
+| 开发基线 | PR #28，`main@11ea1bc` |
+| 本轮交付 | PR #28 已合并：三路 CI、H2 测试上下文隔离；当前仅处理官方 Action Node 20 运行时退役告警 |
 | 数据库 | H2 已从空库迁移到 V19；隔离 MySQL 26.7 已完成历史 V18→V19 与全新 V1→V19 |
 | 测试基线 | 后端 146 项、前端 50 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
-| 精确暂停点 | HTTP 错误已可按 requestId 对应日志；真实模型仍未调用，Docker 运行时不可用 |
-| 下一小任务 | 完成三路 CI 的真实 GitHub checks 与合并；真实 AI canary 仍需显式确认密钥、额度和后端状态 |
+| 精确暂停点 | `main` 三路 CI 已全绿；Action 运行时升级完成后暂停，真实模型仍未调用，Docker 运行时不可用 |
+| 下一小任务 | 用户恢复开发并显式确认密钥、额度和后端状态后，运行 1 个真实 AI canary |
 
 ### 状态可信度顺序
 
