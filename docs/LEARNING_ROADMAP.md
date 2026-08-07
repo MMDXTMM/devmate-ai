@@ -418,7 +418,7 @@ AI 可以协助：
 - 单场景重试只用于定位临时外部故障，最终结论必须来自完整数据集重跑。
 - `--reuse-imports` 不会把失败任务当成功：它要求确定性项目已存在、最近导入为 `SUCCEEDED` 且任务/项目/candidate revision 一致，然后重新运行完整 Diff。
 - `FULL/PARTIAL/SKIPPED` 描述证据覆盖程度；import 文件头未映射产生的 `PARTIAL` 不能被美化为 `FULL`。
-- 后续通过精确 `FILE_HEADER/IMPORT` Chunk 补齐两侧证据，全新 H2 真实复验达到 `8 FULL / 0 PARTIAL`；解决方式是完善证据模型，而不是扩大类行号或修改状态计算。
+- 后续通过精确 `FILE_HEADER/IMPORT` Chunk 补齐两侧证据，全新 H2 与全新 MySQL 真实复验均达到 `8 FULL / 0 PARTIAL`；解决方式是完善证据模型，而不是扩大类行号或修改状态计算。
 - 隔离空库 MySQL 26.7 已完成 V1-V13 和同一 8 场景验收，证明 H2 通过之外，真实 MySQL 方言、迁移与持久化关系也能工作。
 - 一次 GitHub 瞬时失败被保存为 `FAILED`，重试成功后再全量复核；可观察的失败记录比覆盖或删除失败更有利于恢复和排障。
 - 标准答案创建已按 `projectId + reviewTaskId + newPath` 绑定目标 Diff，并要求标注范围、目标变更行和持久化 TARGET 符号形成三重交集。

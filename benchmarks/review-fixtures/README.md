@@ -84,7 +84,7 @@ V13 的用例唯一键是 `(project_id, dataset_version, case_key)`，不包含 
 
 `case-005` 的 TARGET 第 3 行新增 import、`case-008` 的 BASE 第 3 行删除 import，不在当前从 class 声明开始的 Chunk 内；两者的类、方法和缺陷目标行仍有真实映射证据。MySQL 标准答案报告位于被忽略的 `target/benchmark-results/known-defects-v1-mysql-gold-cases.json`，重复运行报告以 `goldCasesCreated=0` 和 `goldCasesReused=8` 证明幂等。系统安装的 3306 服务仍未监听，这是独立的本机运维问题，不影响上述隔离 MySQL 对真实方言、迁移和持久化链路的验收结论。本轮不包含模型效果指标。
 
-2026-08-07 新增精确 `FILE_HEADER` 包声明和逐条 `IMPORT` Chunk 后，使用全新 H2 V1-V18 对同一公开仓库重新执行全部导入与 Diff，结果为 `8 PASS / 8 FULL / 0 PARTIAL / 0 SKIPPED` 且无警告。该运行没有调用 Embedding 或模型；此前 MySQL 历史 Diff 仍保留旧解析时的 `6 FULL / 2 PARTIAL`，没有被重写。
+2026-08-07 新增精确 `FILE_HEADER` 包声明和逐条 `IMPORT` Chunk 后，使用全新 H2 V1-V18 与全新 MySQL 26.7 V1-V18 对同一公开仓库分别执行全部导入与 Diff，两次均为 `8 PASS / 8 FULL / 0 PARTIAL / 0 SKIPPED` 且无警告。新 MySQL schema 保存 8 个项目、8 个文档、62 个 Chunk（8 个 `FILE_HEADER`、8 个 `IMPORT`）和 8 个成功 Diff；运行没有调用 Embedding 或模型。此前 MySQL 历史 Diff 仍保留旧解析时的 `6 FULL / 2 PARTIAL`，没有被重写。
 
 ## 受控 FIXED/AGENT A/B
 

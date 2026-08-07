@@ -10,7 +10,7 @@
 - 同步更新 Vue 的 `SourceSymbolType`，源码结构页可以展示新的结构项；同 revision 重导仍保持 Document、Chunk 和 Vector ID 幂等。
 - 定向测试曾暴露旧测试把 Chunk 总数写死为 5；确认两个同 package 文件不会导致引用绑定冲突后，将真实新总数更新为 7，并保留显式 `FILE_HEADER` 数量断言。
 - 全量验证通过后端 133 项、前端 46 项、Benchmark Node 48 项和 Vue 生产构建。
-- 使用全新 H2 V1-V18、真实公开 GitHub 8 个分支重新执行导入和默认 Diff，结果为 `8 PASS / 8 FULL / 0 PARTIAL / 0 SKIPPED`，无警告且未调用 Embedding 或模型。此前 MySQL 历史库的旧 Diff 仍是 `6 FULL / 2 PARTIAL`，本轮没有篡改历史证据。
+- 使用全新 H2 V1-V18 和全新 MySQL 26.7 V1-V18，分别对真实公开 GitHub 8 个分支重新执行导入和默认 Diff；两次均为 `8 PASS / 8 FULL / 0 PARTIAL / 0 SKIPPED`，无警告且未调用 Embedding 或模型。新 MySQL schema 持久化 8 个项目、8 个文档、62 个 Chunk（8 个 `FILE_HEADER`、8 个 `IMPORT`）和 8 个成功 Diff；此前 MySQL 历史库的旧 Diff 仍是 `6 FULL / 2 PARTIAL`，本轮没有篡改历史证据。
 
 ## 2026-08-06：完成 JWT 登录与项目级访问隔离
 
