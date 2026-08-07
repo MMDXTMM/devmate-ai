@@ -15,7 +15,7 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。V14 为 Diff 目标路径增加大小写敏感哈希，避免 MySQL 默认排序规则混淆 Git 路径。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。V14 为 Diff 目标路径增加大小写敏感哈希，避免 MySQL 默认排序规则混淆 Git 路径。V19 增加源码结构版本，让解析规则升级不会静默破坏历史 Chunk 证据。
 
 ## 2. 表关系
 
@@ -77,6 +77,7 @@ erDiagram
 - `source_type`：`LOCAL`、`GIT`、`UPLOAD`。
 - `source_location`：本地路径、Git 地址或上传文件引用。
 - `current_revision`：当前已导入的提交哈希或版本号。
+- `current_structure_version`：当前 revision 使用的结构解析规则版本；未导入时为空。
 - `status`：`CREATED`、`INDEXING`、`READY`、`FAILED`。
 - `last_indexed_at`：最近成功完成知识库构建的时间。
 
@@ -98,6 +99,7 @@ erDiagram
 - `content_hash`：判断文件内容是否变化，用于增量更新。
 - `path_hash`：文件路径原始大小写的 SHA-256，用于建立定长唯一索引；完整路径仍保存在 `file_path`。目标 Diff 映射按该哈希定位文档后，再用 Java 精确比较完整路径，避免 MySQL 默认排序规则混淆大小写不同的 Git 文件。
 - `revision`：文件所属的 Git 提交或导入版本。
+- `structure_version`：生成该文件 Chunk 的结构解析规则版本。
 - `package_name`：Java 文件的包名，由 AST 解析得到。
 - `status`：当前结构解析使用 `PARSED`；完成向量索引后使用 `INDEXED`，失败使用 `FAILED`。
 - `(project_id, path_hash, revision)` 唯一，防止同一版本重复导入，同时避免 `utf8mb4` 长路径超过 MySQL 的索引长度限制。

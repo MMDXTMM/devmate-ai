@@ -12,6 +12,9 @@ import com.devmate.knowledge.mapper.EmbeddingIndexTaskMapper;
 import com.devmate.knowledge.mapper.EmbeddingVectorMapper;
 import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
+import com.devmate.project.entity.Project;
+import com.devmate.project.mapper.ProjectMapper;
+import com.devmate.project.model.ProjectStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,17 +29,20 @@ public class EmbeddingIndexStateService {
     private final EmbeddingVectorMapper vectorMapper;
     private final KnowledgeChunkMapper chunkMapper;
     private final KnowledgeDocumentMapper documentMapper;
+    private final ProjectMapper projectMapper;
 
     public EmbeddingIndexStateService(
             EmbeddingIndexTaskMapper taskMapper,
             EmbeddingVectorMapper vectorMapper,
             KnowledgeChunkMapper chunkMapper,
-            KnowledgeDocumentMapper documentMapper
+            KnowledgeDocumentMapper documentMapper,
+            ProjectMapper projectMapper
     ) {
         this.taskMapper = taskMapper;
         this.vectorMapper = vectorMapper;
         this.chunkMapper = chunkMapper;
         this.documentMapper = documentMapper;
+        this.projectMapper = projectMapper;
     }
 
     @Transactional
@@ -48,6 +54,17 @@ public class EmbeddingIndexStateService {
             int dimensions,
             int totalChunks
     ) {
+        Project project = projectMapper.selectByIdForUpdate(projectId);
+        if (project == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
+        }
+        if (ProjectStatus.INDEXING.name().equals(project.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "项目源码结构未就绪，暂不能建立向量索引");
+        }
+        if (!ProjectStatus.READY.name().equals(project.getStatus())
+                || !revision.equals(project.getCurrentRevision())) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先成功导入项目源码");
+        }
         long running = taskMapper.selectCount(Wrappers.lambdaQuery(EmbeddingIndexTask.class)
                 .eq(EmbeddingIndexTask::getProjectId, projectId)
                 .eq(EmbeddingIndexTask::getStatus, "RUNNING"));

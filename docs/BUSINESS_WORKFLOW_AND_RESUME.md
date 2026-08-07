@@ -92,6 +92,10 @@ JGit `Edit` 同时包含 BASE 删除范围和 TARGET 新增范围。系统分别
 
 首次公开 8 场景验收只有 6 个 `FULL`，`case-005/008` 的新增或删除 import 行不在 class/method Chunk 内。系统没有直接把类范围扩大到文件头，而是新增精确 `FILE_HEADER` 和逐条 `IMPORT` Chunk，并分别验证 TARGET 持久化映射与 BASE Git Blob 内存映射。重新全量导入后得到 `8 FULL / 0 PARTIAL`；这说明修复的是证据模型，而不是美化统计结果。
 
+### 问题九：解析器升级后为什么不能直接重建旧 Chunk
+
+同 revision 的 Chunk 已可能被向量、Diff、Finding 和评测引用，直接删除会通过外键级联破坏向量，也会让历史证据失去可复现性。系统为项目、任务和文档保存 `structure_version`：新 revision 自动使用新版本解析，同 revision 只有在没有下游证据时才能显式重建；否则返回 409 并保留原 Chunk。并发入口用项目行锁与 `INDEXING` 状态互斥，但 Git 和解析仍在事务外。
+
 ## 5. 演示顺序
 
 1. 创建一个至少有两个提交的 Java Git 项目。

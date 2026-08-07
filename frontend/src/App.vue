@@ -146,6 +146,26 @@ async function importSource(project: Project) {
   }
 }
 
+async function rebuildSource(project: Project) {
+  const confirmed = window.confirm(
+    `确认重建“${project.name}”当前提交的源码结构？若结构已被 Diff、向量或评测引用，系统会拒绝操作。`,
+  )
+  if (!confirmed) return
+  importingId.value = project.id
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const task = await projectApi.rebuildSource(project.id)
+    showSuccess(`结构重建完成：${task.processedFiles} 个文件，版本 ${task.structureVersion}`)
+    await loadProjects(pageData.value.page)
+  } catch (error) {
+    showError(error)
+    await loadProjects(pageData.value.page)
+  } finally {
+    importingId.value = null
+  }
+}
+
 async function indexEmbeddings(project: Project) {
   embeddingId.value = project.id
   try {
@@ -292,7 +312,11 @@ onUnmounted(() => unsubscribeAuth?.())
                     <div><b>{{ project.name }}</b><small>{{ project.description || '暂无项目描述' }}</small></div>
                   </div>
                 </td>
-                <td><span class="source-badge">{{ project.sourceType }}</span><small class="branch">{{ project.defaultBranch || '—' }}</small></td>
+                <td>
+                  <span class="source-badge">{{ project.sourceType }}</span>
+                  <small class="branch">{{ project.defaultBranch || '—' }}</small>
+                  <small v-if="project.currentStructureVersion" class="branch">{{ project.currentStructureVersion }}</small>
+                </td>
                 <td><span class="status" :class="project.status.toLowerCase()"><i></i>{{ statusLabel[project.status] }}</span></td>
                 <td class="muted">{{ formatDate(project.updatedAt) }}</td>
                 <td class="row-actions">
@@ -310,6 +334,12 @@ onUnmounted(() => unsubscribeAuth?.())
                   >
                     {{ importingId === project.id ? '导入中' : project.status === 'READY' ? '重新导入' : '导入源码' }}
                   </button>
+                  <button
+                    v-if="project.status === 'READY'"
+                    type="button"
+                    :disabled="workflowId === project.id || importingId === project.id || deletingId === project.id"
+                    @click="rebuildSource(project)"
+                  >重建结构</button>
                   <button
                     type="button"
                     :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"

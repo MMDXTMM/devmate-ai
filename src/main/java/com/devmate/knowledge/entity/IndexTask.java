@@ -13,6 +13,7 @@ public class IndexTask {
     private Long projectId;
     private String taskType;
     private String revision;
+    private String structureVersion;
     private String status;
     private Integer totalFiles;
     private Integer processedFiles;
@@ -37,6 +38,8 @@ public class IndexTask {
     public void setTaskType(String taskType) { this.taskType = taskType; }
     public String getRevision() { return revision; }
     public void setRevision(String revision) { this.revision = revision; }
+    public String getStructureVersion() { return structureVersion; }
+    public void setStructureVersion(String structureVersion) { this.structureVersion = structureVersion; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Integer getTotalFiles() { return totalFiles; }

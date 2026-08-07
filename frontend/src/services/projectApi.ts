@@ -61,6 +61,12 @@ export const projectApi = {
     })
   },
 
+  rebuildSource(id: string): Promise<IndexTask> {
+    return request(`/api/projects/${encodeURIComponent(id)}/imports/rebuild`, {
+      method: 'POST',
+    })
+  },
+
   latestImport(id: string): Promise<IndexTask> {
     return request(`/api/projects/${encodeURIComponent(id)}/imports/latest`)
   },

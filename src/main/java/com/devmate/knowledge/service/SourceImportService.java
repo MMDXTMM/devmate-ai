@@ -51,8 +51,16 @@ public class SourceImportService {
     }
 
     public IndexTaskResponse importSource(Long projectId) {
+        return importSource(projectId, SourceImportMode.STANDARD);
+    }
+
+    public IndexTaskResponse rebuildSource(Long projectId) {
+        return importSource(projectId, SourceImportMode.REBUILD);
+    }
+
+    private IndexTaskResponse importSource(Long projectId, SourceImportMode mode) {
         long totalStartedNanos = System.nanoTime();
-        SourceImportContext context = stateService.prepare(projectId);
+        SourceImportContext context = stateService.prepare(projectId, mode);
         SourceImportMetrics metrics = SourceImportMetrics.empty(totalStartedNanos);
         try {
             Path taskDirectory = workspaceManager.createTaskDirectory(projectId, context.taskId());
@@ -70,7 +78,21 @@ public class SourceImportService {
             }
             metrics = metrics.withCloneDuration(SourceImportMetrics.elapsedMillis(cloneStartedNanos));
             if (Objects.equals(context.previousRevision(), clone.revision())) {
-                return stateService.completeUnchanged(context, clone.revision(), metrics);
+                if (mode == SourceImportMode.REBUILD) {
+                    stateService.assertRebuildAllowed(context, clone.revision());
+                } else if (SourceStructureVersion.CURRENT.equals(context.previousStructureVersion())) {
+                    return stateService.completeUnchanged(context, clone.revision(), metrics);
+                } else {
+                    throw new BusinessException(
+                            ErrorCode.CONFLICT,
+                            "当前revision使用旧版源码结构，请执行显式重建"
+                    );
+                }
+            } else if (mode == SourceImportMode.REBUILD) {
+                throw new BusinessException(
+                        ErrorCode.CONFLICT,
+                        "远端仓库已有新提交，请先执行普通源码导入"
+                );
             }
             long scanStartedNanos = System.nanoTime();
             List<ScannedSourceFile> files;
@@ -114,6 +136,11 @@ public class SourceImportService {
             );
         } catch (RuntimeException exception) {
             String message = exception.getMessage() == null ? "源码导入失败" : exception.getMessage();
+            if (exception instanceof BusinessException businessException
+                    && businessException.getErrorCode() == ErrorCode.CONFLICT) {
+                stateService.reject(context, message, metrics);
+                throw businessException;
+            }
             stateService.fail(context, message, metrics);
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, message);
         }

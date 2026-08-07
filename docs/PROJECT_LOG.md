@@ -2,6 +2,17 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-07：增加源码结构版本与受控重建
+
+- 发现未来解析规则升级若直接重建同 revision Chunk，会级联删除向量，并让 Diff、Finding 和评测保存的 Chunk 证据失效。
+- V19 为项目、导入任务和文档增加 `structure_version`；已有 revision 回填为 `source-structure-v1`，新解析使用 `source-structure-v2`。
+- 普通同 revision 导入仅在版本一致时零重写；新 revision 遇到旧结构时全量重新解析；同 revision 旧结构必须走显式重建入口。
+- 显式重建先检查 Diff、向量和检索评测证据；存在依赖时返回 409、任务保留失败原因、项目恢复原可用状态且 Chunk ID 不变。
+- 导入、Diff 和向量准备事务通过项目行锁和 `INDEXING` 状态互斥，Git、扫描、解析和模型调用仍在事务外。
+- Vue 展示当前结构版本并增加二次确认的“重建结构”入口，409 原因由统一错误处理直接展示。
+- 验证通过后端 142 项、前端 47 项、Benchmark Node 48 项、Vue 构建、H2 V1-V19、MySQL V18→V19 与全新 V1→V19；本轮未调用 Embedding 或模型。
+- 详细设计见 `SOURCE_STRUCTURE_VERSIONING.md`。
+
 ## 2026-08-07：用精确文件头 Chunk 消除真实 Diff 覆盖缺口
 
 - 公开评测首次得到 `6 FULL / 2 PARTIAL` 后，没有修改覆盖统计口径；定位到 `case-005` 的 TARGET 新增 import 和 `case-008` 的 BASE 删除 import 位于原 class/method Chunk 之外。

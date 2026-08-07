@@ -5,6 +5,8 @@ import com.devmate.knowledge.source.GitCloneResult;
 import com.devmate.knowledge.source.GitSourceClient;
 import com.devmate.project.dto.CreateProjectRequest;
 import com.devmate.project.dto.ProjectResponse;
+import com.devmate.project.entity.Project;
+import com.devmate.project.mapper.ProjectMapper;
 import com.devmate.project.service.ProjectService;
 import com.devmate.review.entity.CodeReviewFile;
 import com.devmate.review.entity.CodeReviewTask;
@@ -51,6 +53,8 @@ class ReviewDiffControllerTest {
     private CodeReviewTaskMapper taskMapper;
     @Autowired
     private CodeReviewFileMapper fileMapper;
+    @Autowired
+    private ProjectMapper projectMapper;
 
     @MockitoBean
     private GitSourceClient gitSourceClient;
@@ -114,6 +118,23 @@ class ReviewDiffControllerTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("请先成功导入项目源码"));
+    }
+
+    @Test
+    void rejectsDiffWhileSourceStructureIsBeingRebuilt() throws Exception {
+        ProjectResponse project = createProject("diff-during-rebuild");
+        projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
+                .eq(Project::getId, project.id())
+                .set(Project::getStatus, "INDEXING"));
+
+        mockMvc.perform(post("/api/projects/{projectId}/review-diffs", project.id())
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("项目源码结构未就绪，暂不能生成Diff"));
+
+        assertThat(taskMapper.selectCount(Wrappers.lambdaQuery(CodeReviewTask.class)
+                .eq(CodeReviewTask::getProjectId, project.id()))).isZero();
     }
 
     @Test

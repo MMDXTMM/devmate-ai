@@ -90,6 +90,15 @@ class DatabaseSchemaTest {
                 Integer.class
         );
         assertThat(reusedFilesColumn).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(current_structure_version) FROM project", Integer.class
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(structure_version) FROM index_task", Integer.class
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(structure_version) FROM knowledge_document", Integer.class
+        )).isZero();
         for (String column : List.of(
                 "clone_duration_ms",
                 "scan_duration_ms",

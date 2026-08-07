@@ -19,6 +19,7 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - HTTPS Git 仓库校验、指定分支浅克隆和 Java 文件安全扫描
 - 通过进程环境变量安全读取私有 GitHub 仓库，凭证不持久化
 - 导入任务状态、Git revision 与源码文件元数据持久化
+- Git revision 与结构解析版本双重标识、零重写幂等导入和受控显式重建
 - 基于 JDK AST 解析类、构造器、方法、注解和准确源码行号
 - `knowledge_chunk` 符号持久化与源码结构查询接口
 - 方法调用、配置键和数据访问入口提取，以及保守的同类方法目标解析
@@ -139,6 +140,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [面试导向学习与开发路线](docs/LEARNING_ROADMAP.md)
 - [本地开发与多端同步](docs/LOCAL_DEVELOPMENT.md)
 - [数据库设计](docs/DATABASE_DESIGN.md)
+- [源码结构版本与安全重建](docs/SOURCE_STRUCTURE_VERSIONING.md)
 - [项目管理模块](docs/PROJECT_MANAGEMENT.md)
 - [Git 源码导入闭环](docs/SOURCE_IMPORT.md)
 - [Git Diff 与覆盖清单](docs/GIT_DIFF.md)
