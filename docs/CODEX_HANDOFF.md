@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 开发基线 | PR #24，`main@6a1d944` |
-| 本轮交付 | `codex/source-structure-versioning`：V19 结构版本、显式安全重建与并发门禁，待提交 PR |
+| 开发基线 | PR #25，`main@21e2ee6` |
+| 本轮交付 | PR #25 已合并：V19 结构版本、显式安全重建与并发门禁 |
 | 数据库 | H2 已从空库迁移到 V19；隔离 MySQL 26.7 已完成历史 V18→V19 与全新 V1→V19 |
 | 测试基线 | 后端 142 项、前端 47 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
 | 精确暂停点 | 同 revision 旧结构不再被隐式覆盖；已有 Diff、向量或评测证据时重建返回 409 并保留 Chunk；真实模型仍未调用 |
-| 下一小任务 | 完成本分支 PR 与合并；之后真实 AI canary 仍需显式确认 DashScope 密钥和额度 |
+| 下一小任务 | 真实 AI canary；执行前仍需显式确认 DashScope 密钥、额度和后端状态 |
 
 ### 状态可信度顺序
 
@@ -167,7 +167,7 @@ MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个�
 3. 已通过验收脚本为每个成功 Diff 录入 manifest 人工标准答案，不复制完整源码到评测表，并完成幂等重跑和全字段回读。
 4. 已让两个 AI 创建入口接收预期 Diff ID/revision/attemptKey，并在任何模型调用前由服务端拒绝过期或漂移输入。
 5. 已实现受控 A/B 执行器：全批零模型预检、每项目 FIXED→评测→AGENT→评测、精确响应丢失恢复、失败后停止继续消耗额度，以及 8 项总体报告。
-6. 已使用 Mock/Fake 验证正常、漂移、失败、并发归属、恢复和脱敏路径，完成 V15 真实 MySQL 验收以及后端 120 项、前端 37 项、Benchmark Node 48 项和 Vue 生产构建；下一步提交 PR，再确认模型密钥和额度后运行 1 个真实 canary。通过后才在相同项目、revision、Diff、模型配置和数据集条件下完成 8 组真实 A/B。两条路径可以使用不同 Prompt 和检索流程，但必须冻结并分别记录各自版本。
+6. 已使用 Mock/Fake 验证正常、漂移、失败、并发归属、恢复和脱敏路径，完成 V19 真实 MySQL 验收以及后端 142 项、前端 47 项、Benchmark Node 48 项和 Vue 生产构建；源码结构版本功能已通过 PR #25 合并。下一步确认模型密钥、额度和后端状态后运行 1 个真实 canary。通过后才在相同项目、revision、Diff、模型配置和数据集条件下完成 8 组真实 A/B。两条路径可以使用不同 Prompt 和检索流程，但必须冻结并分别记录各自版本。
 7. 总体质量使用累计 TP/FP/FN 计算微平均 Precision/Recall/F1，不直接平均每个场景 F1；同时记录 Token、延迟、Tool 成功率和 manifest/revisions 哈希。
 8. 人工复核 `partialMetrics` 中不能自动匹配的 Finding，并记录失败原因；之后才允许按失败案例调整 Tool、检索和 Prompt 版本。
 
