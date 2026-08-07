@@ -11,6 +11,8 @@
 | Benchmark tools | Node 22 | 两个 Node test 文件 | 真实样本验收器与 A/B 执行器的确定性行为 |
 
 三路任务并行执行，单路失败能直接显示责任范围。相同分支推送新提交时取消旧运行，避免无意义消耗 GitHub Actions 分钟数。
+官方 Action 使用当前稳定大版本 `actions/checkout@v7`、`actions/setup-node@v7` 和
+`actions/setup-java@v5`，避免旧 Action 内置 Node 20 运行时退役后失效。
 
 ## 2. 安全边界
 

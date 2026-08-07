@@ -2,6 +2,13 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-07：消除 GitHub Actions Node 20 运行时告警
+
+- PR #28 合并后的 `main` 三路 CI 全绿，但日志显示 `checkout@v4` 与 `setup-node@v4` 仍依赖已退役的 Node 20 Action 运行时。
+- 查询官方最新稳定版本后，将 `actions/checkout`、`actions/setup-node` 升至 v7，将 `actions/setup-java` 升至 v5。
+- 业务测试使用的 Node 22 和 Java 21 不变；本次只升级 Action 自身运行时，避免未来 GitHub 取消兼容后 CI 失效。
+- 该维护修复使用独立分支和 PR，必须以远端三路检查通过且不再出现 Node 20 告警为完成标准。
+
 ## 2026-08-07：修复 CI 暴露的 H2 测试数据串扰
 
 - GitHub Actions 的 Java 21 后端任务首次运行失败，而本机 Java 23 全量测试通过；失败集中在项目表空库和单条写入断言。
