@@ -42,6 +42,8 @@ logging:
   level:
     root: info
     com.devmate: info
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%X{requestId:-system}] [%t] %logger{36} : %m%n%wEx"
 
 devmate:
   security:
