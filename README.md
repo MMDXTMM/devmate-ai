@@ -1,5 +1,7 @@
 # DevMate AI
 
+[![CI](https://github.com/MMDXTMM/devmate-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/MMDXTMM/devmate-ai/actions/workflows/ci.yml)
+
 DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
 
 当前已经完成基础工程、登录认证与项目隔离、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图、带固定评测集的关键词/向量/关系图混合 RAG、证据约束的结构化 AI 审查、受控 Tool Calling Agent、开发者 Finding 反馈闭环，以及固定缺陷标准答案与评测运行模型。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
@@ -52,6 +54,7 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - `DEFECT/CLEAN` 固定评测用例、FIXED/AGENT 执行模式快照与幂等运行
 - TP/FP/FN、Precision/Recall/F1、Token、耗时和 Tool 成功率评测
 - 健康检查接口及基础测试
+- GitHub Actions 后端、前端和 Benchmark 三路持续集成
 
 ## 快速启动
 
@@ -137,6 +140,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [工程开发与运维规范](docs/ENGINEERING_STANDARDS.md)
 - [运维手册](docs/OPERATIONS_RUNBOOK.md)
 - [HTTP 请求追踪与日志关联](docs/REQUEST_CORRELATION.md)
+- [持续集成与远端质量门禁](docs/CONTINUOUS_INTEGRATION.md)
 - [项目总设计](docs/PROJECT_BLUEPRINT.md)
 - [分阶段开发路线](docs/DEVELOPMENT_ROADMAP.md)
 - [面试导向学习与开发路线](docs/LEARNING_ROADMAP.md)
