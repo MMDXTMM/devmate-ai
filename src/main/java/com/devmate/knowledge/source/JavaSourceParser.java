@@ -7,6 +7,7 @@ import com.sun.source.tree.DoWhileLoopTree;
 import com.sun.source.tree.EnhancedForLoopTree;
 import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.MethodInvocationTree;
@@ -86,6 +87,7 @@ public class JavaSourceParser {
                     source,
                     packageName
             );
+            scanner.addFileHeaderChunks();
             scanner.scan(unit, null);
             return new ParsedSourceContent(packageName, scanner.chunks(), scanner.references());
         } catch (IOException exception) {
@@ -172,6 +174,21 @@ public class JavaSourceParser {
             this.positions = positions;
             this.source = source;
             this.packageName = packageName;
+        }
+
+        private void addFileHeaderChunks() {
+            if (unit.getPackage() != null) {
+                addChunk("FILE_HEADER", "package " + packageName, List.of(), unit.getPackage());
+            }
+            for (ImportTree importTree : unit.getImports()) {
+                String prefix = importTree.isStatic() ? "import static " : "import ";
+                addChunk(
+                        "IMPORT",
+                        prefix + importTree.getQualifiedIdentifier(),
+                        List.of(),
+                        importTree
+                );
+            }
         }
 
         @Override

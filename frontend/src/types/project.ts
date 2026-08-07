@@ -79,6 +79,8 @@ export interface SourceDocument {
 }
 
 export type SourceSymbolType =
+  | 'FILE_HEADER'
+  | 'IMPORT'
   | 'CLASS'
   | 'CONSTRUCTOR'
   | 'METHOD'

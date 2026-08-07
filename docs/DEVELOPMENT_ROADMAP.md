@@ -250,6 +250,7 @@
 - 已建立零第三方依赖的真实导入/Diff 验收工具，核对项目配置、任务状态、revision、唯一 Java `MODIFY`、双方变更行、覆盖计数和 candidate 符号证据。
 - H2 与真实公开 GitHub 仓库全量实跑为 `8 PASS / 6 FULL / 2 PARTIAL / 0 SKIPPED`；28 项 Node 回归覆盖正常、契约漂移、证据缺失、无副作用失败、错误响应、单场景重试、最近成功导入/Diff 复核及标准答案幂等同步。
 - 两个 `PARTIAL` 分别来自 TARGET 新增 import 和 BASE 删除 import 未进入当前 AST Chunk；类、方法和缺陷行仍有真实证据，后续单独设计 `FILE_HEADER/IMPORT` Chunk。
+- 已新增精确 `FILE_HEADER` 包声明与逐条 `IMPORT` Chunk，并覆盖 TARGET 持久化、BASE Git Blob 临时解析和 static import；全新 H2 对公开 8 场景复验提升为 `8 PASS / 8 FULL / 0 PARTIAL`，没有修改覆盖统计口径或历史 Diff。
 - GitHub 临时网络错误可单场景排障重试；`--reuse-imports` 要求所有最近任务成功后再做完整 8 场景 Diff 复核，避免重新克隆让已成功分支再次暴露于网络抖动。最终报告明确记录导入与 Diff 模式，本轮没有调用模型。
 - 隔离 MySQL 真实持久化验收同样为 `8 PASS / 6 FULL / 2 PARTIAL`：8 个项目 `READY`，8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务已落库；首次 GitHub 瞬时失败保留为 1 个可观察失败任务，随后重试成功。系统安装的 3306 未监听只作为本机运维问题继续处理。
 - 已强化人工标准答案写入约束：DEFECT 文件必须唯一属于对应 Diff 的目标版本，请求范围、目标变更行和带正数 Chunk ID 的 TARGET 符号必须形成三重交集；BASE-only、其他 Diff 文件和无交集位置会被拒绝。

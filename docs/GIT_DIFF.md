@@ -45,6 +45,7 @@ JGit 识别 ADD/MODIFY/DELETE/RENAME/COPY 和基准/目标 Edit 行区间
 - Git导入深度从 1 提升为 50，用于读取近期提交历史；更早提交需要重新获取或增加深度。
 - 目标版本新增和修改行映射到持久化知识块，证据侧标记为 `TARGET`。
 - 删除行读取基准提交中的 Git Blob 并在内存解析，证据侧标记为 `BASE`；不会把旧源码重复持久化。
+- 包声明使用精确 `FILE_HEADER` Chunk，每条普通或 static import 使用独立 `IMPORT` Chunk；只覆盖真实语法行，不通过扩大类范围伪造完整覆盖。
 - JGit 已启用 Rename 检测，并覆盖完全重命名和带内容修改的相似度重命名用例。
 - Git Blob 读取沿用单文件大小限制，避免旧版本大文件绕过导入安全边界。
 - 当前输出是覆盖报告，不是静态分析结论或 AI Finding。

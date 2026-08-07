@@ -131,7 +131,7 @@ watch(
         </aside>
         <div class="source-symbols">
           <div v-if="loadingSymbols" class="source-loading">正在读取符号…</div>
-          <div v-else-if="symbols.length === 0" class="source-empty compact">该文件没有可识别的类型或方法</div>
+          <div v-else-if="symbols.length === 0" class="source-empty compact">该文件没有可识别的结构项</div>
           <template v-else>
             <article v-for="symbol in symbols" :key="symbol.id">
               <div>

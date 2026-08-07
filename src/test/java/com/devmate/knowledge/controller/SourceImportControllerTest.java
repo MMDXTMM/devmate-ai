@@ -107,7 +107,10 @@ class SourceImportControllerTest {
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, project.id()))).isEqualTo(2);
         assertThat(chunkMapper.selectCount(Wrappers.lambdaQuery(KnowledgeChunk.class)
-                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(5);
+                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(7);
+        assertThat(chunkMapper.selectCount(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                .eq(KnowledgeChunk::getProjectId, project.id())
+                .eq(KnowledgeChunk::getChunkType, "FILE_HEADER"))).isEqualTo(2);
         CodeReference reference = referenceMapper.selectOne(Wrappers.lambdaQuery(CodeReference.class)
                 .eq(CodeReference::getProjectId, project.id())
                 .eq(CodeReference::getReferenceKind, "METHOD_CALL")
@@ -128,7 +131,7 @@ class SourceImportControllerTest {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.id()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.processedChunks").value(5));
+                .andExpect(jsonPath("$.data.processedChunks").value(7));
         Set<Long> originalChunkIds = chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
                         .eq(KnowledgeChunk::getProjectId, project.id()))
                 .stream()
@@ -147,7 +150,7 @@ class SourceImportControllerTest {
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, project.id()))).isEqualTo(2);
         assertThat(chunkMapper.selectCount(Wrappers.lambdaQuery(KnowledgeChunk.class)
-                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(5);
+                .eq(KnowledgeChunk::getProjectId, project.id()))).isEqualTo(7);
         assertThat(chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
                         .eq(KnowledgeChunk::getProjectId, project.id())))
                 .extracting(KnowledgeChunk::getId)
@@ -155,7 +158,7 @@ class SourceImportControllerTest {
         assertThat(chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
                         .eq(KnowledgeChunk::getProjectId, project.id())))
                 .allSatisfy(chunk -> assertThat(chunk.getVectorId()).isNotBlank());
-        assertThat(vectorMapper.selectCount(null)).isEqualTo(5);
+        assertThat(vectorMapper.selectCount(null)).isEqualTo(7);
         assertThat(referenceMapper.selectCount(Wrappers.lambdaQuery(CodeReference.class)
                 .eq(CodeReference::getProjectId, project.id()))).isEqualTo(1);
         assertThat(indexTaskMapper.selectCount(Wrappers.lambdaQuery(IndexTask.class)
@@ -351,13 +354,15 @@ class SourceImportControllerTest {
                         appDocument.getId()
                 ))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(3))
-                .andExpect(jsonPath("$.data[0].chunkType").value("CLASS"))
-                .andExpect(jsonPath("$.data[0].symbolName").value("com.example.App"))
-                .andExpect(jsonPath("$.data[0].annotations[0]").value("Deprecated"))
-                .andExpect(jsonPath("$.data[1].chunkType").value("METHOD"))
-                .andExpect(jsonPath("$.data[1].symbolName").value("com.example.App#run()"))
-                .andExpect(jsonPath("$.data[1].startLine").isNumber());
+                .andExpect(jsonPath("$.data.length()").value(4))
+                .andExpect(jsonPath("$.data[0].chunkType").value("FILE_HEADER"))
+                .andExpect(jsonPath("$.data[0].symbolName").value("package com.example"))
+                .andExpect(jsonPath("$.data[1].chunkType").value("CLASS"))
+                .andExpect(jsonPath("$.data[1].symbolName").value("com.example.App"))
+                .andExpect(jsonPath("$.data[1].annotations[0]").value("Deprecated"))
+                .andExpect(jsonPath("$.data[2].chunkType").value("METHOD"))
+                .andExpect(jsonPath("$.data[2].symbolName").value("com.example.App#run()"))
+                .andExpect(jsonPath("$.data[2].startLine").isNumber());
 
         mockMvc.perform(get("/api/projects/{projectId}/sources/references", project.id()))
                 .andExpect(status().isOk())
