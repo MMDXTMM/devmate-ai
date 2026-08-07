@@ -2,6 +2,7 @@ package com.devmate.user.controller;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.devmate.common.web.RequestCorrelationFilter;
 import com.devmate.user.entity.AppUser;
 import com.devmate.user.mapper.AppUserMapper;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
@@ -95,8 +97,13 @@ class AuthenticationAndProjectAccessTest {
                 .withExpiresAt(Instant.now().minusSeconds(60))
                 .sign(Algorithm.HMAC256("test-jwt-secret-with-at-least-32-characters"));
 
-        mockMvc.perform(get("/api/projects"))
+        mockMvc.perform(get("/api/projects")
+                        .header(RequestCorrelationFilter.REQUEST_ID_HEADER, "unauthorized-case-1"))
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().string(
+                        RequestCorrelationFilter.REQUEST_ID_HEADER,
+                        "unauthorized-case-1"
+                ))
                 .andExpect(jsonPath("$.code").value(40100));
 
         mockMvc.perform(get("/api/projects")

@@ -117,6 +117,16 @@ npm run dev
 
 禁止把包含 Token、密码或私有源码的日志发送到公开 Issue 或提交到 Git。
 
+每个 HTTP 响应都返回 `X-Request-Id`。前端业务错误会显示合法的请求 ID；维护人员应先按该 ID 定位单次请求，再结合日志中的 `projectId/taskId/attemptKey` 跟踪跨请求任务。客户端 ID 只允许安全字符，非法值会由服务端替换，不能把任意用户输入直接作为日志字段。
+
+可以用以下方式验证响应关联，但不要把 Authorization 或密钥写进共享命令历史：
+
+```bash
+curl -i -H 'X-Request-Id: local-check-1' http://localhost:8080/api/health
+```
+
+完成日志中的 `outcome=FAILED` 表示过滤器链直接异常；此时 Servlet 状态可能尚未被异常处理器更新，不能只看状态码。请求结束会清理 MDC，若不同请求出现同一个非客户端 ID，应检查自定义线程或异步任务是否错误复制了上下文。
+
 ## 6. 数据库与备份
 
 - 结构变更前备份数据库，并在非生产环境验证恢复。

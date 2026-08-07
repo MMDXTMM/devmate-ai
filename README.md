@@ -14,6 +14,7 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - MySQL 运行配置模板
 - H2 零配置开发模式
 - 统一接口响应与全局异常处理
+- 安全 `X-Request-Id`、MDC 日志关联和前端错误定位
 - Spring Security、BCrypt、有期限 JWT、Vue 登录态和项目成员隔离
 - 项目创建、详情、分页筛选、修改和逻辑删除接口
 - HTTPS Git 仓库校验、指定分支浅克隆和 Java 文件安全扫描
@@ -135,6 +136,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [开发贡献检查清单](CONTRIBUTING.md)
 - [工程开发与运维规范](docs/ENGINEERING_STANDARDS.md)
 - [运维手册](docs/OPERATIONS_RUNBOOK.md)
+- [HTTP 请求追踪与日志关联](docs/REQUEST_CORRELATION.md)
 - [项目总设计](docs/PROJECT_BLUEPRINT.md)
 - [分阶段开发路线](docs/DEVELOPMENT_ROADMAP.md)
 - [面试导向学习与开发路线](docs/LEARNING_ROADMAP.md)
