@@ -148,7 +148,7 @@ curl -i -H 'X-Request-Id: local-check-1' http://localhost:8080/api/health
 
 ## 8. 发布与回滚
 
-发布前：测试、前端构建、数据库迁移检查、配置检查和备份全部通过。
+发布前：GitHub Actions 三路检查、数据库迁移检查、配置检查和备份全部通过。CI 使用 H2/Mock/Fake，涉及 MySQL 方言、外部 Git 或模型的版本仍需对应真实环境验收。
 
 回滚时区分：
 

@@ -26,6 +26,7 @@ npm run build
 - API 中的雪花 ID 仍以字符串返回前端。
 - 日志可以定位项目和任务，但不包含私有源码全文。
 - 文档和实际实现保持一致。
+- 推送后等待 GitHub Actions 的 Backend、Frontend 和 Benchmark tools 三路检查通过。
 
 ## Pull Request 描述
 
@@ -39,3 +40,5 @@ PR 至少说明：
 - 是否涉及数据库、配置、权限或密钥。
 
 一个 PR 只解决一个主题。格式化、重构和功能修改尽量分开，方便审查和回滚。
+
+CI 使用 Java 21、Node 22、锁定的 Maven/npm 依赖和最小只读权限。远端检查失败时先用相同命令本地复现；不能用反复重跑隐藏确定性失败。CI 的 H2/Mock/Fake 结果不代替真实 MySQL、Git 或模型验收。

@@ -2,6 +2,16 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-07：建立 GitHub Actions 三路持续集成
+
+- PR #27 自审时发现仓库没有任何远端检查，合并只能依赖本机测试报告，无法证明推送后的提交在干净 Linux 环境仍可构建。
+- 新增 Backend、Frontend 和 Benchmark tools 三个并行 Job，固定 Java 21 与 Node 22，分别执行 Maven 测试、锁定依赖的 Vue 测试/构建和 48 项确定性工具回归。
+- Workflow 同时覆盖 Pull Request 与 `main` 推送；同分支新提交取消旧运行，避免浪费 Actions 分钟数。
+- 权限限制为 `contents: read`，不使用 `pull_request_target`，不注入 MySQL、Git 或模型密钥，避免不可信 PR 获得高权限或触发付费调用。
+- CI 的 H2/Mock/Fake 结果只证明工程回归，MySQL 方言、真实 Git 网络、模型额度和效果继续单独验收。
+- Docker/Nginx 部署未在本任务实现：当前开发机没有可用 Docker/Compose 运行时，不能只写静态文件后宣称部署闭环完成。
+- 详细边界和面试问题见 `CONTINUOUS_INTEGRATION.md`。
+
 ## 2026-08-07：补齐 HTTP 请求追踪与前后端错误关联
 
 - 运维手册此前要求使用 `requestId/projectId/taskId` 排障，但应用没有生成或传播 HTTP 请求 ID，页面错误无法精确对应后端日志。

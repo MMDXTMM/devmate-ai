@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 开发基线 | PR #25，`main@21e2ee6` |
-| 本轮交付 | PR #25 已合并：V19 结构版本、显式安全重建与并发门禁 |
+| 开发基线 | PR #27，`main@7585747` |
+| 本轮交付 | PR #27 已合并：安全请求 ID、MDC 日志关联和前端错误定位；`codex/github-actions-ci` 正在补远端 CI |
 | 数据库 | H2 已从空库迁移到 V19；隔离 MySQL 26.7 已完成历史 V18→V19 与全新 V1→V19 |
-| 测试基线 | 后端 142 项、前端 47 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
-| 精确暂停点 | 同 revision 旧结构不再被隐式覆盖；已有 Diff、向量或评测证据时重建返回 409 并保留 Chunk；真实模型仍未调用 |
-| 下一小任务 | 真实 AI canary；执行前仍需显式确认 DashScope 密钥、额度和后端状态 |
+| 测试基线 | 后端 146 项、前端 50 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
+| 精确暂停点 | HTTP 错误已可按 requestId 对应日志；真实模型仍未调用，Docker 运行时不可用 |
+| 下一小任务 | 完成三路 CI 的真实 GitHub checks 与合并；真实 AI canary 仍需显式确认密钥、额度和后端状态 |
 
 ### 状态可信度顺序
 
