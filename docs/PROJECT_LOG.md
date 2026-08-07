@@ -2,6 +2,16 @@
 
 本文件记录影响项目定位、架构、开发顺序或简历目标的重要变化。普通代码修改不需要逐条记录。
 
+## 2026-08-07：用精确文件头 Chunk 消除真实 Diff 覆盖缺口
+
+- 公开评测首次得到 `6 FULL / 2 PARTIAL` 后，没有修改覆盖统计口径；定位到 `case-005` 的 TARGET 新增 import 和 `case-008` 的 BASE 删除 import 位于原 class/method Chunk 之外。
+- Java AST 解析新增精确 `FILE_HEADER` 包声明 Chunk，并为每条普通或 static import 生成独立 `IMPORT` Chunk；不把类范围向上扩大，也不把空白行伪装成结构证据。
+- TARGET 侧沿用持久化 `knowledge_chunk` 映射，BASE 侧沿用 Git Blob 内存解析；新增测试分别验证两侧 import 行都能形成 `FULL`，且 BASE 证据继续不伪造 Chunk ID。
+- 同步更新 Vue 的 `SourceSymbolType`，源码结构页可以展示新的结构项；同 revision 重导仍保持 Document、Chunk 和 Vector ID 幂等。
+- 定向测试曾暴露旧测试把 Chunk 总数写死为 5；确认两个同 package 文件不会导致引用绑定冲突后，将真实新总数更新为 7，并保留显式 `FILE_HEADER` 数量断言。
+- 全量验证通过后端 133 项、前端 46 项、Benchmark Node 48 项和 Vue 生产构建。
+- 使用全新 H2 V1-V18 和全新 MySQL 26.7 V1-V18，分别对真实公开 GitHub 8 个分支重新执行导入和默认 Diff；两次均为 `8 PASS / 8 FULL / 0 PARTIAL / 0 SKIPPED`，无警告且未调用 Embedding 或模型。新 MySQL schema 持久化 8 个项目、8 个文档、62 个 Chunk（8 个 `FILE_HEADER`、8 个 `IMPORT`）和 8 个成功 Diff；此前 MySQL 历史库的旧 Diff 仍是 `6 FULL / 2 PARTIAL`，本轮没有篡改历史证据。
+
 ## 2026-08-06：完成 JWT 登录与项目级访问隔离
 
 - 接入 Spring Security、BCrypt 和 Auth0 JWT，提供注册、登录和当前用户接口；JWT 只保存用户 ID、用户名和期限，项目权限继续读取数据库事实。

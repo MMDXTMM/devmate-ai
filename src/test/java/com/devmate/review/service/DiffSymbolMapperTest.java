@@ -24,6 +24,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -103,6 +104,86 @@ class DiffSymbolMapperTest {
         verifyNoInteractions(chunkMapper);
     }
 
+    @Test
+    void mapsPersistedTargetImportAsFullCoverage() {
+        KnowledgeDocument document = document(13L, TARGET_PATH);
+        KnowledgeChunk importChunk = chunk(
+                22L,
+                document.getId(),
+                "IMPORT",
+                "import java.util.concurrent.ConcurrentHashMap",
+                3,
+                3
+        );
+        given(documentMapper.selectOne(any())).willReturn(document);
+        given(chunkMapper.selectList(any())).willReturn(List.of(importChunk));
+
+        MappedReviewFile result = mapper().map(
+                1L,
+                Path.of("/tmp/unused-review-repository"),
+                "b".repeat(40),
+                TARGET_REVISION,
+                new GitChangedFile(
+                        TARGET_PATH,
+                        TARGET_PATH,
+                        "MODIFY",
+                        1,
+                        0,
+                        List.of(),
+                        List.of(new LineRange(3, 3))
+                )
+        );
+
+        assertThat(result.coverageStatus()).isEqualTo("FULL");
+        assertThat(result.mappedSymbols()).singleElement().satisfies(symbol -> {
+            assertThat(symbol.chunkId()).isEqualTo(importChunk.getId());
+            assertThat(symbol.revisionSide()).isEqualTo("TARGET");
+            assertThat(symbol.chunkType()).isEqualTo("IMPORT");
+            assertThat(symbol.startLine()).isEqualTo(3);
+            assertThat(symbol.endLine()).isEqualTo(3);
+        });
+    }
+
+    @Test
+    void mapsTransientBaseImportAsFullCoverage() {
+        String baseSource = """
+                package com.example;
+
+                import java.util.concurrent.ConcurrentHashMap;
+
+                class Foo {}
+                """;
+        given(revisionSourceReader.read(any(), any(), any()))
+                .willReturn(Optional.of(baseSource));
+        given(sourceParser.parseContent(TARGET_PATH, baseSource))
+                .willReturn(new JavaSourceParser().parseContent(TARGET_PATH, baseSource));
+
+        MappedReviewFile result = mapper().map(
+                1L,
+                Path.of("/tmp/unused-review-repository"),
+                "b".repeat(40),
+                TARGET_REVISION,
+                new GitChangedFile(
+                        TARGET_PATH,
+                        TARGET_PATH,
+                        "MODIFY",
+                        0,
+                        1,
+                        List.of(new LineRange(3, 3)),
+                        List.of()
+                )
+        );
+
+        assertThat(result.coverageStatus()).isEqualTo("FULL");
+        assertThat(result.mappedSymbols()).singleElement().satisfies(symbol -> {
+            assertThat(symbol.chunkId()).isNull();
+            assertThat(symbol.revisionSide()).isEqualTo("BASE");
+            assertThat(symbol.chunkType()).isEqualTo("IMPORT");
+            assertThat(symbol.startLine()).isEqualTo(3);
+            assertThat(symbol.endLine()).isEqualTo(3);
+        });
+    }
+
     private DiffSymbolMapper mapper() {
         return new DiffSymbolMapper(documentMapper, chunkMapper, revisionSourceReader, sourceParser);
     }
@@ -127,14 +208,25 @@ class DiffSymbolMapperTest {
     }
 
     private KnowledgeChunk chunk(Long id, Long documentId, String symbolName) {
+        return chunk(id, documentId, "METHOD", symbolName, 8, 12);
+    }
+
+    private KnowledgeChunk chunk(
+            Long id,
+            Long documentId,
+            String chunkType,
+            String symbolName,
+            int startLine,
+            int endLine
+    ) {
         KnowledgeChunk value = new KnowledgeChunk();
         value.setId(id);
         value.setDocumentId(documentId);
         value.setChunkIndex(0);
-        value.setChunkType("METHOD");
+        value.setChunkType(chunkType);
         value.setSymbolName(symbolName);
-        value.setStartLine(8);
-        value.setEndLine(12);
+        value.setStartLine(startLine);
+        value.setEndLine(endLine);
         return value;
     }
 

@@ -1,6 +1,6 @@
 # DevMate AI 跨账号开发交接
 
-更新时间：2026-08-06
+更新时间：2026-08-07
 
 本文件用于在 Codex 账号、会话或电脑切换后快速恢复开发上下文。账号切换时只执行一次 [历史恢复流程](ACCOUNT_HANDOFF_PROMPTS.md)，恢复完成后不重复粘贴提示词。
 
@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 开发基线 | PR #22，`main@3ca3959` |
-| 本轮交付 | PR #23（`codex/auth-project-access`）：JWT 登录、Vue 会话、项目成员隔离和 429 可读失败处理 |
+| 开发基线 | PR #23，`main@a469852` |
+| 本轮交付 | PR #24（`codex/import-header-chunks`）：精确 `FILE_HEADER/IMPORT` Chunk 与两侧 Diff 映射 |
 | 数据库 | H2 已从空库迁移到 V18；隔离 MySQL 26.7 已完成 V17→V18，健康检查与历史数据回读通过 |
-| 测试基线 | 后端 130 项、前端 46 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
-| 精确暂停点 | 认证与项目隔离闭环完成并通过隔离 MySQL；尚未执行真实 FIXED/AGENT canary，也未产生准确率结论 |
-| 下一小任务 | 以项目理解和面试讲解为主，从“3 分钟项目介绍 → 认证与权限闭环 → 源码审查闭环”逐步训练；真实 AI canary 继续等待显式额度确认 |
+| 测试基线 | 后端 133 项、前端 46 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
+| 精确暂停点 | 全新 H2 与全新 MySQL + 公开 Git 8 场景均从 `6 FULL / 2 PARTIAL` 提升到 `8 FULL / 0 PARTIAL`；旧 MySQL 历史 Diff 保留，真实模型仍未调用 |
+| 下一小任务 | 设计解析器版本标识与显式重建策略，让未来 AST 规则升级可以受控更新旧项目；真实 AI canary 仍需显式确认 DashScope 密钥和额度 |
 
 ### 状态可信度顺序
 
@@ -73,7 +73,7 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | AI 审查 | 完成工程闭环 | DashScope JSON 输出、Chunk 白名单、结构化 Finding、任务审计 |
 | Tool Calling Agent | 完成工程闭环 | 四个只读 Tool、Qwen 多轮协议、限制与审计、Vue 调用链 |
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
-| 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史、真实 Diff/标准答案与受控执行器 | 8 PASS、6 FULL、2 PARTIAL；7 条 `DEFECT`、1 条 `CLEAN` 已落库，真实 A/B 待完成 |
+| 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史、真实 Diff/标准答案与受控执行器 | 新解析器 H2/MySQL 实跑均为 8 PASS、8 FULL；历史库已落库 7 条 `DEFECT`、1 条 `CLEAN`，真实 A/B 待完成 |
 
 当前代码数据库版本为 V18。H2 已验证从空库执行 V1-V18；本机此前完成过 MySQL V12→V13 和原项目读取。2026-08-06 另用隔离空库 MySQL 26.7 完成 V1-V13 与 8 场景真实持久化验收：25 张表、8 个 `READY` 项目、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。随后同一数据目录依次成功执行 V13→V14→V15→V16→V17→V18，应用健康为 `UP`。V15 的 `attempt_key`、V16 的向量复用字段与索引、V17 的 `reused_files` 以及 V18 的六个阶段耗时列均存在；9 条历史导入任务安全回填为 0，8 个项目、16 个成功 Diff 与 46 个 Chunk 保持可读。历史库没有 AI 审查任务或向量，因此没有相关旧行回填问题。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
 
@@ -136,9 +136,9 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 
 ## 5. 当前精确暂停点
 
-V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1` 的 8 个 base/candidate 样本已发布，并分别使用 H2 与隔离 MySQL 26.7 完成真实公开 GitHub 导入和默认 Diff：8 个 import/project/candidate revision 和 Diff base/target revision 均与清单一致，两次结果均为 6 个 `FULL`、2 个 `PARTIAL`、0 个 `SKIPPED`。
+V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1` 的 8 个 base/candidate 样本已发布。首次 H2 与隔离 MySQL 26.7 真实导入和默认 Diff 均为 6 个 `FULL`、2 个 `PARTIAL`、0 个 `SKIPPED`；`case-005` 的 TARGET 新增 import 和 `case-008` 的 BASE 删除 import 位于 class/method Chunk 之外。
 
-`case-005` 是 TARGET 新增 import、`case-008` 是 BASE 删除 import 未进入当前 class/method Chunk。两者的业务方法和缺陷目标行仍有映射证据；后续应设计 `FILE_HEADER/IMPORT` Chunk，不能篡改覆盖状态。真实运行发生过 GitHub 瞬时克隆失败；失败分支单独恢复成功后，使用 `--reuse-imports` 要求 8 个最近任务全部成功并重新执行完整 Diff，最终全量复核通过。
+2026-08-07 已新增精确 `FILE_HEADER` 包声明和逐条 `IMPORT` Chunk，TARGET 使用持久化 Chunk，BASE 使用 Git Blob 内存解析。全新 H2 V1-V18 与全新 MySQL 26.7 V1-V18 对同一公开仓库分别完整运行，均得到 `8 PASS / 8 FULL / 0 PARTIAL / 0 SKIPPED` 且无警告，没有调用 Embedding 或模型。新 MySQL schema 保存 8 个项目、8 个文档、62 个 Chunk（8 个 `FILE_HEADER`、8 个 `IMPORT`）和 8 个成功 Diff。此前 MySQL 历史 Diff 继续保留旧解析结果，未为了数字重写历史证据；相同 revision 的幂等导入也不会破坏已有 Chunk/Vector ID。
 
 MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务；首次瞬时网络失败保留 1 条 `FAILED` 导入记录，重试后完整复核通过。标准答案创建强制校验目标 Diff 文件、目标变更行和持久化 TARGET Chunk 三重交集。manifest 已向对应 8 个 Diff 录入 7 条 `DEFECT` 和 1 条 `CLEAN`，首次同步为 `8 created / 8 verified`，立即重跑为 `0 created / 8 reused / 8 verified`；尚未调用 Embedding、FIXED、AGENT 或真实模型。
 

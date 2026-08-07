@@ -48,20 +48,60 @@ class JavaSourceParserTest {
         assertThat(parsed.chunks())
                 .extracting(ParsedSourceChunk::symbolName)
                 .containsExactly(
+                        "package com.example.review",
                         "com.example.review.ReviewService",
                         "com.example.review.ReviewService#ReviewService()",
                         "com.example.review.ReviewService#toString()",
                         "com.example.review.ReviewService.Result",
                         "com.example.review.ReviewService.Result#complete(int,String)"
                 );
-        assertThat(parsed.chunks().getFirst().annotations()).containsExactly("Deprecated");
-        assertThat(parsed.chunks().get(2).annotations()).containsExactly("Override");
-        assertThat(parsed.chunks().get(2).startLine()).isEqualTo(9);
-        assertThat(parsed.chunks().get(2).endLine()).isEqualTo(12);
+        assertThat(parsed.chunks().get(1).annotations()).containsExactly("Deprecated");
+        assertThat(parsed.chunks().get(3).annotations()).containsExactly("Override");
+        assertThat(parsed.chunks().get(3).startLine()).isEqualTo(9);
+        assertThat(parsed.chunks().get(3).endLine()).isEqualTo(12);
         assertThat(parsed.chunks()).allSatisfy(chunk -> {
             assertThat(chunk.content()).isNotBlank();
             assertThat(chunk.contentHash()).hasSize(64);
             assertThat(chunk.endLine()).isGreaterThanOrEqualTo(chunk.startLine());
+        });
+    }
+
+    @Test
+    void createsPrecisePackageAndImportChunks() {
+        ParsedSourceContent parsed = parser.parseContent("ReviewService.java", """
+                package com.example.review;
+
+                import java.util.List;
+                import static java.util.Collections.emptyList;
+
+                class ReviewService {}
+                """);
+
+        assertThat(parsed.chunks())
+                .extracting(ParsedSourceChunk::chunkType)
+                .containsExactly("FILE_HEADER", "IMPORT", "IMPORT", "CLASS");
+        assertThat(parsed.chunks())
+                .extracting(ParsedSourceChunk::symbolName)
+                .containsExactly(
+                        "package com.example.review",
+                        "import java.util.List",
+                        "import static java.util.Collections.emptyList",
+                        "com.example.review.ReviewService"
+                );
+        assertThat(parsed.chunks().get(0)).satisfies(chunk -> {
+            assertThat(chunk.content()).isEqualTo("package com.example.review;");
+            assertThat(chunk.startLine()).isEqualTo(1);
+            assertThat(chunk.endLine()).isEqualTo(1);
+        });
+        assertThat(parsed.chunks().get(1)).satisfies(chunk -> {
+            assertThat(chunk.content()).isEqualTo("import java.util.List;");
+            assertThat(chunk.startLine()).isEqualTo(3);
+            assertThat(chunk.endLine()).isEqualTo(3);
+        });
+        assertThat(parsed.chunks().get(2)).satisfies(chunk -> {
+            assertThat(chunk.content()).isEqualTo("import static java.util.Collections.emptyList;");
+            assertThat(chunk.startLine()).isEqualTo(4);
+            assertThat(chunk.endLine()).isEqualTo(4);
         });
     }
 
