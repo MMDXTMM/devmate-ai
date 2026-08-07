@@ -12,6 +12,7 @@ public record SourceDocumentResponse(
         String fileType,
         String packageName,
         String revision,
+        String structureVersion,
         String status,
         Integer chunkCount
 ) {
@@ -24,6 +25,7 @@ public record SourceDocumentResponse(
                 document.getFileType(),
                 document.getPackageName(),
                 document.getRevision(),
+                document.getStructureVersion(),
                 document.getStatus(),
                 document.getChunkCount()
         );

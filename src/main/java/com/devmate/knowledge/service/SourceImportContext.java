@@ -5,6 +5,9 @@ public record SourceImportContext(
         Long taskId,
         String repositoryUrl,
         String branch,
-        String previousRevision
+        String previousRevision,
+        String previousStructureVersion,
+        String previousProjectStatus,
+        SourceImportMode mode
 ) {
 }

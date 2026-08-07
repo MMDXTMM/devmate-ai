@@ -11,6 +11,7 @@ public record IndexTaskResponse(
         @JsonSerialize(using = ToStringSerializer.class) Long projectId,
         String taskType,
         String revision,
+        String structureVersion,
         String status,
         Integer totalFiles,
         Integer processedFiles,
@@ -30,6 +31,7 @@ public record IndexTaskResponse(
     public static IndexTaskResponse from(IndexTask task) {
         return new IndexTaskResponse(
                 task.getId(), task.getProjectId(), task.getTaskType(), task.getRevision(),
+                task.getStructureVersion(),
                 task.getStatus(), task.getTotalFiles(), task.getProcessedFiles(),
                 task.getReusedFiles(), task.getFailedFiles(), task.getCloneDurationMs(),
                 task.getScanDurationMs(), task.getPlanDurationMs(), task.getParseDurationMs(),

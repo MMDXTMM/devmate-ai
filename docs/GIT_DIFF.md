@@ -32,6 +32,8 @@ JGit 识别 ADD/MODIFY/DELETE/RENAME/COPY 和基准/目标 Edit 行区间
 
 失败时任务进入 `FAILED`。Git读取和映射不放入长数据库事务。
 
+创建 Diff 的准备事务会锁定项目行并要求项目为 `READY`。源码重建先将项目切换为 `INDEXING`，因此不能在 Chunk 替换窗口内创建保存旧 Chunk ID 的新 Diff；已有 Diff 又会阻止同 revision 显式重建。历史 Diff 不随解析器升级自动改写。
+
 ## 覆盖状态
 
 - `FULL`：目标版本新增/修改行和基准版本删除行都已映射到 AST 符号；纯路径 Rename 没有代码行变化时也视为完整覆盖。

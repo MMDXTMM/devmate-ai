@@ -9,6 +9,7 @@ export interface Project {
   sourceLocation?: string
   defaultBranch?: string
   currentRevision?: string
+  currentStructureVersion?: string
   status: ProjectStatus
   createdAt: string
   updatedAt: string
@@ -47,8 +48,9 @@ export interface EmbeddingIndexTask {
 export interface IndexTask {
   id: string
   projectId: string
-  taskType: 'FULL' | 'INCREMENTAL'
+  taskType: 'FULL' | 'INCREMENTAL' | 'REBUILD'
   revision?: string
+  structureVersion: string
   status: IndexTaskStatus
   totalFiles: number
   processedFiles: number
@@ -74,6 +76,7 @@ export interface SourceDocument {
   fileType: 'JAVA' | 'YAML' | 'PROPERTIES' | 'SQL'
   packageName?: string
   revision: string
+  structureVersion: string
   status: 'PARSED' | 'FAILED'
   chunkCount: number
 }

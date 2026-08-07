@@ -12,12 +12,12 @@
 | 主仓库 | `https://github.com/MMDXTMM/devmate-ai` |
 | 公开评测仓库 | `https://github.com/MMDXTMM/devmate-review-benchmark` |
 | 权威分支 | 远端 `main` |
-| 开发基线 | PR #23，`main@a469852` |
-| 本轮交付 | PR #24（`codex/import-header-chunks`）：精确 `FILE_HEADER/IMPORT` Chunk 与两侧 Diff 映射 |
-| 数据库 | H2 已从空库迁移到 V18；隔离 MySQL 26.7 已完成 V17→V18，健康检查与历史数据回读通过 |
-| 测试基线 | 后端 133 项、前端 46 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
-| 精确暂停点 | 全新 H2 与全新 MySQL + 公开 Git 8 场景均从 `6 FULL / 2 PARTIAL` 提升到 `8 FULL / 0 PARTIAL`；旧 MySQL 历史 Diff 保留，真实模型仍未调用 |
-| 下一小任务 | 设计解析器版本标识与显式重建策略，让未来 AST 规则升级可以受控更新旧项目；真实 AI canary 仍需显式确认 DashScope 密钥和额度 |
+| 开发基线 | PR #24，`main@6a1d944` |
+| 本轮交付 | `codex/source-structure-versioning`：V19 结构版本、显式安全重建与并发门禁，待提交 PR |
+| 数据库 | H2 已从空库迁移到 V19；隔离 MySQL 26.7 已完成历史 V18→V19 与全新 V1→V19 |
+| 测试基线 | 后端 142 项、前端 47 项、Benchmark Node 48 项和 Vue 生产构建全部通过 |
+| 精确暂停点 | 同 revision 旧结构不再被隐式覆盖；已有 Diff、向量或评测证据时重建返回 409 并保留 Chunk；真实模型仍未调用 |
+| 下一小任务 | 完成本分支 PR 与合并；之后真实 AI canary 仍需显式确认 DashScope 密钥和额度 |
 
 ### 状态可信度顺序
 
@@ -75,7 +75,7 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
 | 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史、真实 Diff/标准答案与受控执行器 | 新解析器 H2/MySQL 实跑均为 8 PASS、8 FULL；历史库已落库 7 条 `DEFECT`、1 条 `CLEAN`，真实 A/B 待完成 |
 
-当前代码数据库版本为 V18。H2 已验证从空库执行 V1-V18；本机此前完成过 MySQL V12→V13 和原项目读取。2026-08-06 另用隔离空库 MySQL 26.7 完成 V1-V13 与 8 场景真实持久化验收：25 张表、8 个 `READY` 项目、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务。随后同一数据目录依次成功执行 V13→V14→V15→V16→V17→V18，应用健康为 `UP`。V15 的 `attempt_key`、V16 的向量复用字段与索引、V17 的 `reused_files` 以及 V18 的六个阶段耗时列均存在；9 条历史导入任务安全回填为 0，8 个项目、16 个成功 Diff 与 46 个 Chunk 保持可读。历史库没有 AI 审查任务或向量，因此没有相关旧行回填问题。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
+当前代码数据库版本为 V19。H2 已验证从空库执行 V1-V19。隔离 MySQL 26.7 已将包含真实公开样本数据的 V18 schema 原地迁移到 V19：8 个项目、8 个文档、62 个 Chunk 和 8 个成功 Diff 保持可读，已有项目、文档和导入任务的结构版本回填为 `source-structure-v1`。另一个全新 schema 已成功执行 V1-V19，创建 25 张表，应用健康为 `UP`。系统安装的 3306 服务仍未监听，作为独立本机运维问题处理。
 
 最终自动化基线在本轮全量测试后更新；不能用修改前的 `111/29/28` 代替当前证据。
 
@@ -139,6 +139,8 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 V13 的后端评测模型和 Vue 评测工作台均已完成。`known-defects-v1` 的 8 个 base/candidate 样本已发布。首次 H2 与隔离 MySQL 26.7 真实导入和默认 Diff 均为 6 个 `FULL`、2 个 `PARTIAL`、0 个 `SKIPPED`；`case-005` 的 TARGET 新增 import 和 `case-008` 的 BASE 删除 import 位于 class/method Chunk 之外。
 
 2026-08-07 已新增精确 `FILE_HEADER` 包声明和逐条 `IMPORT` Chunk，TARGET 使用持久化 Chunk，BASE 使用 Git Blob 内存解析。全新 H2 V1-V18 与全新 MySQL 26.7 V1-V18 对同一公开仓库分别完整运行，均得到 `8 PASS / 8 FULL / 0 PARTIAL / 0 SKIPPED` 且无警告，没有调用 Embedding 或模型。新 MySQL schema 保存 8 个项目、8 个文档、62 个 Chunk（8 个 `FILE_HEADER`、8 个 `IMPORT`）和 8 个成功 Diff。此前 MySQL 历史 Diff 继续保留旧解析结果，未为了数字重写历史证据；相同 revision 的幂等导入也不会破坏已有 Chunk/Vector ID。
+
+随后 V19 增加 `structure_version`，当前新解析版本为 `source-structure-v2`。普通导入只有版本一致时才能复用；新 revision 从旧版本升级时全量解析；同 revision 必须显式调用重建接口。重建前通过模块化检查器确认没有 Diff、向量或检索评测证据，并通过项目行锁与 `INDEXING` 状态阻止新任务穿透。冲突返回 409、项目恢复原状态、Chunk ID 保持不变。完整设计见 `SOURCE_STRUCTURE_VERSIONING.md`。
 
 MySQL 最终状态为 8 个项目 `READY`、8 个文档、46 个 Chunk、8 个成功导入任务和 16 个成功 Diff 任务；首次瞬时网络失败保留 1 条 `FAILED` 导入记录，重试后完整复核通过。标准答案创建强制校验目标 Diff 文件、目标变更行和持久化 TARGET Chunk 三重交集。manifest 已向对应 8 个 Diff 录入 7 条 `DEFECT` 和 1 条 `CLEAN`，首次同步为 `8 created / 8 verified`，立即重跑为 `0 created / 8 reused / 8 verified`；尚未调用 Embedding、FIXED、AGENT 或真实模型。
 

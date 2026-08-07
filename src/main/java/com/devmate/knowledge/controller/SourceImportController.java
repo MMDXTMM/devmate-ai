@@ -29,6 +29,13 @@ public class SourceImportController {
         return ApiResponse.success(sourceImportService.importSource(projectId));
     }
 
+    @PostMapping("/rebuild")
+    public ApiResponse<IndexTaskResponse> rebuildSource(
+            @Positive(message = "项目ID必须大于0") @PathVariable Long projectId
+    ) {
+        return ApiResponse.success(sourceImportService.rebuildSource(projectId));
+    }
+
     @GetMapping("/latest")
     public ApiResponse<IndexTaskResponse> getLatestTask(
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId

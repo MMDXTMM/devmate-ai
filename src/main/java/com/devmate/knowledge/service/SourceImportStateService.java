@@ -43,6 +43,7 @@ public class SourceImportStateService {
 
     private static final String TASK_TYPE_FULL = "FULL";
     private static final String TASK_TYPE_INCREMENTAL = "INCREMENTAL";
+    private static final String TASK_TYPE_REBUILD = "REBUILD";
     private static final String DOCUMENT_STATUS_PARSED = "PARSED";
 
     private final ProjectMapper projectMapper;
@@ -52,6 +53,7 @@ public class SourceImportStateService {
     private final CodeReferenceMapper referenceMapper;
     private final GitRepositoryValidator repositoryValidator;
     private final ObjectMapper objectMapper;
+    private final List<SourceStructureUsageChecker> usageCheckers;
 
     public SourceImportStateService(
             ProjectMapper projectMapper,
@@ -60,7 +62,8 @@ public class SourceImportStateService {
             KnowledgeChunkMapper chunkMapper,
             CodeReferenceMapper referenceMapper,
             GitRepositoryValidator repositoryValidator,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            List<SourceStructureUsageChecker> usageCheckers
     ) {
         this.projectMapper = projectMapper;
         this.indexTaskMapper = indexTaskMapper;
@@ -69,11 +72,12 @@ public class SourceImportStateService {
         this.referenceMapper = referenceMapper;
         this.repositoryValidator = repositoryValidator;
         this.objectMapper = objectMapper;
+        this.usageCheckers = List.copyOf(usageCheckers);
     }
 
     @Transactional
-    public SourceImportContext prepare(Long projectId) {
-        Project project = projectMapper.selectById(projectId);
+    public SourceImportContext prepare(Long projectId, SourceImportMode mode) {
+        Project project = projectMapper.selectByIdForUpdate(projectId);
         if (project == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
         }
@@ -83,7 +87,11 @@ public class SourceImportStateService {
         if (!StringUtils.hasText(project.getSourceLocation())) {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "Git项目必须填写仓库地址");
         }
+        if (mode == SourceImportMode.REBUILD && !StringUtils.hasText(project.getCurrentRevision())) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "项目尚无可重建的源码结构");
+        }
         repositoryValidator.validate(project.getSourceLocation());
+        usageCheckers.forEach(checker -> checker.assertImportAllowed(projectId));
 
         LocalDateTime now = LocalDateTime.now();
         int locked = projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
@@ -92,14 +100,17 @@ public class SourceImportStateService {
                 .set(Project::getStatus, ProjectStatus.INDEXING.name())
                 .set(Project::getUpdatedAt, now));
         if (locked != 1) {
-            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "项目源码正在导入，请勿重复提交");
+            throw new BusinessException(ErrorCode.CONFLICT, "项目源码正在导入，请勿重复提交");
         }
 
         IndexTask task = new IndexTask();
         task.setProjectId(projectId);
-        task.setTaskType(StringUtils.hasText(project.getCurrentRevision())
-                ? TASK_TYPE_INCREMENTAL
-                : TASK_TYPE_FULL);
+        task.setTaskType(mode == SourceImportMode.REBUILD
+                ? TASK_TYPE_REBUILD
+                : StringUtils.hasText(project.getCurrentRevision())
+                        ? TASK_TYPE_INCREMENTAL
+                        : TASK_TYPE_FULL);
+        task.setStructureVersion(SourceStructureVersion.CURRENT);
         task.setStatus(IndexTaskStatus.RUNNING.name());
         task.setTotalFiles(0);
         task.setProcessedFiles(0);
@@ -123,7 +134,10 @@ public class SourceImportStateService {
                 task.getId(),
                 project.getSourceLocation().trim(),
                 branch,
-                project.getCurrentRevision()
+                project.getCurrentRevision(),
+                project.getCurrentStructureVersion(),
+                project.getStatus(),
+                mode
         );
     }
 
@@ -132,7 +146,9 @@ public class SourceImportStateService {
             SourceImportContext context,
             List<ScannedSourceFile> scannedFiles
     ) {
-        if (!StringUtils.hasText(context.previousRevision())) {
+        if (context.mode() == SourceImportMode.REBUILD
+                || !StringUtils.hasText(context.previousRevision())
+                || !SourceStructureVersion.CURRENT.equals(context.previousStructureVersion())) {
             return new SourceImportPlan(scannedFiles, List.of());
         }
         Map<String, KnowledgeDocument> previousByPathHash = loadPreviousDocuments(
@@ -183,6 +199,9 @@ public class SourceImportStateService {
         if (files.size() != processedFiles + reusedFiles) {
             throw new IllegalArgumentException("源码导入文件计数不一致");
         }
+        if (context.mode() == SourceImportMode.REBUILD) {
+            assertRebuildAllowed(context, revision);
+        }
         LocalDateTime now = LocalDateTime.now();
         for (ParsedSourceFile file : files) {
             upsertDocument(context.projectId(), revision, file, now);
@@ -204,6 +223,7 @@ public class SourceImportStateService {
                 .eq(Project::getId, context.projectId())
                 .set(Project::getStatus, ProjectStatus.READY.name())
                 .set(Project::getCurrentRevision, revision)
+                .set(Project::getCurrentStructureVersion, SourceStructureVersion.CURRENT)
                 .set(Project::getLastIndexedAt, now)
                 .set(Project::getUpdatedAt, now));
         return IndexTaskResponse.from(task);
@@ -219,6 +239,7 @@ public class SourceImportStateService {
         long documentCount = documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
                 .eq(KnowledgeDocument::getProjectId, context.projectId())
                 .eq(KnowledgeDocument::getRevision, revision)
+                .eq(KnowledgeDocument::getStructureVersion, SourceStructureVersion.CURRENT)
                 .eq(KnowledgeDocument::getDeleted, 0));
         if (documentCount < 1 || documentCount > Integer.MAX_VALUE) {
             throw new IllegalStateException("当前版本缺少可复用的源码结构");
@@ -238,6 +259,7 @@ public class SourceImportStateService {
                 .eq(Project::getId, context.projectId())
                 .set(Project::getStatus, ProjectStatus.READY.name())
                 .set(Project::getCurrentRevision, revision)
+                .set(Project::getCurrentStructureVersion, SourceStructureVersion.CURRENT)
                 .set(Project::getLastIndexedAt, now)
                 .set(Project::getUpdatedAt, now));
         return IndexTaskResponse.from(task);
@@ -259,6 +281,35 @@ public class SourceImportStateService {
                 .eq(Project::getId, context.projectId())
                 .set(Project::getStatus, ProjectStatus.FAILED.name())
                 .set(Project::getUpdatedAt, now));
+    }
+
+    @Transactional
+    public void reject(SourceImportContext context, String errorMessage, SourceImportMetrics metrics) {
+        long persistStartedNanos = System.nanoTime();
+        LocalDateTime now = LocalDateTime.now();
+        IndexTask task = requireTask(context.taskId());
+        task.setStatus(IndexTaskStatus.FAILED.name());
+        task.setErrorMessage(truncate(errorMessage));
+        applyMetrics(task, metrics, SourceImportMetrics.elapsedMillis(persistStartedNanos));
+        task.setFinishedAt(now);
+        indexTaskMapper.updateById(task);
+
+        projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
+                .eq(Project::getId, context.projectId())
+                .eq(Project::getStatus, ProjectStatus.INDEXING.name())
+                .set(Project::getStatus, context.previousProjectStatus())
+                .set(Project::getUpdatedAt, now));
+    }
+
+    @Transactional(readOnly = true)
+    public void assertRebuildAllowed(SourceImportContext context, String revision) {
+        if (context.mode() != SourceImportMode.REBUILD) {
+            return;
+        }
+        if (!java.util.Objects.equals(context.previousRevision(), revision)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "重建只适用于当前revision，请使用普通导入处理新提交");
+        }
+        usageCheckers.forEach(checker -> checker.assertRebuildAllowed(context.projectId(), revision));
     }
 
     private void applyMetrics(IndexTask task, SourceImportMetrics metrics, long persistDurationMs) {
@@ -300,6 +351,7 @@ public class SourceImportStateService {
             result.addAll(documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
                     .eq(KnowledgeDocument::getProjectId, projectId)
                     .eq(KnowledgeDocument::getRevision, revision)
+                    .eq(KnowledgeDocument::getStructureVersion, SourceStructureVersion.CURRENT)
                     .eq(KnowledgeDocument::getDeleted, 0)
                     .in(KnowledgeDocument::getStatus, "PARSED", "INDEXED")
                     .in(KnowledgeDocument::getPathHash, batch)));
@@ -344,6 +396,7 @@ public class SourceImportStateService {
             ScannedSourceFile scanned
     ) {
         return previous != null
+                && SourceStructureVersion.CURRENT.equals(previous.getStructureVersion())
                 && previous.getFilePath().equals(scanned.relativePath())
                 && previous.getFileType().equals(scanned.fileType().name())
                 && previous.getContentHash().equals(scanned.contentHash());
@@ -450,6 +503,7 @@ public class SourceImportStateService {
         document.setFileType(file.fileType().name());
         document.setContentHash(file.contentHash());
         document.setRevision(revision);
+        document.setStructureVersion(SourceStructureVersion.CURRENT);
         document.setPackageName(parsedFile.packageName());
         document.setStatus(DOCUMENT_STATUS_PARSED);
         document.setChunkCount(parsedFile.chunks().size());

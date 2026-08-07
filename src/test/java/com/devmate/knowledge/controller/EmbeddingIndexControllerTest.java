@@ -170,6 +170,20 @@ class EmbeddingIndexControllerTest {
     }
 
     @Test
+    void rejectsEmbeddingIndexWhileSourceStructureIsBeingRebuilt() throws Exception {
+        project.setStatus("INDEXING");
+        projectMapper.updateById(project);
+
+        mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("项目源码结构未就绪，暂不能建立向量索引"));
+
+        org.assertj.core.api.Assertions.assertThat(taskMapper.selectCount(null)).isZero();
+        org.assertj.core.api.Assertions.assertThat(vectorMapper.selectCount(null)).isZero();
+    }
+
+    @Test
     void reusesOnlyUnchangedEmbeddingInputsAcrossRevisions() throws Exception {
         mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.getId()))
                 .andExpect(status().isOk())

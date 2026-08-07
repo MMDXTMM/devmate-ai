@@ -125,7 +125,8 @@ watch(
             <span>{{ document.filePath }}</span>
             <small>
               {{ documentKindLabel(document) }} ·
-              {{ document.chunkCount }} 个{{ documentItemLabel(document) }}
+              {{ document.chunkCount }} 个{{ documentItemLabel(document) }} ·
+              {{ document.structureVersion }}
             </small>
           </button>
         </aside>

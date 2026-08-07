@@ -18,6 +18,7 @@ public class Project {
     private String sourceLocation;
     private String defaultBranch;
     private String currentRevision;
+    private String currentStructureVersion;
     private String status;
     @TableLogic
     private Integer deleted;
@@ -89,6 +90,14 @@ public class Project {
         this.currentRevision = currentRevision;
     }
 
+    public String getCurrentStructureVersion() {
+        return currentStructureVersion;
+    }
+
+    public void setCurrentStructureVersion(String currentStructureVersion) {
+        this.currentStructureVersion = currentStructureVersion;
+    }
+
     public String getStatus() {
         return status;
     }
@@ -129,4 +138,3 @@ public class Project {
         this.lastIndexedAt = lastIndexedAt;
     }
 }
-

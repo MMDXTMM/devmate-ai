@@ -73,9 +73,11 @@
 - 已完成 `project → index_task → knowledge_document` 状态闭环和重复 revision 幂等写入。
 - 已提供执行导入与查询最近任务接口，并接入 Vue 项目列表。
 - 已使用 JDK AST 解析 package、类、嵌套类、构造器、方法、注解和准确起止行。
-- 已将符号内容、哈希和元数据写入 `knowledge_chunk`，重复 revision 会替换同一文档的 Chunk。
+- 已将符号内容、哈希和元数据写入 `knowledge_chunk`；同 revision、同结构版本走零重写，避免级联删除向量和证据。
+- 已持久化 `source-structure-v2` 结构版本；解析规则升级时，新 revision 全量重解析，旧 revision 只有在无 Diff、向量或评测证据时才允许显式重建。
+- 已通过项目行锁和 `INDEXING` 门禁互斥导入、Diff 与向量任务，外部 Git、文件和模型操作仍位于事务外。
 - 已提供源码文件与符号查询接口，并在 Vue 中提供源码结构浏览器。
-- 已通过 33 个后端测试、8 个前端测试、前端生产构建和真实 MySQL V3 迁移验证。
+- 当前全量验证为后端 142 项、前端 47 项、Benchmark Node 48 项和前端生产构建；H2 与 MySQL 已执行到 V19。
 - 阶段 2 已完成；下一步进入 Git Diff、覆盖清单与精确位置映射。
 
 ## 阶段 3：Git Diff、覆盖清单与精确定位

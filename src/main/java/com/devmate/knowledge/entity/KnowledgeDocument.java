@@ -18,6 +18,7 @@ public class KnowledgeDocument {
     private String fileType;
     private String contentHash;
     private String revision;
+    private String structureVersion;
     private String packageName;
     private String status;
     private Integer chunkCount;
@@ -44,6 +45,8 @@ public class KnowledgeDocument {
     public void setContentHash(String contentHash) { this.contentHash = contentHash; }
     public String getRevision() { return revision; }
     public void setRevision(String revision) { this.revision = revision; }
+    public String getStructureVersion() { return structureVersion; }
+    public void setStructureVersion(String structureVersion) { this.structureVersion = structureVersion; }
     public String getPackageName() { return packageName; }
     public void setPackageName(String packageName) { this.packageName = packageName; }
     public String getStatus() { return status; }

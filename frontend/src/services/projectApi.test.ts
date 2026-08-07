@@ -143,6 +143,40 @@ describe('projectApi', () => {
     expect(task.totalDurationMs).toBe(185)
   })
 
+  it('explicitly rebuilds the current source structure', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588306001',
+        projectId: '2084116785588305922',
+        taskType: 'REBUILD',
+        revision: '0123456789abcdef',
+        structureVersion: 'source-structure-v2',
+        status: 'SUCCEEDED',
+        totalFiles: 12,
+        processedFiles: 12,
+        reusedFiles: 0,
+        failedFiles: 0,
+        cloneDurationMs: 120,
+        scanDurationMs: 10,
+        planDurationMs: 5,
+        parseDurationMs: 30,
+        persistDurationMs: 20,
+        totalDurationMs: 185,
+      },
+    }))
+
+    const task = await projectApi.rebuildSource('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/imports/rebuild',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(task.taskType).toBe('REBUILD')
+    expect(task.structureVersion).toBe('source-structure-v2')
+  })
+
   it('loads source documents and symbols with string ids', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse({
@@ -154,6 +188,7 @@ describe('projectApi', () => {
           filePath: 'src/main/java/ReviewService.java',
           sourceKind: 'SOURCE_CODE',
           fileType: 'JAVA',
+          structureVersion: 'source-structure-v2',
           status: 'PARSED',
           chunkCount: 2,
         }],

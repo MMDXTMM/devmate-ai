@@ -10,6 +10,8 @@ import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
 import com.devmate.knowledge.mapper.CodeReferenceMapper;
 import com.devmate.knowledge.mapper.EmbeddingVectorMapper;
+import com.devmate.knowledge.entity.RetrievalEvaluationRun;
+import com.devmate.knowledge.mapper.RetrievalEvaluationRunMapper;
 import com.devmate.knowledge.source.GitCloneResult;
 import com.devmate.knowledge.source.GitSourceClient;
 import com.devmate.knowledge.source.SourceImportException;
@@ -18,6 +20,8 @@ import com.devmate.project.dto.ProjectResponse;
 import com.devmate.project.entity.Project;
 import com.devmate.project.mapper.ProjectMapper;
 import com.devmate.project.service.ProjectService;
+import com.devmate.review.entity.CodeReviewTask;
+import com.devmate.review.mapper.CodeReviewTaskMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -71,6 +77,10 @@ class SourceImportControllerTest {
     private CodeReferenceMapper referenceMapper;
     @Autowired
     private EmbeddingVectorMapper vectorMapper;
+    @Autowired
+    private CodeReviewTaskMapper reviewTaskMapper;
+    @Autowired
+    private RetrievalEvaluationRunMapper retrievalRunMapper;
 
     @MockitoBean
     private GitSourceClient gitSourceClient;
@@ -89,6 +99,7 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data.id").isString())
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.revision").value(REVISION))
+                .andExpect(jsonPath("$.data.structureVersion").value("source-structure-v2"))
                 .andExpect(jsonPath("$.data.totalFiles").value(2))
                 .andExpect(jsonPath("$.data.processedFiles").value(2))
                 .andExpect(jsonPath("$.data.reusedFiles").value(0))
@@ -102,6 +113,7 @@ class SourceImportControllerTest {
         Project storedProject = projectMapper.selectById(project.id());
         assertThat(storedProject.getStatus()).isEqualTo("READY");
         assertThat(storedProject.getCurrentRevision()).isEqualTo(REVISION);
+        assertThat(storedProject.getCurrentStructureVersion()).isEqualTo("source-structure-v2");
         assertThat(storedProject.getLastIndexedAt()).isNotNull();
 
         assertThat(documentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocument.class)
@@ -120,6 +132,154 @@ class SourceImportControllerTest {
         assertThat(indexTaskMapper.selectCount(Wrappers.lambdaQuery(IndexTask.class)
                 .eq(IndexTask::getProjectId, project.id())
                 .eq(IndexTask::getStatus, "SUCCEEDED"))).isEqualTo(1);
+        assertThat(documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                        .eq(KnowledgeDocument::getProjectId, project.id())))
+                .allSatisfy(document -> assertThat(document.getStructureVersion())
+                        .isEqualTo("source-structure-v2"));
+    }
+
+    @Test
+    void rejectsImplicitReplacementOfLegacyStructureForSameRevision() throws Exception {
+        ProjectResponse project = createGitProject("legacy-structure");
+        mockSuccessfulClone();
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk());
+        Set<Long> chunkIds = currentChunkIds(project.id());
+        projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
+                .eq(Project::getId, project.id())
+                .set(Project::getCurrentStructureVersion, "source-structure-v1"));
+        documentMapper.update(null, Wrappers.lambdaUpdate(KnowledgeDocument.class)
+                .eq(KnowledgeDocument::getProjectId, project.id())
+                .set(KnowledgeDocument::getStructureVersion, "source-structure-v1"));
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("当前revision使用旧版源码结构，请执行显式重建"));
+
+        assertThat(projectMapper.selectById(project.id()).getStatus()).isEqualTo("READY");
+        assertThat(currentChunkIds(project.id())).containsExactlyInAnyOrderElementsOf(chunkIds);
+    }
+
+    @Test
+    void explicitlyRebuildsSameRevisionWhenStructureHasNoDownstreamEvidence() throws Exception {
+        ProjectResponse project = createGitProject("safe-rebuild");
+        mockSuccessfulClone();
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk());
+        Set<Long> originalChunkIds = currentChunkIds(project.id());
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports/rebuild", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taskType").value("REBUILD"))
+                .andExpect(jsonPath("$.data.structureVersion").value("source-structure-v2"))
+                .andExpect(jsonPath("$.data.processedFiles").value(2))
+                .andExpect(jsonPath("$.data.reusedFiles").value(0));
+
+        assertThat(currentChunkIds(project.id())).doesNotContainAnyElementsOf(originalChunkIds);
+        assertThat(projectMapper.selectById(project.id()).getStatus()).isEqualTo("READY");
+    }
+
+    @Test
+    void rejectsRebuildBeforeFirstSuccessfulImport() throws Exception {
+        ProjectResponse project = createGitProject("rebuild-before-import");
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports/rebuild", project.id()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("项目尚无可重建的源码结构"));
+
+        verifyNoInteractions(gitSourceClient);
+        assertThat(indexTaskMapper.selectCount(Wrappers.lambdaQuery(IndexTask.class)
+                .eq(IndexTask::getProjectId, project.id()))).isZero();
+    }
+
+    @Test
+    void rejectsRebuildWhenDiffReferencesCurrentStructure() throws Exception {
+        ProjectResponse project = createGitProject("rebuild-with-diff");
+        mockSuccessfulClone();
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk());
+        Set<Long> originalChunkIds = currentChunkIds(project.id());
+        IndexTask indexTask = indexTaskMapper.selectOne(Wrappers.lambdaQuery(IndexTask.class)
+                .eq(IndexTask::getProjectId, project.id())
+                .eq(IndexTask::getStatus, "SUCCEEDED")
+                .last("LIMIT 1"));
+        CodeReviewTask review = new CodeReviewTask();
+        review.setProjectId(project.id());
+        review.setIndexTaskId(indexTask.getId());
+        review.setBaseRevision("1111111111111111111111111111111111111111");
+        review.setTargetRevision(REVISION);
+        review.setTriggerType("MANUAL");
+        review.setStatus("SUCCEEDED");
+        review.setChangedFiles(1);
+        review.setFullyMappedFiles(1);
+        review.setPartiallyMappedFiles(0);
+        review.setSkippedFiles(0);
+        review.setCreatedAt(LocalDateTime.now());
+        review.setStartedAt(LocalDateTime.now());
+        review.setFinishedAt(LocalDateTime.now());
+        reviewTaskMapper.insert(review);
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports/rebuild", project.id()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("当前源码结构已被Diff或审查记录引用，不能原地重建"));
+
+        assertThat(currentChunkIds(project.id())).containsExactlyInAnyOrderElementsOf(originalChunkIds);
+        assertThat(projectMapper.selectById(project.id()).getStatus()).isEqualTo("READY");
+    }
+
+    @Test
+    void rejectsRebuildWhenCurrentStructureHasEmbeddings() throws Exception {
+        ProjectResponse project = createGitProject("rebuild-with-vectors");
+        mockSuccessfulClone();
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/projects/{projectId}/embeddings/index", project.id()))
+                .andExpect(status().isOk());
+        Set<Long> originalChunkIds = currentChunkIds(project.id());
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports/rebuild", project.id()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("当前源码结构已建立向量索引，不能原地重建"));
+
+        assertThat(currentChunkIds(project.id())).containsExactlyInAnyOrderElementsOf(originalChunkIds);
+        assertThat(vectorMapper.selectCount(null)).isEqualTo(7);
+    }
+
+    @Test
+    void rejectsRebuildWhenRetrievalEvaluationUsesCurrentStructure() throws Exception {
+        ProjectResponse project = createGitProject("rebuild-with-retrieval-evaluation");
+        mockSuccessfulClone();
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk());
+        Set<Long> originalChunkIds = currentChunkIds(project.id());
+        RetrievalEvaluationRun run = new RetrievalEvaluationRun();
+        run.setProjectId(project.id());
+        run.setRevision(REVISION);
+        run.setDatasetVersion("structure-v1");
+        run.setRetrievalConfigVersion("lexical-graph-v1");
+        run.setRetrievalMode("LEXICAL");
+        run.setStatus("SUCCEEDED");
+        run.setTotalCases(1);
+        run.setResolvedCases(1);
+        run.setRecallAtK(BigDecimal.ONE);
+        run.setPrecisionAtK(BigDecimal.ONE);
+        run.setHitRateAtK(BigDecimal.ONE);
+        run.setMeanReciprocalRank(BigDecimal.ONE);
+        run.setResultJson("[]");
+        run.setCreatedAt(LocalDateTime.now());
+        run.setStartedAt(LocalDateTime.now());
+        run.setFinishedAt(LocalDateTime.now());
+        retrievalRunMapper.insert(run);
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports/rebuild", project.id()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("当前源码结构已有检索评测记录，不能原地重建"));
+
+        assertThat(currentChunkIds(project.id())).containsExactlyInAnyOrderElementsOf(originalChunkIds);
+        assertThat(projectMapper.selectById(project.id()).getStatus()).isEqualTo("READY");
     }
 
     @Test
@@ -243,6 +403,47 @@ class SourceImportControllerTest {
     }
 
     @Test
+    void fullyReparsesNewRevisionWhenPreviousStructureVersionIsLegacy() throws Exception {
+        ProjectResponse project = createGitProject("legacy-to-new-revision");
+        AtomicInteger cloneCount = new AtomicInteger();
+        given(gitSourceClient.cloneRepository(anyString(), eq("main"), any(Path.class)))
+                .willAnswer(invocation -> {
+                    Path target = invocation.getArgument(2);
+                    Path sources = target.resolve("src/main/java/com/example");
+                    Files.createDirectories(sources);
+                    Files.writeString(sources.resolve("Stable.java"), "package com.example; class Stable {}\n");
+                    return new GitCloneResult(
+                            target,
+                            cloneCount.getAndIncrement() == 0 ? REVISION : NEXT_REVISION
+                    );
+                });
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk());
+        projectMapper.update(null, Wrappers.lambdaUpdate(Project.class)
+                .eq(Project::getId, project.id())
+                .set(Project::getCurrentStructureVersion, "source-structure-v1"));
+        documentMapper.update(null, Wrappers.lambdaUpdate(KnowledgeDocument.class)
+                .eq(KnowledgeDocument::getProjectId, project.id())
+                .set(KnowledgeDocument::getStructureVersion, "source-structure-v1"));
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taskType").value("INCREMENTAL"))
+                .andExpect(jsonPath("$.data.structureVersion").value("source-structure-v2"))
+                .andExpect(jsonPath("$.data.processedFiles").value(1))
+                .andExpect(jsonPath("$.data.reusedFiles").value(0));
+
+        assertThat(projectMapper.selectById(project.id()).getCurrentStructureVersion())
+                .isEqualTo("source-structure-v2");
+        assertThat(documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                        .eq(KnowledgeDocument::getProjectId, project.id())
+                        .eq(KnowledgeDocument::getRevision, NEXT_REVISION)))
+                .singleElement()
+                .satisfies(document -> assertThat(document.getStructureVersion())
+                        .isEqualTo("source-structure-v2"));
+    }
+
+    @Test
     void recordsFailureWhenCloneFails() throws Exception {
         ProjectResponse project = createGitProject("import-failure");
         given(gitSourceClient.cloneRepository(anyString(), anyString(), any(Path.class)))
@@ -346,6 +547,7 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].id").isString())
                 .andExpect(jsonPath("$.data[0].packageName").value("com.example"))
+                .andExpect(jsonPath("$.data[0].structureVersion").value("source-structure-v2"))
                 .andExpect(jsonPath("$.data[0].status").value("PARSED"));
 
         mockMvc.perform(get(
@@ -513,6 +715,15 @@ class SourceImportControllerTest {
                 "https://github.com/example/" + name + ".git",
                 "main"
         ));
+    }
+
+    private Set<Long> currentChunkIds(Long projectId) {
+        return chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getProjectId, projectId)
+                        .eq(KnowledgeChunk::getRevision, REVISION))
+                .stream()
+                .map(KnowledgeChunk::getId)
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     private void mockSuccessfulClone() {

@@ -7,6 +7,7 @@ import com.devmate.knowledge.entity.IndexTask;
 import com.devmate.knowledge.mapper.IndexTaskMapper;
 import com.devmate.project.entity.Project;
 import com.devmate.project.mapper.ProjectMapper;
+import com.devmate.project.model.ProjectStatus;
 import com.devmate.review.dto.MappedSymbolResponse;
 import com.devmate.review.dto.ReviewDiffResponse;
 import com.devmate.review.dto.ReviewFileResponse;
@@ -56,9 +57,15 @@ public class ReviewDiffStateService {
 
     @Transactional
     public ReviewDiffContext prepare(Long projectId) {
-        Project project = projectMapper.selectById(projectId);
+        Project project = projectMapper.selectByIdForUpdate(projectId);
         if (project == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
+        }
+        if (ProjectStatus.INDEXING.name().equals(project.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "项目源码结构未就绪，暂不能生成Diff");
+        }
+        if (!ProjectStatus.READY.name().equals(project.getStatus())) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先成功导入项目源码");
         }
         IndexTask indexTask = indexTaskMapper.selectOne(Wrappers.lambdaQuery(IndexTask.class)
                 .eq(IndexTask::getProjectId, projectId)
