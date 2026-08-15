@@ -175,6 +175,29 @@ class JavaSourceParserTest {
     }
 
     @Test
+    void limitsLongChainedCallQualifiersToDatabaseContract() {
+        String chain = "client" + ".next()".repeat(100) + ".execute();";
+        ParsedSourceContent parsed = parser.parseContent("ChainService.java", """
+                package com.example;
+                class ChainService {
+                    void run() {
+                """ + chain + """
+                    }
+                }
+                """);
+
+        assertThat(parsed.references())
+                .isNotEmpty()
+                .allSatisfy(reference -> {
+                    if (reference.qualifier() != null) {
+                        assertThat(reference.qualifier()).hasSizeLessThanOrEqualTo(500);
+                    }
+                });
+        assertThat(parsed.references())
+                .anySatisfy(reference -> assertThat(reference.qualifier()).endsWith("..."));
+    }
+
+    @Test
     void extractsJpaTableNameWithoutConfusingSchemaAttribute() {
         ParsedSourceContent parsed = parser.parseContent("AuditLog.java", """
                 package com.example;

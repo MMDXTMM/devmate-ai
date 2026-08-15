@@ -111,6 +111,8 @@ devmate:
     max-diff-files: 50
     max-tool-output-characters: 16000
     tool-timeout: 20s
+  review-workflow:
+    stale-timeout: 30m
   review-evaluation:
     max-cases-per-review: 100
     max-runs-returned: 100

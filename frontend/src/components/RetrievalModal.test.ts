@@ -67,6 +67,8 @@ describe('RetrievalModal', () => {
 
     expect(wrapper.text()).toContain('OrderService#reserveStock()')
     expect(wrapper.text()).toContain('200 / 1000（20%）')
-    expect(wrapper.text()).toContain('SYMBOL_TERM')
+    expect(wrapper.text()).toContain('符号名关键词匹配')
+    expect(wrapper.text()).toContain('代码解读')
+    expect(wrapper.get('pre code').text()).toContain('void reserveStock()')
   })
 })

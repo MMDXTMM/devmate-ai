@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.devmate.agent.model.AiReviewModel;
 import com.devmate.agent.model.AiReviewModelRegistry;
 import com.devmate.agent.model.AiReviewModelResult;
+import com.devmate.agent.model.ReviewAgentMessage;
+import com.devmate.agent.model.ReviewAgentModel;
+import com.devmate.agent.model.ReviewAgentModelRegistry;
+import com.devmate.agent.model.ReviewAgentToolCall;
+import com.devmate.agent.model.ReviewAgentTurn;
 import com.devmate.knowledge.source.GitCloneResult;
 import com.devmate.knowledge.source.GitSourceClient;
 import com.devmate.project.dto.CreateProjectRequest;
@@ -20,7 +25,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,7 +45,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = "devmate.source.workspace-root=${java.io.tmpdir}/devmate-workflow-tests")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Transactional
 class BasicReviewWorkflowTest {
 
     @Autowired
@@ -55,6 +58,8 @@ class BasicReviewWorkflowTest {
     private GitSourceClient gitSourceClient;
     @MockitoBean
     private AiReviewModelRegistry modelRegistry;
+    @MockitoBean
+    private ReviewAgentModelRegistry agentModelRegistry;
 
     @Test
     void completesProjectToEvidenceGroundedReviewWorkflow() throws Exception {
@@ -113,6 +118,38 @@ class BasicReviewWorkflowTest {
                 .andExpect(jsonPath("$.data.totalTokens").value(60));
     }
 
+    @Test
+    void completesOneClickAgentReviewWorkflow() throws Exception {
+        ProjectResponse project = projectService.createProject(new CreateProjectRequest(
+                "workflow-agent-demo",
+                "一键Agent代码审查闭环",
+                "GIT",
+                "https://github.com/example/workflow-agent-demo.git",
+                "main"
+        ));
+        mockRepository();
+        mockAiModel();
+        mockAgentModel();
+
+        String request = objectMapper.writeValueAsString(
+                new WorkflowRequest(UUID.randomUUID().toString())
+        );
+        mockMvc.perform(post("/api/projects/{projectId}/review-workflows", project.id())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").isString())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.currentStage").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.sourceImport.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.reviewDiff.changedFiles").value(1))
+                .andExpect(jsonPath("$.data.staticAnalysis.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.embeddingIndex.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.aiReview.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.aiReview.executionMode").value("AGENT"))
+                .andExpect(jsonPath("$.data.aiReview.toolCalls[0].toolName").value("searchCode"));
+    }
+
     private void mockRepository() {
         given(gitSourceClient.cloneRepository(anyString(), eq("main"), any(Path.class)))
                 .willAnswer(invocation -> {
@@ -156,6 +193,29 @@ class BasicReviewWorkflowTest {
         given(modelRegistry.current()).willReturn(model);
     }
 
+    private void mockAgentModel() {
+        ReviewAgentModel model = mock(ReviewAgentModel.class);
+        ReviewAgentToolCall call = new ReviewAgentToolCall(
+                "call-search-1",
+                "function",
+                new ReviewAgentToolCall.FunctionCall("searchCode", "{\"query\":\"review\"}")
+        );
+        given(model.next(any(), any())).willReturn(
+                new ReviewAgentTurn(
+                        new ReviewAgentMessage("assistant", "", null, List.of(call)),
+                        20, 5, 25, "tool_calls"
+                ),
+                new ReviewAgentTurn(
+                        new ReviewAgentMessage("assistant", "取证完成", null, null),
+                        10, 5, 15, "stop"
+                )
+        );
+        given(agentModelRegistry.current()).willReturn(model);
+    }
+
     private record ReviewRequest(Long reviewTaskId, String revision, String attemptKey) {
+    }
+
+    private record WorkflowRequest(String attemptKey) {
     }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
-import type { Project, ProjectForm, SourceType } from '../types/project'
+import type { Project, ProjectForm } from '../types/project'
 
 const props = defineProps<{
   open: boolean
@@ -23,7 +23,7 @@ const emptyForm = (): ProjectForm => ({
 
 const form = reactive<ProjectForm>(emptyForm())
 const error = reactive({ message: '' })
-const title = computed(() => (props.project ? '编辑项目' : '新建项目'))
+const title = computed(() => (props.project ? '编辑项目' : '导入 Java 项目'))
 
 watch(
   () => [props.open, props.project] as const,
@@ -45,11 +45,6 @@ watch(
   },
   { immediate: true },
 )
-
-function changeSourceType(value: SourceType) {
-  form.sourceType = value
-  if (value === 'GIT' && !form.defaultBranch) form.defaultBranch = 'main'
-}
 
 function submit() {
   const name = form.name.trim()
@@ -95,21 +90,7 @@ function submit() {
           <textarea v-model="form.description" maxlength="500" rows="3" placeholder="简要描述项目用途" />
         </label>
 
-        <fieldset>
-          <legend>源码类型</legend>
-          <div class="source-options">
-            <button
-              v-for="type in (['GIT', 'LOCAL', 'UPLOAD'] as SourceType[])"
-              :key="type"
-              class="source-option"
-              :class="{ active: form.sourceType === type }"
-              type="button"
-              @click="changeSourceType(type)"
-            >
-              {{ type }}
-            </button>
-          </div>
-        </fieldset>
+        <p v-if="!project" class="form-context">当前版本支持 HTTPS Git 仓库。保存后会自动解析 Java 源码并建立项目检索索引。</p>
 
         <label>
           <span>{{ form.sourceType === 'GIT' ? 'Git 仓库地址 *' : '源码位置' }}</span>
@@ -130,7 +111,7 @@ function submit() {
         <footer class="modal-actions">
           <button class="button secondary" type="button" :disabled="saving" @click="emit('close')">取消</button>
           <button class="button primary" type="submit" :disabled="saving">
-            {{ saving ? '保存中…' : '保存项目' }}
+            {{ saving ? '处理中…' : project ? '保存修改' : '导入并解析' }}
           </button>
         </footer>
       </form>

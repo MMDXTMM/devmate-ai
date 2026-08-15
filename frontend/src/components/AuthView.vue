@@ -41,12 +41,13 @@ async function submit() {
     <section class="auth-panel">
       <div class="auth-brand">
         <span class="brand-mark">D</span>
-        <span><b>DevMate</b><small>AI CODE REVIEW</small></span>
+        <span><b>DevMate</b><small>UNDERSTAND & BUILD</small></span>
       </div>
 
       <div class="auth-heading">
-        <p class="eyebrow">SECURE WORKSPACE</p>
-        <h1>{{ mode === 'login' ? '登录' : '创建账号' }}</h1>
+        <p class="eyebrow">PROJECT UNDERSTANDING</p>
+        <h1>{{ mode === 'login' ? '继续理解项目' : '创建账号' }}</h1>
+        <p>{{ mode === 'login' ? '登录后进入你的 Java 项目工作台。' : '导入项目，快速找到业务入口和开发起点。' }}</p>
       </div>
 
       <div class="auth-tabs" role="tablist" aria-label="认证方式">

@@ -47,6 +47,8 @@ import java.util.regex.Pattern;
 @Component
 public class JavaSourceParser {
 
+    private static final int MAX_REFERENCE_QUALIFIER_CHARACTERS = 500;
+
     public ParsedSourceFile parse(ScannedSourceFile sourceFile) {
         try {
             String source = Files.readString(sourceFile.sourcePath(), StandardCharsets.UTF_8);
@@ -374,12 +376,19 @@ public class JavaSourceParser {
                     sourceSymbols.getLast(),
                     kind,
                     name,
-                    qualifier,
+                    limitQualifier(qualifier),
                     argumentCount,
                     (int) unit.getLineMap().getLineNumber(start),
                     (int) unit.getLineMap().getLineNumber(Math.max(start, end - 1)),
                     metadataJson
             ));
+        }
+
+        private String limitQualifier(String qualifier) {
+            if (qualifier == null || qualifier.length() <= MAX_REFERENCE_QUALIFIER_CHARACTERS) {
+                return qualifier;
+            }
+            return qualifier.substring(0, MAX_REFERENCE_QUALIFIER_CHARACTERS - 3) + "...";
         }
 
         private boolean isDataAccessQualifier(String qualifier) {

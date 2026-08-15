@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import AuthView from './components/AuthView.vue'
+import GenerationWorkspace from './components/GenerationWorkspace.vue'
 import ProjectFormModal from './components/ProjectFormModal.vue'
+import ProjectUnderstandingWorkspace from './components/ProjectUnderstandingWorkspace.vue'
 import SourceStructureModal from './components/SourceStructureModal.vue'
 import DiffReportModal from './components/DiffReportModal.vue'
 import StaticAnalysisModal from './components/StaticAnalysisModal.vue'
@@ -9,10 +11,10 @@ import RetrievalModal from './components/RetrievalModal.vue'
 import AiReviewModal from './components/AiReviewModal.vue'
 import ReviewEvaluationModal from './components/ReviewEvaluationModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
-import { runBasicAnalysis } from './services/basicAnalysisWorkflow'
+import { runProjectUnderstanding } from './services/projectUnderstandingWorkflow'
 import { clearAuthSession, getAuthSession, setAuthSession, subscribeAuthSession } from './services/authSession'
 import type { AuthSession } from './types/auth'
-import type { PageData, Project, ProjectForm, ProjectStatus } from './types/project'
+import type { PageData, Project, ProjectForm, ProjectStatus, ReviewWorkflow } from './types/project'
 
 const pageData = ref<PageData<Project>>({ page: 1, size: 10, total: 0, pages: 0, items: [] })
 const query = reactive<{ name: string; status: ProjectStatus | '' }>({ name: '', status: '' })
@@ -24,15 +26,19 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const deletingId = ref<string | null>(null)
 const importingId = ref<string | null>(null)
-const embeddingId = ref<string | null>(null)
 const workflowId = ref<string | null>(null)
+const selectedProject = ref<Project | null>(null)
+const retrievalInitialQuery = ref('')
 const sourceProject = ref<Project | null>(null)
 const diffProject = ref<Project | null>(null)
 const analysisProject = ref<Project | null>(null)
 const retrievalProject = ref<Project | null>(null)
 const aiReviewProject = ref<Project | null>(null)
 const evaluationProject = ref<Project | null>(null)
+const reviewingId = ref<string | null>(null)
+const reviewWorkflow = ref<ReviewWorkflow | undefined>()
 const authSession = ref<AuthSession | null>(getAuthSession())
+const workspaceArea = ref<'projects' | 'generation'>('projects')
 let unsubscribeAuth: (() => void) | undefined
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
@@ -93,15 +99,17 @@ function openEdit(project: Project) {
 async function saveProject(form: ProjectForm) {
   saving.value = true
   try {
+    let createdProject: Project | null = null
     if (editingProject.value) {
-      await projectApi.update(editingProject.value.id, form)
+      const updatedProject = await projectApi.update(editingProject.value.id, form)
+      if (selectedProject.value?.id === updatedProject.id) selectedProject.value = updatedProject
       showSuccess('项目修改成功')
     } else {
-      await projectApi.create(form)
-      showSuccess('项目创建成功')
+      createdProject = await projectApi.create(form)
     }
     modalOpen.value = false
     await loadProjects(editingProject.value ? pageData.value.page : 1)
+    if (createdProject) await understandProject(createdProject)
   } catch (error) {
     showError(error)
   } finally {
@@ -119,30 +127,11 @@ async function removeProject(project: Project) {
       ? pageData.value.page - 1
       : pageData.value.page
     await loadProjects(targetPage)
+    if (selectedProject.value?.id === project.id) selectedProject.value = null
   } catch (error) {
     showError(error)
   } finally {
     deletingId.value = null
-  }
-}
-
-async function importSource(project: Project) {
-  if (project.sourceType !== 'GIT') {
-    showError(new ApiError('当前版本只支持导入 Git 项目'))
-    return
-  }
-  importingId.value = project.id
-  try {
-    const task = await projectApi.importSource(project.id)
-    showSuccess(
-      `源码导入成功：共 ${task.totalFiles} 个文件，解析 ${task.processedFiles}，复用 ${task.reusedFiles}，耗时 ${task.totalDurationMs} ms`,
-    )
-    await loadProjects(pageData.value.page)
-  } catch (error) {
-    showError(error)
-    await loadProjects(pageData.value.page)
-  } finally {
-    importingId.value = null
   }
 }
 
@@ -158,6 +147,7 @@ async function rebuildSource(project: Project) {
     const task = await projectApi.rebuildSource(project.id)
     showSuccess(`结构重建完成：${task.processedFiles} 个文件，版本 ${task.structureVersion}`)
     await loadProjects(pageData.value.page)
+    selectedProject.value = pageData.value.items.find((item) => item.id === project.id) ?? selectedProject.value
   } catch (error) {
     showError(error)
     await loadProjects(pageData.value.page)
@@ -166,35 +156,81 @@ async function rebuildSource(project: Project) {
   }
 }
 
-async function indexEmbeddings(project: Project) {
-  embeddingId.value = project.id
-  try {
-    const task = await projectApi.indexEmbeddings(project.id)
-    showSuccess(
-      `向量索引完成：新增 ${task.processedChunks}，跨版本复用 ${task.reusedChunks}，当前版本跳过 ${task.skippedChunks} 个 Chunk`,
-    )
-  } catch (error) {
-    showError(error)
-  } finally {
-    embeddingId.value = null
-  }
-}
-
-async function analyzeProject(project: Project) {
+async function understandProject(project: Project) {
   workflowId.value = project.id
   try {
-    const result = await runBasicAnalysis(project.id)
+    const result = await runProjectUnderstanding(project.id)
     showSuccess(
-      `基础分析完成：${result.diff.changedFiles} 个变更文件，${result.staticAnalysis.findingCount} 个确定性问题，${result.embeddingIndex.processedChunks} 个新增向量`,
+      `项目解析完成：识别 ${result.sourceImport.processedFiles} 个文件，建立 ${result.embeddingIndex.processedChunks} 个新检索索引`,
     )
     await loadProjects(pageData.value.page)
-    aiReviewProject.value = project
+    selectedProject.value = pageData.value.items.find((item) => item.id === project.id) ?? {
+      ...project,
+      status: 'READY',
+      currentRevision: result.sourceImport.revision,
+      currentStructureVersion: result.sourceImport.structureVersion,
+      lastIndexedAt: result.sourceImport.finishedAt,
+    }
   } catch (error) {
     showError(error)
     await loadProjects(pageData.value.page)
   } finally {
     workflowId.value = null
   }
+}
+
+async function runReviewWorkflow(project: Project) {
+  reviewingId.value = project.id
+  reviewWorkflow.value = undefined
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const result = await projectApi.createReviewWorkflow(project.id)
+    reviewWorkflow.value = result
+    if (result.status === 'SUCCEEDED') {
+      showSuccess('完整代码审查已完成，正在打开审查报告')
+      aiReviewProject.value = project
+    } else {
+      showError(new ApiError(
+        `${result.errorMessage || '代码审查未完成'}；${result.recoveryAction || '请检查任务状态后重试'}`,
+      ))
+    }
+    await loadProjects(pageData.value.page)
+  } catch (error) {
+    showError(error)
+  } finally {
+    reviewingId.value = null
+  }
+}
+
+async function loadLatestReviewWorkflow(project: Project) {
+  reviewWorkflow.value = undefined
+  try {
+    reviewWorkflow.value = await projectApi.latestReviewWorkflow(project.id)
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) showError(error)
+  }
+}
+
+function openWorkspace(project: Project) {
+  workspaceArea.value = 'projects'
+  selectedProject.value = project
+  void loadLatestReviewWorkflow(project)
+}
+
+function openProjectArea() {
+  workspaceArea.value = 'projects'
+  selectedProject.value = null
+}
+
+function openGenerationArea() {
+  workspaceArea.value = 'generation'
+  selectedProject.value = null
+}
+
+function openRetrieval(project: Project, queryText = '') {
+  retrievalInitialQuery.value = queryText
+  retrievalProject.value = project
 }
 
 function resetFilters() {
@@ -223,6 +259,8 @@ function logout() {
   clearAuthSession()
   authSession.value = null
   pageData.value = { page: 1, size: 10, total: 0, pages: 0, items: [] }
+  selectedProject.value = null
+  workspaceArea.value = 'projects'
 }
 
 onMounted(() => {
@@ -240,12 +278,12 @@ onUnmounted(() => unsubscribeAuth?.())
     <aside class="sidebar">
       <a class="brand" href="#" aria-label="DevMate AI 首页">
         <span class="brand-mark">D</span>
-        <span><b>DevMate</b><small>AI CODE REVIEW</small></span>
+        <span><b>DevMate</b><small>JAVA REVIEW AGENT</small></span>
       </a>
       <nav>
-        <a class="nav-item active" href="#"><span>⌘</span>项目空间</a>
-        <a class="nav-item disabled" href="#"><span>◎</span>审查任务<em>即将开放</em></a>
-        <a class="nav-item disabled" href="#"><span>◇</span>知识库</a>
+        <button class="nav-item" :class="{ active: workspaceArea === 'projects' && !selectedProject }" type="button" @click="openProjectArea"><span>⌘</span>代码审查项目</button>
+        <button v-if="selectedProject" class="nav-item active" type="button"><span>◎</span>审查工作台</button>
+        <button class="nav-item" :class="{ active: workspaceArea === 'generation' }" type="button" @click="openGenerationArea"><span>＋</span>生成项目（实验）</button>
       </nav>
       <div class="sidebar-footer">
         <span class="connection-dot"></span>
@@ -255,19 +293,42 @@ onUnmounted(() => unsubscribeAuth?.())
     </aside>
 
     <main>
+      <GenerationWorkspace v-if="workspaceArea === 'generation'" />
+      <ProjectUnderstandingWorkspace
+        v-else-if="selectedProject"
+        :project="selectedProject"
+        :parsing="workflowId === selectedProject.id"
+        :rebuilding="importingId === selectedProject.id"
+        :deleting="deletingId === selectedProject.id"
+        :reviewing="reviewingId === selectedProject.id"
+        :review-workflow="reviewWorkflow?.projectId === selectedProject.id ? reviewWorkflow : undefined"
+        @back="selectedProject = null"
+        @structure="sourceProject = selectedProject"
+        @search="openRetrieval(selectedProject, $event)"
+        @reparse="understandProject(selectedProject)"
+        @rebuild="rebuildSource(selectedProject)"
+        @diff="diffProject = selectedProject"
+        @static-analysis="analysisProject = selectedProject"
+        @review="aiReviewProject = selectedProject"
+        @run-review="runReviewWorkflow(selectedProject)"
+        @evaluation="evaluationProject = selectedProject"
+        @edit="openEdit(selectedProject)"
+        @delete="removeProject(selectedProject)"
+      />
+      <template v-else>
       <header class="topbar">
         <div>
           <p class="eyebrow">WORKSPACE / PROJECTS</p>
-          <h1>项目空间</h1>
-          <p>管理需要建立代码知识库和执行智能审查的 Java 项目。</p>
+          <h1>审查 Java 代码变更</h1>
+          <p>导入 Java 仓库，通过 Diff、静态分析、RAG 和 Agent 发现有证据的工程风险。</p>
         </div>
-        <button class="button primary" type="button" @click="openCreate"><span>＋</span> 新建项目</button>
+        <button class="button primary" type="button" @click="openCreate"><span>＋</span> 导入项目</button>
       </header>
 
       <section class="summary-grid" aria-label="项目概览">
-        <article><small>项目总数</small><strong>{{ pageData.total }}</strong><span>已接入的代码仓库</span></article>
-        <article><small>当前页</small><strong>{{ pageData.page }}<i>/{{ Math.max(pageData.pages, 1) }}</i></strong><span>{{ rangeText }}</span></article>
-        <article class="accent-card"><small>当前能力</small><strong>Hybrid RAG</strong><span>关键词、向量、关系图与预算裁剪</span></article>
+        <article><small>已导入项目</small><strong>{{ pageData.total }}</strong><span>可以随时继续理解和开发</span></article>
+        <article><small>解析就绪</small><strong>{{ pageData.items.filter((item) => item.status === 'READY').length }}</strong><span>当前页可进入理解工作台</span></article>
+        <article class="accent-card"><small>核心能力</small><strong>RAG 审查</strong><span>变更定位、项目上下文和受控 Agent</span></article>
       </section>
 
       <section class="panel">
@@ -297,8 +358,8 @@ onUnmounted(() => unsubscribeAuth?.())
         <div v-else-if="!hasProjects" class="state-box empty">
           <div class="empty-icon">⌘</div>
           <h2>还没有符合条件的项目</h2>
-          <p>创建一个项目，开始构建代码知识库。</p>
-          <button class="button primary" type="button" @click="openCreate">新建项目</button>
+          <p>导入一个 Java Git 仓库，系统会自动解析并建立可搜索的代码知识。</p>
+          <button class="button primary" type="button" @click="openCreate">导入第一个项目</button>
         </div>
 
         <div v-else class="table-wrap">
@@ -321,66 +382,29 @@ onUnmounted(() => unsubscribeAuth?.())
                 <td class="muted">{{ formatDate(project.updatedAt) }}</td>
                 <td class="row-actions">
                   <button
-                    class="ai-review-button"
-                    type="button"
-                    :disabled="project.sourceType !== 'GIT' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="analyzeProject(project)"
-                  >{{ workflowId === project.id ? '分析中' : '基础分析' }}</button>
-                  <button
-                    class="import"
-                    type="button"
-                    :disabled="project.sourceType !== 'GIT' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="importSource(project)"
-                  >
-                    {{ importingId === project.id ? '导入中' : project.status === 'READY' ? '重新导入' : '导入源码' }}
-                  </button>
-                  <button
                     v-if="project.status === 'READY'"
+                    class="open-workspace"
                     type="button"
                     :disabled="workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="rebuildSource(project)"
-                  >重建结构</button>
+                    @click="openWorkspace(project)"
+                  >打开理解工作台 <span>→</span></button>
                   <button
+                    v-else
+                    class="parse-project"
                     type="button"
-                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="sourceProject = project"
-                  >结构</button>
-                  <button
-                    type="button"
-                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="diffProject = project"
-                  >Diff</button>
-                  <button
-                    type="button"
-                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="analysisProject = project"
-                  >静态分析</button>
-                  <button
-                    type="button"
-                    :disabled="project.status !== 'READY' || workflowId === project.id || embeddingId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="indexEmbeddings(project)"
-                  >{{ embeddingId === project.id ? '向量化中' : '向量化' }}</button>
-                  <button
-                    type="button"
-                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="retrievalProject = project"
-                  >检索</button>
-                  <button
-                    class="ai-review-button"
-                    type="button"
-                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="aiReviewProject = project"
-                  >AI审查</button>
-                  <button
-                    class="evaluation-button"
-                    type="button"
-                    :disabled="project.status !== 'READY' || workflowId === project.id || importingId === project.id || deletingId === project.id"
-                    @click="evaluationProject = project"
-                  >评测</button>
-                  <button type="button" :disabled="workflowId === project.id || importingId === project.id || deletingId === project.id" @click="openEdit(project)">编辑</button>
-                  <button class="danger" type="button" :disabled="workflowId === project.id || deletingId === project.id || importingId === project.id" @click="removeProject(project)">
-                    {{ deletingId === project.id ? '删除中' : '删除' }}
+                    :disabled="project.sourceType !== 'GIT' || workflowId === project.id || importingId === project.id || deletingId === project.id"
+                    @click="understandProject(project)"
+                  >
+                    {{ workflowId === project.id ? '正在解析…' : project.status === 'FAILED' ? '重新解析' : '解析项目' }}
                   </button>
+                  <button
+                    class="project-edit"
+                    type="button"
+                    :disabled="workflowId === project.id || importingId === project.id || deletingId === project.id"
+                    aria-label="编辑项目"
+                    title="编辑项目"
+                    @click="openEdit(project)"
+                  >•••</button>
                 </td>
               </tr>
             </tbody>
@@ -395,6 +419,7 @@ onUnmounted(() => unsubscribeAuth?.())
           </div>
         </footer>
       </section>
+      </template>
     </main>
 
     <ProjectFormModal
@@ -426,7 +451,8 @@ onUnmounted(() => unsubscribeAuth?.())
       :open="retrievalProject !== null"
       :project-id="retrievalProject?.id"
       :project-name="retrievalProject?.name"
-      @close="retrievalProject = null"
+      :initial-query="retrievalInitialQuery"
+      @close="retrievalProject = null; retrievalInitialQuery = ''"
     />
     <AiReviewModal
       :open="aiReviewProject !== null"

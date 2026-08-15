@@ -16,7 +16,7 @@ index_task = RUNNING
         ↓
 JGit 浅克隆指定分支到独立任务目录
         ↓
-扫描 Java、YAML、Properties 和迁移目录 SQL，并应用分类数量、单文件和总容量限制
+递归扫描普通 Spring Boot 或 Maven 多模块仓库中的 Java、YAML、Properties 和迁移目录 SQL，并应用分类数量、单文件和总容量限制
         ↓
 与上一 revision 按路径和内容哈希比较；未变文件复用结构元数据，变更文件使用 JDK AST、配置或 SQL 解析器
         ↓
@@ -92,6 +92,7 @@ unset DEVMATE_GIT_USERNAME
 - 当前不会自动读取 GitHub CLI 或系统钥匙串；私有仓库必须显式设置环境变量。
 - 当前只有一组进程级 Git 凭证；多用户生产版本后续改为 GitHub App Installation Token。
 - JDK AST 当前完成语法结构解析，不执行仓库代码，也不解析完整跨文件类型绑定。
+- 普通单模块和 Maven 多模块 Spring Boot 仓库都会递归扫描；是否能完整理解不取决于模块数量，而取决于文件上限、受支持文件类型及静态关系能否被保守解析。
 - Embedding 是导入后的独立显式步骤；本地 Provider 可完成零费用闭环，真实语义 Provider 需要运行环境密钥。
 
 ## 接口
@@ -102,7 +103,16 @@ unset DEVMATE_GIT_USERNAME
 - `GET /api/projects/{projectId}/sources/{documentId}/symbols`：查询类、方法或配置项。
 - `GET /api/projects/{projectId}/sources/references`：查询方法调用、数据访问与配置引用。
 
+深层理解优先使用业务地图接口：
+
+- `GET /api/projects/{projectId}/business-map`：按 Controller 组织业务模块和 HTTP 功能入口。
+- `GET /api/projects/{projectId}/business-map/features/{featureId}`：返回功能调用流程、数据操作以及 Controller/Service/关联实现代码块。
+
+当前分析模式为 `STATIC_CODE_EVIDENCE_V1`，只陈述源码和解析关系能够支持的事实与推断；需要逐文件排查时继续使用原始结构接口。
+
 Vue 项目列表已接入导入接口。项目就绪后可点击“结构”，查看文件、包名、符号、注解和源码行号。
+
+这些结构化结果是后续 RAG、项目业务地图和代码审查的证据层。文件、类和方法列表只能回答“代码在哪里”，不能直接回答“项目解决什么业务、流程如何流转”。中文深层理解必须继续基于调用关系、分层职责、状态字段和数据库关系进行归纳，并为每条判断保留源码证据。
 
 ## 真实验收记录
 

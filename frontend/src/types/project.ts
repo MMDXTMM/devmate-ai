@@ -107,6 +107,20 @@ export interface SourceSymbol {
   revision: string
 }
 
+export interface SourceSymbolDetail {
+  id: string
+  documentId: string
+  chunkType: SourceSymbolType
+  symbolName: string
+  annotations: string[]
+  startLine: number
+  endLine: number
+  revision: string
+  code: string
+  truncated: boolean
+  originalCharacters: number
+}
+
 export type SourceReferenceKind =
   | 'METHOD_CALL'
   | 'DATA_ACCESS'
@@ -129,6 +143,62 @@ export interface SourceReference {
   startLine: number
   endLine: number
   resolved: boolean
+}
+
+export interface BusinessFeature {
+  id: string
+  name: string
+  description: string
+  httpMethods: string[]
+  path: string
+  controllerSymbol: string
+  controllerFilePath: string
+  startLine: number
+  endLine: number
+  implementationSteps: number
+  accessesData: boolean
+}
+
+export interface BusinessModule {
+  id: string
+  name: string
+  description: string
+  controllerSymbol: string
+  controllerFilePath: string
+  startLine: number
+  endLine: number
+  features: BusinessFeature[]
+}
+
+export interface ProjectBusinessMap {
+  revision: string
+  analysisMode: 'STATIC_CODE_EVIDENCE_V1'
+  summary: string
+  moduleCount: number
+  endpointCount: number
+  modules: BusinessModule[]
+  limitations: string[]
+}
+
+export interface BusinessCodeEvidence {
+  chunkId: string
+  documentId: string
+  layer: 'CONTROLLER' | 'SERVICE' | 'DATA_ACCESS' | 'SUPPORTING_CODE'
+  symbolName: string
+  filePath: string
+  startLine: number
+  endLine: number
+  explanation: string
+  code: string
+  truncated: boolean
+  originalCharacters: number
+}
+
+export interface BusinessFeatureDetail {
+  feature: BusinessFeature
+  flowSummary: string
+  dataOperations: string[]
+  implementation: BusinessCodeEvidence[]
 }
 
 export interface LineRange {
@@ -181,6 +251,37 @@ export interface CreateAiReviewRequest {
   reviewTaskId: string
   revision: string
   attemptKey: string
+}
+
+export type ReviewWorkflowStage =
+  | 'SOURCE_IMPORT'
+  | 'DIFF'
+  | 'STATIC_ANALYSIS'
+  | 'EMBEDDING'
+  | 'AGENT_REVIEW'
+  | 'COMPLETED'
+
+export interface ReviewWorkflow {
+  id: string
+  projectId: string
+  attemptKey: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  currentStage: ReviewWorkflowStage
+  indexTaskId?: string
+  reviewTaskId?: string
+  staticAnalysisTaskId?: string
+  embeddingTaskId?: string
+  aiReviewTaskId?: string
+  errorMessage?: string
+  recoveryAction?: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+  sourceImport?: IndexTask
+  reviewDiff?: ReviewDiff
+  staticAnalysis?: StaticAnalysis
+  embeddingIndex?: EmbeddingIndexTask
+  aiReview?: AiReview
 }
 
 export type FindingSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'

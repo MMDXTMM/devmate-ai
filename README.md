@@ -2,9 +2,43 @@
 
 [![CI](https://github.com/MMDXTMM/devmate-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/MMDXTMM/devmate-ai/actions/workflows/ci.yml)
 
-DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它不是单纯的聊天机器人，而是结合静态分析、Git Diff、RAG 和受控 Tool Calling，发现普通编译检查难以覆盖的并发、事务、缓存、消息一致性、性能和架构风险。
+DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导入 Java Git 仓库后，通过 Git Diff 限定变更范围，结合 AST、PMD、调用关系和混合检索补充项目上下文，再由受控 Tool Calling Agent 输出带真实代码证据的结构化审查结论。
 
-当前已经完成基础工程、登录认证与项目隔离、项目管理 CRUD、Git 源码导入、Java AST、配置与数据库迁移解析、Git Diff 覆盖报告、**PMD 确定性静态分析 MVP**、第一版代码关系图、带固定评测集的关键词/向量/关系图混合 RAG、证据约束的结构化 AI 审查、受控 Tool Calling Agent、开发者 Finding 反馈闭环，以及固定缺陷标准答案与评测运行模型。现阶段采用模块化单体，先完成可运行、可测试、可演进的代码审查闭环，再根据真实压力拆分 Spring Cloud 服务。
+当前已经完成登录认证、项目管理、Git 导入、Java AST、Diff 精确映射、PMD 与项目规则、混合 RAG、证据约束的 AI 审查、受控 Tool Calling、反馈和固定评测集等工程底座。接下来的开发不再扩张产品范围，而是把已有能力收敛成可一键演示、可量化验证、本人能够完整解释的求职项目闭环。
+
+审查工作台现已提供一键编排入口，按源码刷新、Diff、静态分析、Embedding 和 Agent 审查顺序执行，并记录幂等、并发冲突、失败阶段和恢复动作。项目理解入口已把源码证据组织成中文业务地图，从 Controller 接口出发展示功能点、HTTP API、调用流程、数据操作和真实代码；逐文件结构继续作为辅助排查入口。
+
+“一句话生成 Spring Boot 项目”已保留版本化需求澄清和确认能力，但从当前开发主线冻结。不会删除相关代码；以后有时间再继续接入真实需求模型、工程生成和编译测试。在完整生成闭环完成前，不把它写入简历能力。
+
+## 当前主要使用方式
+
+### 审查 Java 代码变更（当前主线）
+
+```text
+导入 Git 仓库 → 解析源码与项目关系 → 生成 Git Diff
+→ 静态规则检查 → Hybrid RAG 检索上下文
+→ Agent 调用受控只读 Tool → 结构化审查报告 → 人工反馈与评测
+```
+
+审查结论必须给出文件、行号、代码证据、风险场景、修改建议和验证方法；第一版不自动修改或提交用户代码。
+
+## 保留入口
+
+### 生成新的 Spring Boot 项目（冻结在需求确认阶段）
+
+```text
+一句话需求 → 需求/架构草案 → Agent 反向提问 → 用户确认
+→ 生成完整 Spring Boot 工程 → 编译测试 → 质量报告
+```
+
+第一版只生成新的 Spring Boot 模块化单体，不修改导入项目，不生成 Spring Cloud。
+
+### 理解已有 Java 项目（审查前置能力）
+
+```text
+导入 Git 仓库 → 结构化解析 → 中文项目报告 → 代码证据问答
+→ 找到业务入口和继续开发范围
+```
 
 ## 当前已具备
 
@@ -55,6 +89,9 @@ DevMate AI 是一个面向 Java 项目的智能代码审查 Agent 平台。它�
 - TP/FP/FN、Precision/Recall/F1、Token、耗时和 Tool 成功率评测
 - 健康检查接口及基础测试
 - GitHub Actions 后端、前端和 Benchmark 三路持续集成
+- 一句话创建 Java 项目生成会话、版本化需求方案和确认锁定
+- 规则驱动的单选/多选/自由文本澄清、AI 推荐、选项影响和 AI 代选
+- `guided-requirement-v1` 历史问题与纯文本答案兼容回读
 
 ## 快速启动
 
@@ -142,6 +179,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [HTTP 请求追踪与日志关联](docs/REQUEST_CORRELATION.md)
 - [持续集成与远端质量门禁](docs/CONTINUOUS_INTEGRATION.md)
 - [项目总设计](docs/PROJECT_BLUEPRINT.md)
+- [双模板产品与 Spring Boot 工程生成 Agent](docs/PRODUCT_MODES_AND_GENERATION_AGENT.md)
 - [分阶段开发路线](docs/DEVELOPMENT_ROADMAP.md)
 - [面试导向学习与开发路线](docs/LEARNING_ROADMAP.md)
 - [本地开发与多端同步](docs/LOCAL_DEVELOPMENT.md)

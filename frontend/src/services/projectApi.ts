@@ -7,7 +7,10 @@ import type {
   ProjectQuery,
   SourceDocument,
   SourceSymbol,
+  SourceSymbolDetail,
   SourceReference,
+  ProjectBusinessMap,
+  BusinessFeatureDetail,
   ReviewDiff,
   CreateAiReviewRequest,
   StaticAnalysis,
@@ -16,6 +19,7 @@ import type {
   AiReview,
   ReviewFeedback,
   ReviewFeedbackForm,
+  ReviewWorkflow,
   ReviewEvaluationCase,
   ReviewEvaluationCaseForm,
   ReviewEvaluationRun,
@@ -91,8 +95,28 @@ export const projectApi = {
     )
   },
 
+  getSourceSymbolDetail(
+    projectId: string,
+    documentId: string,
+    symbolId: string,
+  ): Promise<SourceSymbolDetail> {
+    return request(
+      `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(documentId)}/symbols/${encodeURIComponent(symbolId)}`,
+    )
+  },
+
   listSourceReferences(id: string): Promise<SourceReference[]> {
     return request(`/api/projects/${encodeURIComponent(id)}/sources/references`)
+  },
+
+  getBusinessMap(id: string): Promise<ProjectBusinessMap> {
+    return request(`/api/projects/${encodeURIComponent(id)}/business-map`)
+  },
+
+  getBusinessFeatureDetail(id: string, featureId: string): Promise<BusinessFeatureDetail> {
+    return request(
+      `/api/projects/${encodeURIComponent(id)}/business-map/features/${encodeURIComponent(featureId)}`,
+    )
   },
 
   createReviewDiff(id: string): Promise<ReviewDiff> {
@@ -132,6 +156,20 @@ export const projectApi = {
 
   latestAiReview(id: string): Promise<AiReview> {
     return request(`/api/projects/${encodeURIComponent(id)}/ai-reviews/latest`)
+  },
+
+  createReviewWorkflow(
+    id: string,
+    attemptKey = crypto.randomUUID(),
+  ): Promise<ReviewWorkflow> {
+    return request(`/api/projects/${encodeURIComponent(id)}/review-workflows`, {
+      method: 'POST',
+      body: JSON.stringify({ attemptKey }),
+    })
+  },
+
+  latestReviewWorkflow(id: string): Promise<ReviewWorkflow> {
+    return request(`/api/projects/${encodeURIComponent(id)}/review-workflows/latest`)
   },
 
   createReviewEvaluationCase(

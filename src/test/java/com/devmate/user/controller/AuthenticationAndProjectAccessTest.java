@@ -144,6 +144,9 @@ class AuthenticationAndProjectAccessTest {
                         """), bobToken);
         expectForbidden(delete("/api/projects/{id}", projectId), bobToken);
         expectForbidden(post("/api/projects/{id}/imports", projectId), bobToken);
+        expectForbidden(post("/api/projects/{id}/review-workflows", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"attemptKey\":\"123e4567-e89b-42d3-a456-426614174000\"}"), bobToken);
 
         mockMvc.perform(get("/api/projects/{id}", projectId)
                         .header("Authorization", bearer(aliceToken)))
@@ -152,6 +155,34 @@ class AuthenticationAndProjectAccessTest {
 
         Number owners = jdbcOwnerCount(projectId);
         assertThat(owners.intValue()).isEqualTo(1);
+    }
+
+    @Test
+    void isolatesGenerationSessionsBetweenUsers() throws Exception {
+        String aliceToken = register("alice", "alice@example.com");
+        MvcResult created = mockMvc.perform(post("/api/generation-sessions")
+                        .header("Authorization", bearer(aliceToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requirement\":\"做一个企业工单管理系统\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String sessionId = com.jayway.jsonpath.JsonPath.read(
+                created.getResponse().getContentAsString(),
+                "$.data.id"
+        );
+        String bobToken = register("bob", "bob@example.com");
+
+        expectForbidden(get("/api/generation-sessions/{id}", sessionId), bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/clarifications", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"answers":[{"questionId":"target-users","answer":"管理员"}]}
+                        """), bobToken);
+
+        mockMvc.perform(get("/api/generation-sessions/{id}", sessionId)
+                        .header("Authorization", bearer(aliceToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.originalRequirement").value("做一个企业工单管理系统"));
     }
 
     private String register(String username, String email) throws Exception {

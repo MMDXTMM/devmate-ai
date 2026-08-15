@@ -1,0 +1,2 @@
+ALTER TABLE knowledge_chunk
+    MODIFY COLUMN content MEDIUMTEXT NOT NULL;

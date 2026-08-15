@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.devmate.common.error.BusinessException;
 import com.devmate.common.error.ErrorCode;
 import com.devmate.knowledge.dto.SourceDocumentResponse;
+import com.devmate.knowledge.dto.SourceSymbolDetailResponse;
 import com.devmate.knowledge.dto.SourceSymbolResponse;
 import com.devmate.knowledge.dto.SourceReferenceResponse;
 import com.devmate.knowledge.entity.CodeReference;
@@ -79,22 +80,33 @@ public class SourceStructureQueryService {
 
     @Transactional(readOnly = true)
     public List<SourceSymbolResponse> listSymbols(Long projectId, Long documentId) {
-        requireProject(projectId);
-        KnowledgeDocument document = documentMapper.selectOne(
-                Wrappers.lambdaQuery(KnowledgeDocument.class)
-                        .eq(KnowledgeDocument::getId, documentId)
-                        .eq(KnowledgeDocument::getProjectId, projectId)
-                        .last("LIMIT 1")
-        );
-        if (document == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "源码文件不存在");
-        }
+        requireDocument(projectId, documentId);
         return chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
                         .eq(KnowledgeChunk::getDocumentId, documentId)
                         .orderByAsc(KnowledgeChunk::getChunkIndex))
                 .stream()
                 .map(chunk -> SourceSymbolResponse.from(chunk, readAnnotations(chunk.getMetadataJson())))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public SourceSymbolDetailResponse getSymbolDetail(
+            Long projectId,
+            Long documentId,
+            Long symbolId
+    ) {
+        requireDocument(projectId, documentId);
+        KnowledgeChunk chunk = chunkMapper.selectOne(
+                Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getId, symbolId)
+                        .eq(KnowledgeChunk::getProjectId, projectId)
+                        .eq(KnowledgeChunk::getDocumentId, documentId)
+                        .last("LIMIT 1")
+        );
+        if (chunk == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "源码符号不存在");
+        }
+        return SourceSymbolDetailResponse.from(chunk, readAnnotations(chunk.getMetadataJson()));
     }
 
     @Transactional(readOnly = true)
@@ -156,6 +168,20 @@ public class SourceStructureQueryService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
         }
         return project;
+    }
+
+    private KnowledgeDocument requireDocument(Long projectId, Long documentId) {
+        requireProject(projectId);
+        KnowledgeDocument document = documentMapper.selectOne(
+                Wrappers.lambdaQuery(KnowledgeDocument.class)
+                        .eq(KnowledgeDocument::getId, documentId)
+                        .eq(KnowledgeDocument::getProjectId, projectId)
+                        .last("LIMIT 1")
+        );
+        if (document == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "源码文件不存在");
+        }
+        return document;
     }
 
     private List<String> readAnnotations(String metadataJson) {

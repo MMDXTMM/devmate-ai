@@ -566,6 +566,26 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data[2].symbolName").value("com.example.App#run()"))
                 .andExpect(jsonPath("$.data[2].startLine").isNumber());
 
+        KnowledgeChunk runMethod = chunkMapper.selectOne(
+                Wrappers.lambdaQuery(KnowledgeChunk.class)
+                        .eq(KnowledgeChunk::getDocumentId, appDocument.getId())
+                        .eq(KnowledgeChunk::getSymbolName, "com.example.App#run()")
+                        .last("LIMIT 1")
+        );
+        mockMvc.perform(get(
+                        "/api/projects/{projectId}/sources/{documentId}/symbols/{symbolId}",
+                        project.id(),
+                        appDocument.getId(),
+                        runMethod.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").isString())
+                .andExpect(jsonPath("$.data.chunkType").value("METHOD"))
+                .andExpect(jsonPath("$.data.symbolName").value("com.example.App#run()"))
+                .andExpect(jsonPath("$.data.code").value(org.hamcrest.Matchers.containsString("helper()")))
+                .andExpect(jsonPath("$.data.truncated").value(false))
+                .andExpect(jsonPath("$.data.originalCharacters").isNumber());
+
         mockMvc.perform(get("/api/projects/{projectId}/sources/references", project.id()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
@@ -574,6 +594,52 @@ class SourceImportControllerTest {
                 .andExpect(jsonPath("$.data[0].sourceSymbolName").value("com.example.App#run()"))
                 .andExpect(jsonPath("$.data[0].targetSymbolName").value("com.example.App#helper()"))
                 .andExpect(jsonPath("$.data[0].resolved").value(true));
+    }
+
+    @Test
+    void importsSourceChunkLargerThanMysqlTextCapacity() throws Exception {
+        ProjectResponse project = createGitProject("large-source-chunk");
+        given(gitSourceClient.cloneRepository(anyString(), eq("main"), any(Path.class)))
+                .willAnswer(invocation -> {
+                    Path target = invocation.getArgument(2);
+                    Files.createDirectories(target.resolve("src/main/java/com/example"));
+                    String statements = "        value += 1;\n".repeat(4_000);
+                    Files.writeString(target.resolve("src/main/java/com/example/LargeService.java"), """
+                            package com.example;
+                            class LargeService {
+                                int calculate() {
+                                    int value = 0;
+                            """ + statements + """
+                                    return value;
+                                }
+                            }
+                            """);
+                    return new GitCloneResult(target, REVISION);
+                });
+
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+
+        KnowledgeChunk largeChunk = chunkMapper.selectList(
+                        Wrappers.lambdaQuery(KnowledgeChunk.class)
+                                .eq(KnowledgeChunk::getProjectId, project.id())
+                                .orderByDesc(KnowledgeChunk::getChunkIndex)
+                ).stream()
+                .max(java.util.Comparator.comparingInt(chunk -> chunk.getContent().length()))
+                .orElseThrow();
+        assertThat(largeChunk.getContent().length()).isGreaterThan(65_535);
+
+        mockMvc.perform(get(
+                        "/api/projects/{projectId}/sources/{documentId}/symbols/{symbolId}",
+                        project.id(),
+                        largeChunk.getDocumentId(),
+                        largeChunk.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.truncated").value(true))
+                .andExpect(jsonPath("$.data.code").value(org.hamcrest.Matchers.hasLength(16_000)))
+                .andExpect(jsonPath("$.data.originalCharacters", greaterThanOrEqualTo(65_536)));
     }
 
     @Test

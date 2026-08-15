@@ -2,6 +2,7 @@ package com.devmate.knowledge.controller;
 
 import com.devmate.common.api.ApiResponse;
 import com.devmate.knowledge.dto.SourceDocumentResponse;
+import com.devmate.knowledge.dto.SourceSymbolDetailResponse;
 import com.devmate.knowledge.dto.SourceSymbolResponse;
 import com.devmate.knowledge.dto.SourceReferenceResponse;
 import com.devmate.knowledge.service.SourceStructureQueryService;
@@ -45,5 +46,14 @@ public class SourceStructureController {
             @Positive(message = "源码文件ID必须大于0") @PathVariable Long documentId
     ) {
         return ApiResponse.success(queryService.listSymbols(projectId, documentId));
+    }
+
+    @GetMapping("/{documentId}/symbols/{symbolId}")
+    public ApiResponse<SourceSymbolDetailResponse> getSymbolDetail(
+            @Positive(message = "项目ID必须大于0") @PathVariable Long projectId,
+            @Positive(message = "源码文件ID必须大于0") @PathVariable Long documentId,
+            @Positive(message = "源码符号ID必须大于0") @PathVariable Long symbolId
+    ) {
+        return ApiResponse.success(queryService.getSymbolDetail(projectId, documentId, symbolId));
     }
 }

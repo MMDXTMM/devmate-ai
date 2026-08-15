@@ -15,6 +15,9 @@ import com.devmate.knowledge.source.SourceFileType;
 import com.devmate.knowledge.source.SourceImportException;
 import com.devmate.knowledge.source.WorkspaceManager;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataAccessException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -23,6 +26,8 @@ import java.util.Objects;
 
 @Service
 public class SourceImportService {
+
+    private static final Logger log = LoggerFactory.getLogger(SourceImportService.class);
 
     private final SourceImportStateService stateService;
     private final WorkspaceManager workspaceManager;
@@ -135,13 +140,23 @@ public class SourceImportService {
                     metrics
             );
         } catch (RuntimeException exception) {
-            String message = exception.getMessage() == null ? "源码导入失败" : exception.getMessage();
+            String message = readableFailureMessage(exception);
             if (exception instanceof BusinessException businessException
                     && businessException.getErrorCode() == ErrorCode.CONFLICT) {
                 stateService.reject(context, message, metrics);
                 throw businessException;
             }
+            log.error(
+                    "Source import failed projectId={} taskId={} errorType={}",
+                    context.projectId(),
+                    context.taskId(),
+                    exception.getClass().getSimpleName(),
+                    exception
+            );
             stateService.fail(context, message, metrics);
+            if (exception instanceof BusinessException businessException) {
+                throw businessException;
+            }
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, message);
         }
     }
@@ -156,5 +171,31 @@ public class SourceImportService {
             case YAML, PROPERTIES -> configurationFileParser.parse(file);
             case SQL -> databaseSchemaParser.parse(file);
         };
+    }
+
+    private String readableFailureMessage(RuntimeException exception) {
+        if (exception instanceof BusinessException || exception instanceof SourceImportException) {
+            return exception.getMessage() == null ? "源码导入失败，请稍后重试" : exception.getMessage();
+        }
+        if (containsMessage(exception, "data too long")
+                && containsMessage(exception, "content")) {
+            return "源码块超过数据库存储限制，请确认数据库迁移已完成后重新解析";
+        }
+        if (exception instanceof DataAccessException) {
+            return "保存源码解析结果失败，请检查数据库迁移状态后重试";
+        }
+        return "源码导入失败，请稍后重试";
+    }
+
+    private boolean containsMessage(Throwable throwable, String expected) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current.getMessage() != null
+                    && current.getMessage().toLowerCase(java.util.Locale.ROOT).contains(expected)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

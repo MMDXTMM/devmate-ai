@@ -228,6 +228,40 @@ describe('projectApi', () => {
     expect(symbols[0].id).toBe('2084116785588307001')
   })
 
+  it('loads a source symbol code preview without converting bigint ids', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588307001',
+        documentId: '2084116785588307000',
+        chunkType: 'METHOD',
+        symbolName: 'com.example.ReviewService#review()',
+        annotations: ['Transactional'],
+        startLine: 10,
+        endLine: 20,
+        revision: 'abcdef',
+        code: 'void review() {}',
+        truncated: false,
+        originalCharacters: 16,
+      },
+      timestamp: '2026-08-04T00:00:00Z',
+    }))
+
+    const detail = await projectApi.getSourceSymbolDetail(
+      '2084116785588305922',
+      '2084116785588307000',
+      '2084116785588307001',
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/sources/2084116785588307000/symbols/2084116785588307001',
+      expect.any(Object),
+    )
+    expect(detail.id).toBe('2084116785588307001')
+    expect(detail.code).toContain('review')
+  })
+
   it('creates a review diff coverage report', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       code: 0,
@@ -387,6 +421,62 @@ describe('projectApi', () => {
       }),
     )
     expect(result.promptVersion).toBe('review-agent-v1')
+  })
+
+  it('starts the complete review workflow with an idempotency key', async () => {
+    const attemptKey = '123e4567-e89b-42d3-a456-426614174002'
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588313000',
+        projectId: '2084116785588305922',
+        attemptKey,
+        status: 'SUCCEEDED',
+        currentStage: 'COMPLETED',
+        reviewTaskId: '2084116785588308000',
+        aiReviewTaskId: '2084116785588311000',
+        createdAt: '2026-08-07T00:00:00Z',
+      },
+      timestamp: '2026-08-07T00:00:00Z',
+    }))
+
+    const result = await projectApi.createReviewWorkflow(
+      '2084116785588305922',
+      attemptKey,
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/review-workflows',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ attemptKey }),
+      }),
+    )
+    expect(result.status).toBe('SUCCEEDED')
+    expect(result.reviewTaskId).toBe('2084116785588308000')
+  })
+
+  it('loads the latest persisted review workflow', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        id: '2084116785588313000', projectId: '2084116785588305922',
+        attemptKey: '123e4567-e89b-42d3-a456-426614174002', status: 'FAILED',
+        currentStage: 'AGENT_REVIEW', errorMessage: 'Agent代码审查失败',
+        recoveryAction: '检查模型配置后重试', createdAt: '2026-08-07T00:00:00Z',
+      },
+      timestamp: '2026-08-07T00:00:00Z',
+    }))
+
+    const result = await projectApi.latestReviewWorkflow('2084116785588305922')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/2084116785588305922/review-workflows/latest',
+      expect.any(Object),
+    )
+    expect(result.currentStage).toBe('AGENT_REVIEW')
   })
 
   it('upserts developer feedback for a project-scoped finding', async () => {

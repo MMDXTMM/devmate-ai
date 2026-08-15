@@ -13,7 +13,7 @@
 
     <groupId>com.devmate</groupId>
     <artifactId>devmate-ai</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0</version>
     <name>devmate-ai</name>
     <description>AI-powered software development collaboration platform</description>
 

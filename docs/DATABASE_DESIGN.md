@@ -5,6 +5,13 @@
 第一版数据库需要支撑这条完整业务链路：
 
 ```text
+用户用一句话描述新项目
+  → 保存生成会话
+  → 形成需求/架构草案并反向提问
+  → 保存新的方案版本
+  → 用户确认固定版本
+  → 后续生成任务绑定该版本
+
 用户创建项目
   → 导入源码或文档
   → 创建索引任务
@@ -15,13 +22,15 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。V14 为 Diff 目标路径增加大小写敏感哈希，避免 MySQL 默认排序规则混淆 Git 路径。V19 增加源码结构版本，让解析规则升级不会静默破坏历史 Chunk 证据。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。V14 为 Diff 目标路径增加大小写敏感哈希，避免 MySQL 默认排序规则混淆 Git 路径。V19 增加源码结构版本，让解析规则升级不会静默破坏历史 Chunk 证据。V20 将源码块正文扩展为 `MEDIUMTEXT`，V21 增加冻结中的需求澄清数据，V22 增加一键审查编排运行记录。
 
 ## 2. 表关系
 
 ```mermaid
 erDiagram
     APP_USER ||--o{ PROJECT : owns
+    APP_USER ||--o{ GENERATION_SESSION : starts
+    GENERATION_SESSION ||--|{ GENERATION_SPEC_VERSION : versions
     APP_USER ||--o{ PROJECT_MEMBER : joins
     PROJECT ||--o{ PROJECT_MEMBER : contains
     PROJECT ||--o{ KNOWLEDGE_DOCUMENT : contains
@@ -32,6 +41,7 @@ erDiagram
     CONVERSATION ||--o{ CONVERSATION_MESSAGE : contains
     PROJECT ||--o{ BUG_ANALYSIS : diagnoses
     PROJECT ||--o{ CODE_REVIEW_TASK : reviews
+    PROJECT ||--o{ REVIEW_WORKFLOW_RUN : orchestrates
     CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FILE : covers
     CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : analyzes
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
@@ -67,7 +77,23 @@ erDiagram
 - `status`：`ACTIVE`、`DISABLED`、`LOCKED`。
 - `deleted`：逻辑删除标记。
 
-### 3.2 `project`
+### 3.2 `generation_session` 与 `generation_spec_version`
+
+V21 增加新项目生成前的需求澄清事实源，与导入已有仓库使用的 `project` 表保持独立：
+
+- `generation_session` 保存用户原始的一句话需求、当前状态、最新版本号和最终确认版本。
+- 会话状态第一步使用 `CLARIFYING → CONFIRMED`；进入代码生成后再通过新迁移扩展生成任务状态，不提前混入当前表。
+- `generation_spec_version` 保存每一次需求摘要、架构建议、显式假设、问题、答案和规则/Prompt 版本。
+- `(session_id, version_no)` 唯一，避免并发提交生成相同版本；Service 同时用当前版本号做条件更新。
+- 只有最新版本且所有必答问题完成后才能确认；确认后禁止继续修改，后续生成任务必须绑定 `confirmed_version_id`。
+- 问题和答案以 JSON 文本保存，Java API 返回结构化对象；该数据不是可自由执行的 Prompt，也不包含密钥。
+- `guided-requirement-v2` 的问题 JSON 保存问题分类、输入类型、AI 建议、推荐理由和 2～4 个带影响说明的选项；答案 JSON 保存实际选项、`decisionMode`、自定义补充和服务端生成的可读摘要。
+- `decisionMode` 区分用户普通选择、主动采用推荐、AI 代选、自定义和历史文本。AI 代选会落到明确推荐项，不能只保存“未知”。
+- 旧 v1 JSON 缺少新字段时在 Java 读取层归一化为自由文本问题；旧 `{questionId, answer}` 转换为 `LEGACY_TEXT`，因此 V21 无需修改，也不需要数据回填迁移。
+
+当前 `guided-requirement-v2` 是可预测的工程规则草案，不冒充模型结果。接入 LLM API 后仍复用相同版本和确认边界，并新增模型失败测试。
+
+### 3.3 `project`
 
 保存接入 DevMate AI 的研发项目。
 
@@ -83,7 +109,7 @@ erDiagram
 
 `owner_id` 在 V2 中暂时允许为空，是为了让已有 V1 数据能够平滑升级；项目创建业务会要求所有者必填，后续完成存量回填后再通过迁移增加非空约束。
 
-### 3.3 `project_member`
+### 3.4 `project_member`
 
 表示用户与项目之间的权限关系。
 
@@ -91,7 +117,7 @@ erDiagram
 - `member_role` 可取 `OWNER`、`MAINTAINER`、`DEVELOPER`、`VIEWER`。
 - 后续所有检索和 Tool 调用都应先校验该关系。
 
-### 3.4 `knowledge_document`
+### 3.5 `knowledge_document`
 
 保存源码文件或技术文档的元数据，不在这里保存文件本体。
 
@@ -104,7 +130,7 @@ erDiagram
 - `status`：当前结构解析使用 `PARSED`；完成向量索引后使用 `INDEXED`，失败使用 `FAILED`。
 - `(project_id, path_hash, revision)` 唯一，防止同一版本重复导入，同时避免 `utf8mb4` 长路径超过 MySQL 的索引长度限制。
 
-### 3.5 `knowledge_chunk`
+### 3.6 `knowledge_chunk`
 
 RAG 的最小检索单元。
 
@@ -116,7 +142,7 @@ RAG 的最小检索单元。
 - `metadata_json`：保存注解等可扩展符号元数据，避免每增加一种 AST 属性就修改表结构。
 - `project_id` 是有意保留的冗余字段，用于高频项目隔离过滤，避免每次检索都连接文档表。
 
-### 3.6 `index_task`
+### 3.7 `index_task`
 
 记录代码解析和知识库构建任务。
 
@@ -125,7 +151,7 @@ RAG 的最小检索单元。
 - 文件计数用于展示进度。
 - 后续接入 RabbitMQ 时，任务 ID 同时作为幂等依据之一。
 
-### 3.7 `embedding_vector` 与 `embedding_index_task`
+### 3.8 `embedding_vector` 与 `embedding_index_task`
 
 V9 增加可替换的向量索引实现：
 
@@ -136,7 +162,17 @@ V9 增加可替换的向量索引实现：
 - 远端模型调用不处于数据库长事务；每个批次保存使用独立短事务。
 - 新 revision 或模型版本不会复用不兼容向量。
 
-### 3.8 `conversation` 与 `conversation_message`
+#### `review_workflow_run`
+
+V22 增加一键代码审查的编排运行记录。该表不复制各子任务结果，只固定本次执行涉及的导入、Diff、静态分析、Embedding 和 Agent 审查任务 ID：
+
+- `current_stage` 保存当前或最终失败阶段，前端无需理解五套内部状态机。
+- `attempt_key` 是客户端单次操作的幂等键；同一项目重复提交相同键返回原运行。
+- `running_key` 只在运行中等于项目 ID，唯一约束阻止同一项目并发启动两条完整流水线；完成、失败或超时恢复时显式置空。
+- `error_message/recovery_action` 只保存脱敏的用户可读信息，不保存 SQL、绝对路径或模型原始响应。
+- 编排器只用短事务记录开始、阶段推进和最终状态；Git、静态工具、Embedding 和模型调用均在事务外执行。
+
+### 3.9 `conversation` 与 `conversation_message`
 
 会话和消息分表，而不是把一次问答放在同一行：
 
@@ -145,7 +181,7 @@ V9 增加可替换的向量索引实现：
 - `(conversation_id, sequence_no)` 保证消息顺序唯一。
 - Token 字段记录在 AI 回复消息上，便于按会话统计。
 
-### 3.9 `bug_analysis`
+### 3.10 `bug_analysis`
 
 保存一次可独立查看的 Bug 诊断任务和结果。
 
@@ -154,7 +190,7 @@ V9 增加可替换的向量索引实现：
 - `severity`：`UNKNOWN`、`LOW`、`MEDIUM`、`HIGH`、`CRITICAL`。
 - 可关联产生本次分析的会话。
 
-### 3.10 `ai_invocation_log`
+### 3.11 `ai_invocation_log`
 
 记录一次模型调用的运行指标和错误信息。
 
@@ -163,7 +199,7 @@ V9 增加可替换的向量索引实现：
 - Token、耗时、模型和状态支持后续性能与成本分析。
 - V10 增加 `prompt_version` 和 `request_hash`，用于复现配置与比对请求，但不保存完整 Prompt。
 
-### 3.11 `tool_call_log`
+### 3.12 `tool_call_log`
 
 记录 Agent 每次工具选择和执行结果。
 
@@ -174,7 +210,7 @@ V9 增加可替换的向量索引实现：
 - `arguments_hash` 用于重复调用识别；`error_code` 区分未知工具、非法参数、超时和执行失败。
 - 完整参数和 Tool 输出不会持久化；`arguments_summary/result_summary` 只保留键名、字符数、命中量等脱敏信息。
 
-### 3.12 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
+### 3.13 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
 
 V8 增加可复现的检索评测：
 
@@ -324,6 +360,14 @@ erDiagram
 - `V12__add_code_review_feedback.sql`：Finding 最新反馈、项目归属、类型索引和级联清理。
 - `V13__add_review_evaluation_schema.sql`：固定缺陷标准答案、执行模式快照、评测运行和质量/成本指标。
 - `V14__add_review_file_path_hash.sql`：Diff 目标路径大小写敏感哈希和任务内查询索引。
+- `V15__add_ai_review_attempt_key.sql`：AI 审查请求幂等键。
+- `V16__add_incremental_embedding_reuse.sql`：Embedding 增量复用计数与约束。
+- `V17__add_incremental_source_import_metrics.sql`：源码增量导入计数与任务指标。
+- `V18__add_source_import_phase_metrics.sql`：源码导入分阶段耗时。
+- `V19__add_source_structure_version.sql`：项目与文档结构解析版本。
+- `V20__expand_knowledge_chunk_content.sql`：源码块正文扩展为 `MEDIUMTEXT`。
+- `V21__add_generation_requirement_schema.sql`：需求澄清会话与不可变方案版本。
+- `V22__add_review_workflow_run.sql`：一键审查编排状态、子任务关联、幂等与并发控制。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。
