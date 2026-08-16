@@ -8,6 +8,7 @@ public record ProjectBusinessMapResponse(
         String summary,
         int moduleCount,
         int endpointCount,
+        ProjectOnboardingResponse onboarding,
         List<BusinessModuleResponse> modules,
         List<String> limitations
 ) {

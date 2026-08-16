@@ -10,6 +10,7 @@ import type {
   SourceSymbolDetail,
   SourceReference,
   ProjectBusinessMap,
+  ProjectUnderstandingReport,
   BusinessFeatureDetail,
   ReviewDiff,
   CreateAiReviewRequest,
@@ -117,6 +118,21 @@ export const projectApi = {
     return request(
       `/api/projects/${encodeURIComponent(id)}/business-map/features/${encodeURIComponent(featureId)}`,
     )
+  },
+
+  createUnderstandingReport(
+    id: string,
+    revision: string,
+    attemptKey: string,
+  ): Promise<ProjectUnderstandingReport> {
+    return request(`/api/projects/${encodeURIComponent(id)}/understanding-reports`, {
+      method: 'POST',
+      body: JSON.stringify({ revision, attemptKey }),
+    })
+  },
+
+  latestUnderstandingReport(id: string): Promise<ProjectUnderstandingReport> {
+    return request(`/api/projects/${encodeURIComponent(id)}/understanding-reports/latest`)
   },
 
   createReviewDiff(id: string): Promise<ReviewDiff> {

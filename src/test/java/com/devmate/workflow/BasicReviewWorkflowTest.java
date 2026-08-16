@@ -210,7 +210,7 @@ class BasicReviewWorkflowTest {
                         10, 5, 15, "stop"
                 )
         );
-        given(agentModelRegistry.current()).willReturn(model);
+        given(agentModelRegistry.current("TEST", "test-model")).willReturn(model);
     }
 
     private record ReviewRequest(Long reviewTaskId, String revision, String attemptKey) {

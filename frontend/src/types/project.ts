@@ -172,12 +172,111 @@ export interface BusinessModule {
 
 export interface ProjectBusinessMap {
   revision: string
-  analysisMode: 'STATIC_CODE_EVIDENCE_V1'
+  analysisMode: 'STATIC_CODE_EVIDENCE_V2'
   summary: string
   moduleCount: number
   endpointCount: number
+  onboarding: ProjectOnboarding
   modules: BusinessModule[]
   limitations: string[]
+}
+
+export interface ProjectUnderstandingEvidence {
+  chunkId: string
+  symbolName: string
+  filePath: string
+  startLine: number
+  endLine: number
+  code: string
+  truncated: boolean
+}
+
+export interface ProjectUnderstandingFlow {
+  name: string
+  goal: string
+  steps: string[]
+  apiEntries: string[]
+  dataChanges: string[]
+  evidence: ProjectUnderstandingEvidence[]
+}
+
+export interface ProjectUnderstandingReading {
+  order: number
+  title: string
+  reason: string
+  evidence: ProjectUnderstandingEvidence[]
+}
+
+export interface ProjectUnderstandingReport {
+  id: string
+  projectId: string
+  revision: string
+  provider: string
+  modelName: string
+  promptVersion: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  executiveSummary?: string
+  architectureNarrative?: string
+  businessFlows: ProjectUnderstandingFlow[]
+  readingGuide: ProjectUnderstandingReading[]
+  risksAndUnknowns: string[]
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  latencyMs?: number
+  errorMessage?: string
+  attemptKey: string
+  createdAt: string
+  finishedAt?: string
+}
+
+export interface ProjectOnboarding {
+  purpose: string
+  architectureSummary: string
+  detectedCapabilities: string[]
+  coreJourneys: BusinessJourney[]
+  stateModels: ProjectStateModel[]
+  dataAssets: ProjectDataAsset[]
+  readingOrder: ProjectReadingStep[]
+  unknowns: string[]
+}
+
+export interface BusinessJourney {
+  moduleId: string
+  name: string
+  goal: string
+  apiEntries: string[]
+  implementationFlow: string[]
+  dataOperations: string[]
+  failureSignals: string[]
+  evidenceFiles: string[]
+}
+
+export interface ProjectStateModel {
+  chunkId: string
+  name: string
+  values: string[]
+  filePath: string
+  startLine: number
+  endLine: number
+}
+
+export interface ProjectDataAsset {
+  chunkId: string
+  name: string
+  filePath: string
+  startLine: number
+  endLine: number
+}
+
+export interface ProjectReadingStep {
+  order: number
+  category: string
+  title: string
+  reason: string
+  filePath: string
+  symbolName: string
+  startLine: number
 }
 
 export interface BusinessCodeEvidence {

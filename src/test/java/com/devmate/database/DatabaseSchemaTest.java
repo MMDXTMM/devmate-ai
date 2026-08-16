@@ -33,7 +33,9 @@ class DatabaseSchemaTest {
             "review_finding",
             "code_review_feedback",
             "review_evaluation_case",
-            "review_evaluation_run"
+            "review_evaluation_run",
+            "user_model_connection",
+            "project_understanding_report"
     );
 
     @Autowired
@@ -113,5 +115,11 @@ class DatabaseSchemaTest {
             );
             assertThat(defaultMetric).as("column %s should exist", column).isZero();
         }
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(active_user_id) FROM user_model_connection", Integer.class
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(report_json) FROM project_understanding_report", Integer.class
+        )).isZero();
     }
 }

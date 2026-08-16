@@ -7,3 +7,5 @@ spring:
 devmate:
   security:
     enabled: false
+  model-connections:
+    encryption-secret: test-model-encryption-secret-32-characters

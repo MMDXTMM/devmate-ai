@@ -22,7 +22,7 @@
   → 记录回答、耗时和工具链路
 ```
 
-MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。V14 为 Diff 目标路径增加大小写敏感哈希，避免 MySQL 默认排序规则混淆 Git 路径。V19 增加源码结构版本，让解析规则升级不会静默破坏历史 Chunk 证据。V20 将源码块正文扩展为 `MEDIUMTEXT`，V21 增加冻结中的需求澄清数据，V22 增加一键审查编排运行记录。
+MySQL 负责结构化业务数据和关联关系。V9 增加 `embedding_vector` 作为开发阶段的小规模向量存储适配器，并由 `knowledge_chunk.vector_id` 指向当前成功向量。它使用 Java 线性余弦搜索完成端到端验证，不是生产级 ANN；数据规模增长后可替换为 Elasticsearch 或专用向量数据库。V10 增加独立 AI 审查任务和证据引用，不把模型调用状态混入确定性静态分析任务。V13 增加固定缺陷标准答案和评测运行快照，用相同数据集比较固定流水线与 Agent。V14 为 Diff 目标路径增加大小写敏感哈希，避免 MySQL 默认排序规则混淆 Git 路径。V19 增加源码结构版本，让解析规则升级不会静默破坏历史 Chunk 证据。V20 将源码块正文扩展为 `MEDIUMTEXT`，V21 增加冻结中的需求澄清数据，V22 增加一键审查编排运行记录，V23 保存账户级加密模型连接，V24 保存证据约束的中文项目理解报告任务。
 
 ## 2. 表关系
 
@@ -42,6 +42,8 @@ erDiagram
     PROJECT ||--o{ BUG_ANALYSIS : diagnoses
     PROJECT ||--o{ CODE_REVIEW_TASK : reviews
     PROJECT ||--o{ REVIEW_WORKFLOW_RUN : orchestrates
+    PROJECT ||--o{ PROJECT_UNDERSTANDING_REPORT : explains
+    APP_USER ||--o{ PROJECT_UNDERSTANDING_REPORT : requests
     CODE_REVIEW_TASK ||--o{ CODE_REVIEW_FILE : covers
     CODE_REVIEW_TASK ||--o{ STATIC_ANALYSIS_TASK : analyzes
     STATIC_ANALYSIS_TASK ||--o{ REVIEW_FINDING : produces
@@ -93,7 +95,22 @@ V21 增加新项目生成前的需求澄清事实源，与导入已有仓库使�
 
 当前 `guided-requirement-v2` 是可预测的工程规则草案，不冒充模型结果。接入 LLM API 后仍复用相同版本和确认边界，并新增模型失败测试。
 
-### 3.3 `project`
+### 3.3 `project_understanding_report`
+
+保存用户显式触发的中文项目深度理解任务和可复现结果：
+
+- `project_id/user_id/revision`：报告归属、操作用户和固定源码版本。
+- `provider/model_name/prompt_version`：记录本次实际使用的账户模型快照和 Prompt 版本。
+- `status`：`RUNNING → SUCCEEDED/FAILED`，模型 HTTP 调用位于数据库事务之外。
+- `report_json`：保存经过证据白名单校验的结构化中文报告，不重复保存源码正文；展示时按 Chunk ID 从当前 revision 回填真实路径、行号和有限代码预览。
+- `attempt_key`：用户级唯一键，同一次点击重试直接回读已有任务，避免重复付费。
+- `running_key`：同一项目同一 revision 同时只能生成一份报告；完成、失败或超时恢复后显式清空。
+- `prompt_tokens/completion_tokens/total_tokens/latency_ms`：用于成本与性能审计。
+- `error_code/error_message`：只保存可读、脱敏失败信息，不保存 Prompt、API Key、第三方响应或完整源码。
+
+V24 不把模型输出当作源码事实：业务流程和阅读建议只能引用输入中存在的证据 ID，Java 服务负责校验并回填真实位置。历史成功报告保留用于审计；最近报告按 `project_id, created_at, id` 查询。
+
+### 3.4 `project`
 
 保存接入 DevMate AI 的研发项目。
 
@@ -109,7 +126,7 @@ V21 增加新项目生成前的需求澄清事实源，与导入已有仓库使�
 
 `owner_id` 在 V2 中暂时允许为空，是为了让已有 V1 数据能够平滑升级；项目创建业务会要求所有者必填，后续完成存量回填后再通过迁移增加非空约束。
 
-### 3.4 `project_member`
+### 3.5 `project_member`
 
 表示用户与项目之间的权限关系。
 
@@ -117,7 +134,7 @@ V21 增加新项目生成前的需求澄清事实源，与导入已有仓库使�
 - `member_role` 可取 `OWNER`、`MAINTAINER`、`DEVELOPER`、`VIEWER`。
 - 后续所有检索和 Tool 调用都应先校验该关系。
 
-### 3.5 `knowledge_document`
+### 3.6 `knowledge_document`
 
 保存源码文件或技术文档的元数据，不在这里保存文件本体。
 
@@ -130,7 +147,7 @@ V21 增加新项目生成前的需求澄清事实源，与导入已有仓库使�
 - `status`：当前结构解析使用 `PARSED`；完成向量索引后使用 `INDEXED`，失败使用 `FAILED`。
 - `(project_id, path_hash, revision)` 唯一，防止同一版本重复导入，同时避免 `utf8mb4` 长路径超过 MySQL 的索引长度限制。
 
-### 3.6 `knowledge_chunk`
+### 3.7 `knowledge_chunk`
 
 RAG 的最小检索单元。
 
@@ -142,7 +159,7 @@ RAG 的最小检索单元。
 - `metadata_json`：保存注解等可扩展符号元数据，避免每增加一种 AST 属性就修改表结构。
 - `project_id` 是有意保留的冗余字段，用于高频项目隔离过滤，避免每次检索都连接文档表。
 
-### 3.7 `index_task`
+### 3.8 `index_task`
 
 记录代码解析和知识库构建任务。
 
@@ -151,7 +168,7 @@ RAG 的最小检索单元。
 - 文件计数用于展示进度。
 - 后续接入 RabbitMQ 时，任务 ID 同时作为幂等依据之一。
 
-### 3.8 `embedding_vector` 与 `embedding_index_task`
+### 3.9 `embedding_vector` 与 `embedding_index_task`
 
 V9 增加可替换的向量索引实现：
 
@@ -172,7 +189,7 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - `error_message/recovery_action` 只保存脱敏的用户可读信息，不保存 SQL、绝对路径或模型原始响应。
 - 编排器只用短事务记录开始、阶段推进和最终状态；Git、静态工具、Embedding 和模型调用均在事务外执行。
 
-### 3.9 `conversation` 与 `conversation_message`
+### 3.10 `conversation` 与 `conversation_message`
 
 会话和消息分表，而不是把一次问答放在同一行：
 
@@ -181,7 +198,7 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - `(conversation_id, sequence_no)` 保证消息顺序唯一。
 - Token 字段记录在 AI 回复消息上，便于按会话统计。
 
-### 3.10 `bug_analysis`
+### 3.11 `bug_analysis`
 
 保存一次可独立查看的 Bug 诊断任务和结果。
 
@@ -190,7 +207,7 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - `severity`：`UNKNOWN`、`LOW`、`MEDIUM`、`HIGH`、`CRITICAL`。
 - 可关联产生本次分析的会话。
 
-### 3.11 `ai_invocation_log`
+### 3.12 `ai_invocation_log`
 
 记录一次模型调用的运行指标和错误信息。
 
@@ -199,7 +216,7 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - Token、耗时、模型和状态支持后续性能与成本分析。
 - V10 增加 `prompt_version` 和 `request_hash`，用于复现配置与比对请求，但不保存完整 Prompt。
 
-### 3.12 `tool_call_log`
+### 3.13 `tool_call_log`
 
 记录 Agent 每次工具选择和执行结果。
 
@@ -210,7 +227,7 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - `arguments_hash` 用于重复调用识别；`error_code` 区分未知工具、非法参数、超时和执行失败。
 - 完整参数和 Tool 输出不会持久化；`arguments_summary/result_summary` 只保留键名、字符数、命中量等脱敏信息。
 
-### 3.13 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
+### 3.14 `retrieval_evaluation_case` 与 `retrieval_evaluation_run`
 
 V8 增加可复现的检索评测：
 
@@ -331,6 +348,16 @@ erDiagram
 
 `review_finding` 已在 V6 创建；`code_review_feedback` 已通过 V12 创建；评测用例与运行已通过 V13 创建。
 
+### `user_model_connection`
+
+V23 保存登录账户的大模型连接配置：
+
+- `(user_id, provider)` 唯一，允许同一账户分别保存 DeepSeek、通义千问和 OpenAI 配置；
+- `is_active` 标记该账户当前启用的提供方，`active_user_id` 只在启用行保存用户 ID，并由唯一键防止并发产生两个启用连接；切换过程在短事务中完成；
+- `encrypted_api_key` 只保存 AES-GCM 密文，附加认证数据绑定 `user_id + provider`，防止跨账户或跨提供方交换密文；
+- 加密主密钥只从 `DEVMATE_MODEL_ENCRYPTION_SECRET` 注入，不写入数据库；主密钥变化后用户需要重新填写 API Key；
+- 用户删除时配置级联删除，接口不返回密文或明文。
+
 ### `code_reference`
 
 保存当前源码版本中的确定性关系证据：
@@ -368,6 +395,8 @@ erDiagram
 - `V20__expand_knowledge_chunk_content.sql`：源码块正文扩展为 `MEDIUMTEXT`。
 - `V21__add_generation_requirement_schema.sql`：需求澄清会话与不可变方案版本。
 - `V22__add_review_workflow_run.sql`：一键审查编排状态、子任务关联、幂等与并发控制。
+- `V23__add_user_model_connection.sql`：账户级模型配置、加密 API Key 和当前提供方索引。
+- `V24__add_project_understanding_report.sql`：版本固定、证据约束的中文项目理解报告、付费幂等与超时恢复状态。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

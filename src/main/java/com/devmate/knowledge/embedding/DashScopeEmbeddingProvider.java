@@ -1,14 +1,18 @@
 package com.devmate.knowledge.embedding;
 
+import com.devmate.agent.model.ModelConnectionSnapshot;
+import com.devmate.agent.service.SpringAiChatClientFactory;
 import com.devmate.knowledge.config.EmbeddingProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.springframework.http.MediaType;
+import org.springframework.ai.embedding.EmbeddingRequest;
+import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.openai.OpenAiEmbeddingOptions;
+import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 
@@ -16,14 +20,14 @@ import java.util.List;
 public class DashScopeEmbeddingProvider implements EmbeddingProvider {
 
     private final EmbeddingProperties properties;
-    private final RestClient.Builder restClientBuilder;
+    private final SpringAiChatClientFactory modelFactory;
 
     public DashScopeEmbeddingProvider(
             EmbeddingProperties properties,
-            RestClient.Builder restClientBuilder
+            SpringAiChatClientFactory modelFactory
     ) {
         this.properties = properties;
-        this.restClientBuilder = restClientBuilder;
+        this.modelFactory = modelFactory;
     }
 
     @Override
@@ -48,27 +52,25 @@ public class DashScopeEmbeddingProvider implements EmbeddingProvider {
             throw new EmbeddingException("远端Embedding批次大小不合法");
         }
         try {
-            EmbeddingResponse response = restClientBuilder
-                    .baseUrl(trimTrailingSlash(properties.getBaseUrl()))
-                    .defaultHeader("Authorization", "Bearer " + properties.getApiKey())
-                    .build()
-                    .post()
-                    .uri("/embeddings")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(new EmbeddingRequest(
-                            properties.getModel(),
-                            texts,
-                            properties.getDimensions(),
-                            "float"
-                    ))
-                    .retrieve()
-                    .body(EmbeddingResponse.class);
-            if (response == null || response.data() == null || response.data().size() != texts.size()) {
+            ModelConnectionSnapshot connection = new ModelConnectionSnapshot(
+                    "DASHSCOPE", properties.getModel(), trimTrailingSlash(properties.getBaseUrl()),
+                    properties.getApiKey()
+            );
+            OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
+                    .model(properties.getModel())
+                    .dimensions(properties.getDimensions())
+                    .encodingFormat("float")
+                    .build();
+            EmbeddingResponse response = modelFactory.createEmbeddingModel(
+                    connection, properties.getDimensions(),
+                    Duration.ofSeconds(5), Duration.ofSeconds(30)
+            ).call(new EmbeddingRequest(texts, options));
+            if (response == null || response.getResults().size() != texts.size()) {
                 throw new EmbeddingException("远端Embedding返回数量不一致");
             }
-            List<float[]> vectors = response.data().stream()
-                    .sorted(Comparator.comparingInt(EmbeddingData::index))
-                    .map(this::toVector)
+            List<float[]> vectors = response.getResults().stream()
+                    .sorted(Comparator.comparingInt(item -> item.getIndex() == null ? 0 : item.getIndex()))
+                    .map(item -> toVector(item.getOutput()))
                     .toList();
             return new EmbeddingBatch(vectors);
         } catch (RestClientResponseException exception) {
@@ -78,18 +80,19 @@ public class DashScopeEmbeddingProvider implements EmbeddingProvider {
             throw new EmbeddingException("远端Embedding调用失败", exception);
         } catch (RestClientException exception) {
             throw new EmbeddingException("远端Embedding调用失败", exception);
+        } catch (NonTransientAiException exception) {
+            if (exception.getMessage() != null && exception.getMessage().trim().startsWith("429")) {
+                throw new EmbeddingException("远端Embedding请求过于频繁或额度不足，请稍后重试并检查额度", exception);
+            }
+            throw new EmbeddingException("远端Embedding调用失败", exception);
         }
     }
 
-    private float[] toVector(EmbeddingData data) {
-        if (data.embedding() == null || data.embedding().size() != dimensions()) {
+    private float[] toVector(float[] embedding) {
+        if (embedding == null || embedding.length != dimensions()) {
             throw new EmbeddingException("远端Embedding维度不符合配置");
         }
-        float[] vector = new float[data.embedding().size()];
-        for (int index = 0; index < data.embedding().size(); index++) {
-            vector[index] = data.embedding().get(index).floatValue();
-        }
-        return vector;
+        return embedding;
     }
 
     private void validateConfiguration() {
@@ -110,20 +113,5 @@ public class DashScopeEmbeddingProvider implements EmbeddingProvider {
 
     private String trimTrailingSlash(String value) {
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
-    }
-
-    record EmbeddingRequest(
-            String model,
-            List<String> input,
-            int dimensions,
-            @JsonProperty("encoding_format")
-            String encodingFormat
-    ) {
-    }
-
-    record EmbeddingResponse(List<EmbeddingData> data, String model) {
-    }
-
-    record EmbeddingData(int index, List<Double> embedding) {
     }
 }

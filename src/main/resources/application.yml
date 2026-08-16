@@ -86,15 +86,18 @@ devmate:
     timeout-seconds: 30
     max-files: 200
   ai-review:
-    provider: ${DEVMATE_AI_PROVIDER:DASHSCOPE}
-    model: ${DEVMATE_AI_MODEL:qwen-plus}
-    base-url: ${DEVMATE_AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-    api-key: ${DASHSCOPE_API_KEY:}
     prompt-version: ai-review-v1
     top-k: 12
     token-budget: 6000
     max-findings: 30
     max-prompt-characters: 60000
+    connect-timeout: 5s
+    read-timeout: 90s
+    stale-task-timeout: 10m
+  project-understanding:
+    prompt-version: project-understanding-v1
+    max-evidence-chunks: 24
+    max-evidence-characters: 24000
     connect-timeout: 5s
     read-timeout: 90s
     stale-task-timeout: 10m
@@ -116,3 +119,5 @@ devmate:
   review-evaluation:
     max-cases-per-review: 100
     max-runs-returned: 100
+  model-connections:
+    encryption-secret: ${DEVMATE_MODEL_ENCRYPTION_SECRET:}

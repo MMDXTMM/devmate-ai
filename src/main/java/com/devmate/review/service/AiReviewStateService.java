@@ -186,7 +186,8 @@ public class AiReviewStateService {
                         .orderByAsc(ReviewFinding::getStartLine)
         );
         return new AiReviewContext(
-                projectId, task.getId(), invocation.getId(), staticTask.getId(), reviewTask, staticFindings
+                projectId, task.getId(), invocation.getId(), staticTask.getId(),
+                provider, modelName, reviewTask, staticFindings
         );
     }
 

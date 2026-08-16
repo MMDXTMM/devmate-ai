@@ -52,7 +52,7 @@ Agent 请求体与固定流水线使用同一契约：
 4. 应用使用同一个 `tool_call_id` 追加 `role=tool` 的执行结果。
 5. 再次调用模型，直到模型停止调用工具或达到安全上限。
 
-协议依据：[阿里云百炼 Qwen Function Calling 文档](https://help.aliyun.com/en/model-studio/qwen-function-calling)。直接控制循环便于展示和测试每个安全边界，未来若引入 LangChain4j，也不能删除 Java 侧校验与审计。
+协议由 Spring AI 统一适配 OpenAI 兼容接口；模型 Tool Call 只负责提出调用意图。Java 显式控制循环，便于展示和测试权限、参数、预算、超时与审计边界。
 
 ## 4. 安全和稳定性边界
 
@@ -94,13 +94,13 @@ V11 扩展 `tool_call_log`：
 
 ## 7. 配置
 
-`application.yml` 的 `devmate.review-agent` 提供 Prompt 版本、调用上限、重复上限、证据预算、输出上限和工具超时。模型地址、模型名、超时与 `DASHSCOPE_API_KEY` 复用 `devmate.ai-review`，密钥只能由运行环境提供。
+`application.yml` 的 `devmate.review-agent` 提供 Prompt 版本、调用上限、重复上限、证据预算、输出上限和工具超时。模型来自当前账户启用的“大模型连接”。Spring AI 负责工具协议与消息转换，Java 编排器关闭框架内部自动执行，继续负责权限、参数、超时、循环上限和审计。
 
 ## 8. 测试和当前限制
 
 自动化测试覆盖：
 
-- Qwen 工具定义请求、tool call 解析、最终消息和缺少 Key。
+- Spring AI 工具定义请求、tool call 解析、工具结果回传、最终消息和账户模型绑定。
 - Agent 成功检索、工具链审计、Token 汇总与结构化 Finding。
 - Agent 没有代码证据时失败关闭。
 - 旧 Diff ID、错误 revision 和预检后二次漂移在模型调用前返回 409，且 AI 任务与调用日志零落库。

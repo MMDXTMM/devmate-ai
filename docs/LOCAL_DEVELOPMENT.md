@@ -77,11 +77,13 @@ cd devmate-ai
 
 ## AI 审查模型密钥
 
-需要执行真实 AI 审查时，在启动后端的同一终端设置：
+需要执行真实 AI 审查时，先为后端配置稳定的 `DEVMATE_MODEL_ENCRYPTION_SECRET`，再在页面“大模型连接”中由当前账户保存并测试 DeepSeek、通义千问或 OpenAI Key。Key 以密文持久化且不回显。
+
+只有把远程向量 Provider 切换为 DashScope 时，才需要在启动后端的同一终端设置：
 
 ```bash
 export DASHSCOPE_API_KEY='<your-key>'
 ./mvnw spring-boot:run
 ```
 
-该密钥同时可供配置为 DashScope 的 Embedding 与 AI Review Provider 使用。开发和自动化测试不提交、不持久化密钥；没有密钥时普通接口可用，AI 审查会返回可读错误并保存 FAILED 状态。
+该环境密钥只供 DashScope Embedding 使用。开发和自动化测试不提交密钥；没有远程 Embedding Key 时可以继续使用本地确定性 Embedding。

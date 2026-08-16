@@ -6,7 +6,7 @@
 - 确认 MySQL 可连接且 `devmate` 数据库存在。
 - 确认 `application-local.yml` 或生产环境变量未提交 Git。
 - 私有仓库导入时确认 Git 凭证仅具有必要的只读权限。
-- 执行真实 AI 审查时确认 `DASHSCOPE_API_KEY` 只存在于运行环境。
+- 执行真实 AI 审查时确认已配置稳定的模型加密主密钥，并由当前账户在页面保存、启用和测试模型连接。
 - 确认 `workspace/` 有足够磁盘空间并且不位于 Git 跟踪范围。
 
 ## 2. 启动与验证
@@ -81,7 +81,7 @@ npm run dev
 
 - 先查询最近 `ai_review_task`，确认前置 Diff 和静态分析属于同一 revision。
 - 检查 `ai_invocation_log` 的 provider、模型、Token、耗时和脱敏错误，不查询或输出完整 Prompt。
-- “未配置AI审查模型API Key”表示启动后端的进程没有读取到 `DASHSCOPE_API_KEY`。
+- “请先在大模型连接中保存并启用一个模型”表示当前账户尚未选择可用于审查的模型。
 - 超时或远端错误可以重试；权限和配置错误应先修正，不要无限重试消耗额度。
 - `rejected_findings` 大于 0 表示模型返回项未通过 Chunk 或结构校验，不应手工绕过校验写入 Finding。
 - Agent 模式额外查询 `tool_call_log` 的步骤、状态、耗时和脱敏错误；不要尝试恢复完整参数或源码输出。

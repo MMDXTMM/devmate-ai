@@ -50,6 +50,7 @@ class ProjectBusinessMapControllerTest {
         LocalDateTime now = LocalDateTime.now();
         project = new Project();
         project.setName("business-map-demo");
+        project.setDescription("帮助团队管理代码审查任务");
         project.setSourceType("GIT");
         project.setSourceLocation("https://github.com/example/demo.git");
         project.setDefaultBranch("main");
@@ -134,6 +135,40 @@ class ProjectBusinessMapControllerTest {
         reference(controllerMethod, null, "METHOD_CALL", "create", "projectService");
         reference(implementationMethod, null, "DATA_ACCESS", "insert", "projectMapper");
 
+        KnowledgeDocument statusDocument = document(
+                "ReviewStatus.java",
+                "src/main/java/com/example/review/ReviewStatus.java",
+                "status-path"
+        );
+        chunk(
+                statusDocument,
+                0,
+                "CLASS",
+                "com.example.review.ReviewStatus",
+                "public enum ReviewStatus { CREATED, RUNNING, COMPLETED, FAILED; }",
+                "{\"annotations\":[]}",
+                1,
+                1
+        );
+        KnowledgeDocument schemaDocument = document(
+                "V1__review.sql",
+                "src/main/resources/db/migration/V1__review.sql",
+                "schema-path"
+        );
+        schemaDocument.setSourceKind("DATABASE_SCHEMA");
+        schemaDocument.setFileType("SQL");
+        documentMapper.updateById(schemaDocument);
+        chunk(
+                schemaDocument,
+                0,
+                "DATABASE_TABLE",
+                "review_task",
+                "CREATE TABLE review_task (...);",
+                "{}",
+                1,
+                5
+        );
+
         controllerDocument.setChunkCount(2);
         documentMapper.updateById(controllerDocument);
         serviceDocument.setChunkCount(1);
@@ -146,9 +181,31 @@ class ProjectBusinessMapControllerTest {
     void exposesBusinessModulesEndpointsAndEvidenceBackedImplementation() throws Exception {
         mockMvc.perform(get("/api/projects/{projectId}/business-map", project.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.analysisMode").value("STATIC_CODE_EVIDENCE_V1"))
+                .andExpect(jsonPath("$.data.analysisMode").value("STATIC_CODE_EVIDENCE_V2"))
                 .andExpect(jsonPath("$.data.moduleCount").value(1))
                 .andExpect(jsonPath("$.data.endpointCount").value(1))
+                .andExpect(jsonPath("$.data.onboarding.purpose").value(
+                        org.hamcrest.Matchers.containsString("帮助团队管理代码审查任务")
+                ))
+                .andExpect(jsonPath("$.data.onboarding.architectureSummary").value(
+                        org.hamcrest.Matchers.containsString("Controller 模块接收")
+                ))
+                .andExpect(jsonPath("$.data.onboarding.coreJourneys[0].name").value("项目管理"))
+                .andExpect(jsonPath("$.data.onboarding.coreJourneys[0].apiEntries[0]").value(
+                        "POST /api/projects · 创建或执行项目管理"
+                ))
+                .andExpect(jsonPath("$.data.onboarding.coreJourneys[0].implementationFlow[2]").value(
+                        org.hamcrest.Matchers.containsString("ProjectServiceImpl.create")
+                ))
+                .andExpect(jsonPath("$.data.onboarding.coreJourneys[0].dataOperations[0]").value(
+                        "insert：projectMapper.insert()"
+                ))
+                .andExpect(jsonPath("$.data.onboarding.stateModels[0].name").value("ReviewStatus"))
+                .andExpect(jsonPath("$.data.onboarding.stateModels[0].values[3]").value("FAILED"))
+                .andExpect(jsonPath("$.data.onboarding.stateModels[0].chunkId").isString())
+                .andExpect(jsonPath("$.data.onboarding.dataAssets[0].name").value("review_task"))
+                .andExpect(jsonPath("$.data.onboarding.dataAssets[0].chunkId").isString())
+                .andExpect(jsonPath("$.data.onboarding.readingOrder[0].category").value("业务入口"))
                 .andExpect(jsonPath("$.data.modules[0].name").value("项目管理"))
                 .andExpect(jsonPath("$.data.modules[0].features[0].id").isString())
                 .andExpect(jsonPath("$.data.modules[0].features[0].httpMethods[0]").value("POST"))
@@ -189,6 +246,68 @@ class ProjectBusinessMapControllerTest {
                 ))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("所选方法不是可识别的Web接口入口"));
+    }
+
+    @Test
+    void explainsCommonDianpingControllersAsUserFacingBusinessCapabilities() throws Exception {
+        controllerEndpoint("Blog", "/blog", "saveBlog", "PostMapping", "blog-controller");
+        controllerEndpoint("User", "/user", "sendCode", "PostMapping", "user-controller");
+        controllerEndpoint("Shop", "/shop", "queryById", "GetMapping", "shop-controller");
+        controllerEndpoint("Voucher", "/voucher", "queryVoucherOfShop", "GetMapping", "voucher-controller");
+
+        mockMvc.perform(get("/api/projects/{projectId}/business-map", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.onboarding.purpose").value(
+                        org.hamcrest.Matchers.containsString("本地生活探店主线")
+                ))
+                .andExpect(jsonPath("$.data.onboarding.purpose").value(
+                        org.hamcrest.Matchers.containsString("发布、浏览和点赞探店笔记")
+                ))
+                .andExpect(jsonPath("$.data.modules[0].name").value("探店笔记与互动"))
+                .andExpect(jsonPath("$.data.modules[0].description").value(
+                        "用户可以发布探店笔记、浏览热门或关注内容、点赞并查看互动用户。"
+                ))
+                .andExpect(jsonPath("$.data.modules[0].features[0].name").value("发布探店笔记"))
+                .andExpect(jsonPath("$.data.onboarding.coreJourneys[1].goal").value(
+                        "用户可以发布探店笔记、浏览热门或关注内容、点赞并查看互动用户。"
+                ));
+    }
+
+    private void controllerEndpoint(
+            String controllerBase,
+            String path,
+            String methodName,
+            String mappingAnnotation,
+            String pathHash
+    ) {
+        KnowledgeDocument document = document(
+                controllerBase + "Controller.java",
+                "src/main/java/com/example/dianping/" + controllerBase + "Controller.java",
+                pathHash
+        );
+        chunk(
+                document,
+                0,
+                "CLASS",
+                "com.example.dianping." + controllerBase + "Controller",
+                "@RestController\n@RequestMapping(\"" + path + "\")\npublic class "
+                        + controllerBase + "Controller { }",
+                "{\"annotations\":[\"RestController\",\"RequestMapping\"]}",
+                1,
+                10
+        );
+        chunk(
+                document,
+                1,
+                "METHOD",
+                "com.example.dianping." + controllerBase + "Controller#" + methodName + "()",
+                "@" + mappingAnnotation + "\npublic Object " + methodName + "() { return null; }",
+                "{\"annotations\":[\"" + mappingAnnotation + "\"]}",
+                5,
+                7
+        );
+        document.setChunkCount(2);
+        documentMapper.updateById(document);
     }
 
     private KnowledgeDocument document(String fileName, String filePath, String pathHash) {
