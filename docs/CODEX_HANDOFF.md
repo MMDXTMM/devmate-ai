@@ -70,7 +70,7 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 | 结构上下文 | 完成 | Java AST、配置脱敏、迁移 SQL 摘要、代码关系图 |
 | Diff 与静态分析 | 完成 | JGit Diff、行到符号映射、PMD 和项目级确定性规则 |
 | RAG | 完成工程闭环 | 关键词/关系图基线、固定评测、Embedding、向量与 Hybrid/RRF |
-| AI 审查 | 完成工程闭环 | DashScope JSON 输出、Chunk 白名单、结构化 Finding、任务审计 |
+| AI 审查 | 完成工程闭环 | Spring AI 结构化输出、Chunk 白名单、结构化 Finding、任务审计 |
 | Tool Calling Agent | 完成工程闭环 | 四个只读 Tool、Qwen 多轮协议、限制与审计、Vue 调用链 |
 | 审查反馈 | 完成第一版闭环 | Finding 最新反馈、项目归属校验、Vue 局部更新、无模型重跑 |
 | 效果评测 | 完成数据、计算、Vue 工作台、样本、Git 历史、真实 Diff/标准答案与受控执行器 | 新解析器 H2/MySQL 实跑均为 8 PASS、8 FULL；历史库已落库 7 条 `DEFECT`、1 条 `CLEAN`，真实 A/B 待完成 |
@@ -82,7 +82,8 @@ DevMate AI 是面向 Java 项目的智能代码审查 Agent 平台。核心不�
 ## 3. 当前核心代码入口
 
 - Agent 调度：`src/main/java/com/devmate/agent/service/ReviewAgentOrchestrator.java`
-- Qwen 协议：`src/main/java/com/devmate/agent/model/DashScopeReviewAgentModel.java`
+- Spring AI Agent 协议：`src/main/java/com/devmate/agent/model/SpringAiReviewAgentModel.java`
+- Spring AI 模型工厂：`src/main/java/com/devmate/agent/service/SpringAiChatClientFactory.java`
 - 工具注册：`src/main/java/com/devmate/tool/AgentToolRegistry.java`
 - 工具执行：`src/main/java/com/devmate/tool/service/AgentToolExecutor.java`
 - 工具审计：`src/main/java/com/devmate/tool/service/ToolCallAuditService.java`
@@ -208,7 +209,7 @@ node benchmarks/review-fixtures/verify-live-imports.mjs
 node benchmarks/review-fixtures/run-review-ab.mjs --scenario case-001
 ```
 
-真实 MySQL 验证使用 `local` Profile；`application-local.yml` 被 Git 忽略。系统安装的 3306 服务仍需单独恢复，但隔离 MySQL 已完成项目链路验收。真实模型测试还需要在进程环境配置 `DASHSCOPE_API_KEY`，当前阶段没有用 Mock 结果冒充真实模型效果。
+真实 MySQL 验证使用 `local` Profile；`application-local.yml` 被 Git 忽略。真实模型测试需要先在页面为当前账户保存并测试模型连接；`DASHSCOPE_API_KEY` 仅在使用远程 DashScope Embedding 时需要。当前阶段没有用 Mock 结果冒充真实模型效果。
 
 ## 10. 开发经验与踩坑记录
 

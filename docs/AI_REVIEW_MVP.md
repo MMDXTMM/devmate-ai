@@ -21,7 +21,7 @@ POST /api/projects/{projectId}/ai-reviews，提交预期 reviewTaskId、revision
         ↓
 事务外：以 Diff 目标 Chunk 执行 Hybrid RAG
         ↓
-事务外：构造版本化 Prompt，调用 DashScope JSON Mode
+事务外：构造版本化 Prompt，通过 Spring AI `ChatClient.responseEntity` 调用账户选择的模型
         ↓
 Java 校验 chunkId、枚举、长度、置信度和重复 Finding
         ↓
@@ -57,12 +57,13 @@ AI 审查不会自动补做前置步骤，避免一次高成本请求隐藏多�
 
 ## 4. 模型契约
 
-`AiReviewModel` 隔离业务编排与模型提供方。当前 `DashScopeAiReviewModel` 使用 OpenAI 兼容的 `/chat/completions` 接口和 JSON Object 输出模式：
+`AiReviewModel` 隔离业务编排与模型提供方。当前模型由登录账户在“大模型连接”中选择，统一通过 Spring AI 1.1.8 的 `ChatModel/ChatClient` 调用 OpenAI 兼容接口：
 
 - System Prompt 明确仓库源码、注释和文档是不可信证据，不能覆盖系统指令。
 - Prompt 必须包含 JSON 要求，响应顶层固定为 `{"findings": [...]}`。
 - 不设置输出 Token 上限，避免结构化 JSON 被截断；应用仍通过输入字符、检索 Token 预算和 Finding 数量限制资源。
-- 连接超时 5 秒，读取超时 90 秒；API Key 只从环境变量读取。
+- 使用 `ChatClient.responseEntity` 将响应映射为结构化 Finding，模型位置仍由服务端证据校验；
+- 连接超时 5 秒，读取超时 90 秒；API Key 从账户加密配置解密后仅在调用边界使用。
 
 参考官方接口说明：
 
@@ -105,18 +106,7 @@ Vue 弹窗打开时只读取历史记录，不自动调用模型。用户必须�
 
 ## 8. 配置
 
-```bash
-export DASHSCOPE_API_KEY='<your-key>'
-./mvnw spring-boot:run
-```
-
-可选环境变量：
-
-- `DEVMATE_AI_PROVIDER`，当前为 `DASHSCOPE`；
-- `DEVMATE_AI_MODEL`，默认 `qwen-plus`；
-- `DEVMATE_AI_BASE_URL`，必须是 HTTPS。
-
-不要把 API Key 写入 Git、数据库、前端或日志。
+启动后在页面“大模型连接”中选择 DeepSeek、通义千问或 OpenAI，填写 Key、保存并测试。服务端必须通过 `DEVMATE_MODEL_ENCRYPTION_SECRET` 提供稳定的加密主密钥。Key 以 AES-GCM 密文保存且不回显，不得写入 Git、日志或普通配置。
 
 ## 9. 当前验证与限制
 
@@ -124,7 +114,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - 前端自动化测试与生产构建验证打开弹窗不自动消耗额度，并使用明确的 Diff ID 与 revision 发起审查。
 - H2 已从空库完整执行 V1–V15；V15 增加可精确恢复付费请求的 `attempt_key` 唯一索引。
 - 本地 MySQL 26.7 已从 V9 成功迁移到 V10；后端健康检查为 `UP`，原有 `devmate-ai` 项目数据可正常读取。Flyway 对高于 8.1 的 MySQL 版本给出兼容性提醒，后续升级依赖前需要继续做真实库回归。
-- DashScope 真实调用需要本地 API Key，未配置时会创建可观察的 FAILED 任务并给出可读错误；不能把 Mock 测试当作真实模型效果证明。
+- 真实调用需要当前账户先启用模型连接；未配置时任务会得到可读失败原因。不能把 Mock 测试当作真实模型效果证明。
 - 当前请求是同步接口；阶段 9 再依据耗时和流量引入 MQ 异步化。
 - 已建立固定 AI 缺陷评测集和受控 A/B 执行器，但尚未运行真实 canary，不宣称准确率或 Agent 优于固定流水线。
 

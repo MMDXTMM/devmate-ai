@@ -32,7 +32,7 @@ class ReviewAgentOrchestratorTest {
         AgentToolExecutor executor = mock(AgentToolExecutor.class);
         ReviewAgentModel model = mock(ReviewAgentModel.class);
         ReviewAgentProperties properties = new ReviewAgentProperties();
-        given(modelRegistry.current()).willReturn(model);
+        given(modelRegistry.current("TEST", "test-model")).willReturn(model);
         given(toolRegistry.definitions()).willReturn(List.of());
         ReviewAgentToolCall call = new ReviewAgentToolCall(
                 "call-1", "function",
@@ -61,6 +61,6 @@ class ReviewAgentOrchestratorTest {
         CodeReviewTask reviewTask = new CodeReviewTask();
         reviewTask.setId(3L);
         reviewTask.setTargetRevision("0123456789abcdef0123456789abcdef01234567");
-        return new AiReviewContext(1L, 2L, 4L, 5L, reviewTask, List.of());
+        return new AiReviewContext(1L, 2L, 4L, 5L, "TEST", "test-model", reviewTask, List.of());
     }
 }

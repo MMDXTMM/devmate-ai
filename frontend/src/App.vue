@@ -10,6 +10,7 @@ import StaticAnalysisModal from './components/StaticAnalysisModal.vue'
 import RetrievalModal from './components/RetrievalModal.vue'
 import AiReviewModal from './components/AiReviewModal.vue'
 import ReviewEvaluationModal from './components/ReviewEvaluationModal.vue'
+import ModelConnectionModal from './components/ModelConnectionModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import { runProjectUnderstanding } from './services/projectUnderstandingWorkflow'
 import { clearAuthSession, getAuthSession, setAuthSession, subscribeAuthSession } from './services/authSession'
@@ -35,6 +36,7 @@ const analysisProject = ref<Project | null>(null)
 const retrievalProject = ref<Project | null>(null)
 const aiReviewProject = ref<Project | null>(null)
 const evaluationProject = ref<Project | null>(null)
+const modelConnectionsOpen = ref(false)
 const reviewingId = ref<string | null>(null)
 const reviewWorkflow = ref<ReviewWorkflow | undefined>()
 const authSession = ref<AuthSession | null>(getAuthSession())
@@ -284,6 +286,7 @@ onUnmounted(() => unsubscribeAuth?.())
         <button class="nav-item" :class="{ active: workspaceArea === 'projects' && !selectedProject }" type="button" @click="openProjectArea"><span>⌘</span>代码审查项目</button>
         <button v-if="selectedProject" class="nav-item active" type="button"><span>◎</span>审查工作台</button>
         <button class="nav-item" :class="{ active: workspaceArea === 'generation' }" type="button" @click="openGenerationArea"><span>＋</span>生成项目（实验）</button>
+        <button class="nav-item" type="button" @click="modelConnectionsOpen = true"><span>◇</span>大模型连接</button>
       </nav>
       <div class="sidebar-footer">
         <span class="connection-dot"></span>
@@ -466,5 +469,6 @@ onUnmounted(() => unsubscribeAuth?.())
       :project-name="evaluationProject?.name"
       @close="evaluationProject = null"
     />
+    <ModelConnectionModal :open="modelConnectionsOpen" @close="modelConnectionsOpen = false" />
   </div>
 </template>

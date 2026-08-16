@@ -6,7 +6,7 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导
 
 当前已经完成登录认证、项目管理、Git 导入、Java AST、Diff 精确映射、PMD 与项目规则、混合 RAG、证据约束的 AI 审查、受控 Tool Calling、反馈和固定评测集等工程底座。接下来的开发不再扩张产品范围，而是把已有能力收敛成可一键演示、可量化验证、本人能够完整解释的求职项目闭环。
 
-审查工作台现已提供一键编排入口，按源码刷新、Diff、静态分析、Embedding 和 Agent 审查顺序执行，并记录幂等、并发冲突、失败阶段和恢复动作。项目理解入口已把源码证据组织成中文业务地图，从 Controller 接口出发展示功能点、HTTP API、调用流程、数据操作和真实代码；逐文件结构继续作为辅助排查入口。
+审查工作台现已提供一键编排入口，按源码刷新、Diff、静态分析、Embedding 和 Agent 审查顺序执行，并记录幂等、并发冲突、失败阶段和恢复动作。项目理解入口默认提供新人导览：先说明项目定位和核心业务流程，再展示接口、状态模型、数据库表、失败信号和推荐阅读顺序；用户还可以显式调用当前账户选择的模型，由 Spring AI 根据静态业务地图与 RAG 代码证据生成中文深度报告。模型只能引用服务端提供的 Chunk ID，文件、行号和代码块由 Java 回填，逐文件结构只作为辅助排查入口。
 
 “一句话生成 Spring Boot 项目”已保留版本化需求澄清和确认能力，但从当前开发主线冻结。不会删除相关代码；以后有时间再继续接入真实需求模型、工程生成和编译测试。在完整生成闭环完成前，不把它写入简历能力。
 
@@ -42,7 +42,7 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导
 
 ## 当前已具备
 
-- Java 21 + Spring Boot 3.5
+- Java 21 + Spring Boot 3.5 + Spring AI 1.1.8
 - Maven Wrapper，多台电脑无需预装 Maven
 - Spring Web、Validation、Actuator
 - MyBatis-Plus
@@ -74,13 +74,16 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导
 - 项目/revision/模型版本隔离的幂等向量索引和失败续建
 - `LEXICAL/VECTOR/HYBRID` 三种检索模式、RRF 融合与显式降级
 - Vue 上下文检索与证据浏览界面
-- DashScope JSON 结构化 AI 审查 Provider、超时和失败审计
+- Spring AI `ChatClient.responseEntity` 结构化审查、超时和失败审计
 - 基于 Diff、静态分析与 RAG 的版本固定审查流水线
 - Chunk 证据白名单、服务端位置映射和伪造引用拒绝
 - AI Finding 的事实/推断/待验证、置信度、风险场景、建议与验证方法
 - 数据库幂等运行键、超时任务恢复和 Token/耗时审计
 - Vue 显式 AI 审查入口与结构化报告（打开弹窗不自动消耗额度）
-- Qwen Function Calling 多轮协议与 Java 受控工具执行器
+- Spring AI Tool Calling 多轮协议与 Java 受控工具执行器
+- DeepSeek、通义千问和 OpenAI 模型连接中心，支持账户级加密配置、模型切换和显式连接测试
+- Spring AI 中文项目深度报告，包含核心业务流程、阅读顺序、风险边界和服务端回填的真实代码证据
+- 项目版本固定、证据 ID 白名单、付费请求幂等、并发限制、超时恢复及 Token/耗时审计
 - Diff、静态分析、代码检索和项目结构四个只读 Tool
 - Tool 参数校验、超时、调用/循环上限、证据预算和脱敏审计
 - Vue 固定流水线/Agent 模式选择与工具调用链展示
@@ -99,10 +102,11 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导
 
 ```bash
 export DEVMATE_JWT_SECRET='<at-least-32-random-characters>'
+export DEVMATE_MODEL_ENCRYPTION_SECRET='<another-stable-32-character-secret>'
 ./mvnw spring-boot:run
 ```
 
-默认激活 `local` Profile 并连接本机 MySQL。数据库连接信息保存在不会提交 Git 的 `application-local.yml`；安全默认开启，`DEVMATE_JWT_SECRET` 必须至少 32 个字符且不能写入 Git。访问：
+默认激活 `local` Profile 并连接本机 MySQL。数据库连接信息保存在不会提交 Git 的 `application-local.yml`；安全默认开启，JWT 和模型 API Key 加密密钥都必须至少 32 个字符、通过环境注入且不能写入 Git。`DEVMATE_MODEL_ENCRYPTION_SECRET` 必须长期保持稳定，否则已保存的模型 Key 需要重新填写。访问：
 
 - `GET http://localhost:8080/api/health`
 - `GET http://localhost:8080/actuator/health`
@@ -162,14 +166,7 @@ cp src/main/resources/application-local.yml.example \
 
 自动化测试显式使用 `test` Profile 和 H2 内存数据库，不会修改本地 MySQL 数据。
 
-运行真实 AI 审查前，在启动后端的同一终端设置模型密钥：
-
-```bash
-export DASHSCOPE_API_KEY='<your-key>'
-./mvnw spring-boot:run
-```
-
-密钥不能写入本地配置模板、数据库、前端或 Git。没有密钥时普通业务仍可启动，AI 审查会留下可查询的失败任务。
+运行真实 AI 审查前，在页面“大模型连接”中选择提供方、填写 API Key、保存并执行连接测试。模型配置按账户隔离，Key 加密后存储且不回显；服务端加密主密钥仍只能由环境提供。没有启用模型时普通业务仍可运行，AI 审查会返回可读配置提示。
 
 ## 文档
 
@@ -202,6 +199,7 @@ export DASHSCOPE_API_KEY='<your-key>'
 - [代码审查 Agent 设计](docs/CODE_REVIEW_DESIGN.md)
 - [基础业务闭环、简历证据与问题复盘](docs/BUSINESS_WORKFLOW_AND_RESUME.md)
 - [认证与项目访问控制](docs/AUTHENTICATION_AND_ACCESS_CONTROL.md)
+- [账户级大模型连接与 Spring AI 接入](docs/MODEL_CONNECTIONS.md)
 - [同类开源项目对比与路线优化](docs/OPEN_SOURCE_COMPARISON.md)
 - [AI 辅助开发与项目归属规范](docs/AI_COLLABORATION_GUIDE.md)
 - [项目决策与变更日志](docs/PROJECT_LOG.md)

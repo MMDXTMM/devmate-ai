@@ -53,7 +53,7 @@ public class ReviewAgentOrchestrator {
     }
 
     public ReviewAgentResearchResult research(AiReviewContext context) {
-        ReviewAgentModel model = modelRegistry.current();
+        ReviewAgentModel model = modelRegistry.current(context.provider(), context.modelName());
         ReviewAgentContext toolContext = new ReviewAgentContext(
                 context.projectId(), context.invocationId(), context.reviewTask().getId(),
                 context.staticAnalysisTaskId(), context.reviewTask().getTargetRevision()

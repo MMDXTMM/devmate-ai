@@ -6,8 +6,13 @@ import com.devmate.common.error.ErrorCode;
 import com.devmate.knowledge.dto.BusinessCodeEvidenceResponse;
 import com.devmate.knowledge.dto.BusinessFeatureDetailResponse;
 import com.devmate.knowledge.dto.BusinessFeatureResponse;
+import com.devmate.knowledge.dto.BusinessJourneyResponse;
 import com.devmate.knowledge.dto.BusinessModuleResponse;
 import com.devmate.knowledge.dto.ProjectBusinessMapResponse;
+import com.devmate.knowledge.dto.ProjectDataAssetResponse;
+import com.devmate.knowledge.dto.ProjectOnboardingResponse;
+import com.devmate.knowledge.dto.ProjectReadingStepResponse;
+import com.devmate.knowledge.dto.ProjectStateModelResponse;
 import com.devmate.knowledge.entity.CodeReference;
 import com.devmate.knowledge.entity.KnowledgeChunk;
 import com.devmate.knowledge.entity.KnowledgeDocument;
@@ -26,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -38,7 +44,7 @@ import java.util.stream.Collectors;
 @Service
 public class ProjectBusinessMapService {
 
-    private static final String ANALYSIS_MODE = "STATIC_CODE_EVIDENCE_V1";
+    private static final String ANALYSIS_MODE = "STATIC_CODE_EVIDENCE_V2";
     private static final int MAX_EVIDENCE_STEPS = 12;
     private static final int MAX_CALL_DEPTH = 3;
     private static final int MAX_CODE_CHARACTERS = 6_000;
@@ -51,9 +57,20 @@ public class ProjectBusinessMapService {
             "RequestMethod\\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)"
     );
     private static final Pattern QUOTED_VALUE = Pattern.compile("\\\"([^\\\"]*)\\\"|'([^']*)'");
+    private static final Pattern ENUM_VALUES = Pattern.compile(
+            "\\benum\\s+[\\w$]+[^\\{]*\\{([^;}]+)", Pattern.DOTALL
+    );
+    private static final Pattern ENUM_CONSTANT = Pattern.compile("\\b([A-Z][A-Z0-9_]*)\\b");
     private static final Map<String, String> MODULE_NAMES = Map.ofEntries(
             Map.entry("Auth", "用户认证"),
-            Map.entry("User", "用户管理"),
+            Map.entry("User", "用户账号、登录与签到"),
+            Map.entry("Blog", "探店笔记与互动"),
+            Map.entry("Shop", "商铺查询与维护"),
+            Map.entry("ShopType", "商铺分类查询"),
+            Map.entry("Upload", "探店图片管理"),
+            Map.entry("Voucher", "优惠券管理"),
+            Map.entry("VoucherOrder", "优惠券秒杀下单"),
+            Map.entry("Follow", "用户关注关系"),
             Map.entry("Project", "项目管理"),
             Map.entry("SourceImport", "源码导入"),
             Map.entry("SourceStructure", "源码结构"),
@@ -69,6 +86,47 @@ public class ProjectBusinessMapService {
             Map.entry("ReviewEvaluation", "审查效果评测"),
             Map.entry("Conversation", "对话管理"),
             Map.entry("GenerationSession", "项目生成需求")
+    );
+    private static final Map<String, String> MODULE_GOALS = Map.ofEntries(
+            Map.entry("User", "用户可以获取验证码并登录，查看个人信息和完成每日签到。"),
+            Map.entry("Blog", "用户可以发布探店笔记、浏览热门或关注内容、点赞并查看互动用户。"),
+            Map.entry("Shop", "用户可以查询商铺详情或按分类浏览商铺，管理端可以维护商铺信息。"),
+            Map.entry("ShopType", "查询商铺分类，供首页展示和商铺筛选使用。"),
+            Map.entry("Upload", "为探店笔记上传图片，并删除不再使用的图片。"),
+            Map.entry("Voucher", "查询商铺优惠券，并创建普通优惠券或秒杀优惠券。"),
+            Map.entry("VoucherOrder", "校验秒杀资格、扣减库存并创建优惠券订单。"),
+            Map.entry("Follow", "关注或取消关注其他用户，并查询双方共同关注的人。")
+    );
+    private static final Map<String, String> BUSINESS_ACTION_NAMES = Map.ofEntries(
+            Map.entry("Blog#saveBlog", "发布探店笔记"),
+            Map.entry("Blog#queryHotBlog", "浏览热门探店笔记"),
+            Map.entry("Blog#likeBlog", "点赞或取消点赞探店笔记"),
+            Map.entry("Blog#queryBlogLikes", "查看笔记点赞用户"),
+            Map.entry("Blog#queryBlogOfFollow", "查看关注用户的新笔记"),
+            Map.entry("Blog#queryBlogById", "查看探店笔记详情"),
+            Map.entry("Blog#queryBlogOfMe", "查看我发布的探店笔记"),
+            Map.entry("Blog#queryBlogByUserId", "查看指定用户的探店笔记"),
+            Map.entry("User#sendCode", "发送登录验证码"),
+            Map.entry("User#login", "用户登录"),
+            Map.entry("User#logout", "退出登录"),
+            Map.entry("User#me", "查看当前用户信息"),
+            Map.entry("User#queryUserById", "查看其他用户信息"),
+            Map.entry("User#sign", "完成每日签到"),
+            Map.entry("User#signCount", "统计连续签到天数"),
+            Map.entry("Shop#queryById", "查看商铺详情"),
+            Map.entry("Shop#queryShopById", "查看商铺详情"),
+            Map.entry("Shop#updateShop", "更新商铺信息"),
+            Map.entry("Shop#queryShopByType", "按分类或距离浏览商铺"),
+            Map.entry("ShopType#queryTypeList", "查询商铺分类"),
+            Map.entry("Upload#uploadImage", "上传探店图片"),
+            Map.entry("Upload#deleteBlogImg", "删除探店图片"),
+            Map.entry("Voucher#queryVoucherOfShop", "查询商铺优惠券"),
+            Map.entry("Voucher#addVoucher", "创建普通优惠券"),
+            Map.entry("Voucher#addSeckillVoucher", "创建秒杀优惠券"),
+            Map.entry("VoucherOrder#seckillVoucher", "抢购优惠券并创建订单"),
+            Map.entry("Follow#follow", "关注或取消关注用户"),
+            Map.entry("Follow#isFollow", "查看是否已关注用户"),
+            Map.entry("Follow#followCommons", "查看共同关注")
     );
 
     private final ProjectMapper projectMapper;
@@ -106,6 +164,7 @@ public class ProjectBusinessMapService {
                 summary,
                 modules.size(),
                 endpointCount,
+                buildOnboarding(context, modules),
                 modules,
                 List.of(
                         "模块和功能来自 Controller、接口注解与调用关系，是可验证的静态推断。",
@@ -113,6 +172,329 @@ public class ProjectBusinessMapService {
                         "业务目的和规则仍需结合 README、数据库及真实运行结果进一步确认。"
                 )
         );
+    }
+
+    private ProjectOnboardingResponse buildOnboarding(
+            BusinessMapContext context,
+            List<BusinessModuleResponse> modules
+    ) {
+        String projectDescription = value(context.project().getDescription()).trim();
+        List<BusinessJourneyResponse> journeys = modules.stream()
+                .filter(module -> !simpleSymbol(module.controllerSymbol()).equals("HealthController"))
+                .sorted(Comparator.comparingInt(this::journeyPriority).reversed())
+                .limit(8)
+                .map(module -> businessJourney(context, module))
+                .toList();
+        String journeyScope = journeys.stream().map(BusinessJourneyResponse::name).limit(6)
+                .collect(Collectors.joining("、"));
+        String purpose = projectPurpose(context, modules, projectDescription, journeyScope);
+        List<ProjectStateModelResponse> stateModels = stateModels(context);
+        List<ProjectDataAssetResponse> dataAssets = dataAssets(context);
+        List<String> capabilities = detectedCapabilities(context, modules, dataAssets, stateModels);
+        String architectureSummary = architectureSummary(context, modules, dataAssets);
+        return new ProjectOnboardingResponse(
+                purpose,
+                architectureSummary,
+                capabilities,
+                journeys,
+                stateModels,
+                dataAssets,
+                readingOrder(context, modules, journeys, dataAssets),
+                List.of(
+                        "项目描述只能视为维护者声明，业务流程仍以接口、调用链和数据证据为准。",
+                        "静态分析无法完整还原反射、消息驱动、定时任务和运行时条件分支。",
+                        "状态枚举只证明状态存在，不代表系统已经识别出所有合法状态转换。"
+                )
+        );
+    }
+
+    private String projectPurpose(
+            BusinessMapContext context,
+            List<BusinessModuleResponse> modules,
+            String projectDescription,
+            String journeyScope
+    ) {
+        Set<String> moduleKeys = modules.stream()
+                .map(module -> moduleKey(module.controllerSymbol()))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<String> userActions = new ArrayList<>();
+        if (moduleKeys.contains("User")) userActions.add("登录、查看个人信息和签到");
+        if (moduleKeys.contains("Shop") || moduleKeys.contains("ShopType")) userActions.add("浏览商铺及分类");
+        if (moduleKeys.contains("Blog")) userActions.add("发布、浏览和点赞探店笔记");
+        if (moduleKeys.contains("Follow")) userActions.add("关注其他用户");
+        if (moduleKeys.contains("Voucher")) userActions.add("查询和管理优惠券");
+        if (moduleKeys.contains("VoucherOrder")) userActions.add("参与优惠券秒杀并下单");
+        if (userActions.size() >= 3) {
+            String title = projectDescription.isBlank() ? context.project().getName() : projectDescription;
+            return title + "。从接口证据可以还原出本地生活探店主线：用户可以"
+                    + String.join("、", userActions) + "。";
+        }
+        if (!projectDescription.isBlank()) {
+            return projectDescription
+                    + (journeyScope.isBlank() ? "" : "。源码证据显示核心流程覆盖 " + journeyScope + " 等能力。");
+        }
+        return journeyScope.isBlank()
+                ? context.project().getName() + " 的业务目标尚未在项目描述或可解析接口中明确。"
+                : context.project().getName() + " 主要覆盖 " + journeyScope + " 等能力。";
+    }
+
+    private int journeyPriority(BusinessModuleResponse module) {
+        int score = module.features().stream()
+                .mapToInt(feature -> feature.implementationSteps() * 3 + (feature.accessesData() ? 10 : 0))
+                .max().orElse(0) + module.features().size();
+        String controller = simpleSymbol(module.controllerSymbol());
+        score += switch (controller) {
+            case "ProjectController" -> 200;
+            case "SourceImportController" -> 180;
+            case "EmbeddingIndexController" -> 160;
+            case "ReviewDiffController" -> 140;
+            case "StaticAnalysisController" -> 120;
+            case "AiReviewController" -> 100;
+            case "ReviewFeedbackController" -> 80;
+            case "AuthController" -> 60;
+            default -> 0;
+        };
+        if (controller.matches(".*(Project|SourceImport|ReviewWorkflow|AiReview|Auth)Controller")) score += 25;
+        if (controller.matches(".*(ReviewDiff|StaticAnalysis|EmbeddingIndex)Controller")) score += 15;
+        if (controller.matches(".*(Evaluation|Structure|Context|BusinessMap)Controller")) score -= 15;
+        return score;
+    }
+
+    private BusinessJourneyResponse businessJourney(BusinessMapContext context, BusinessModuleResponse module) {
+        BusinessFeatureResponse representative = module.features().stream()
+                .max(Comparator.comparing(BusinessFeatureResponse::accessesData)
+                        .thenComparingInt(BusinessFeatureResponse::implementationSteps))
+                .orElse(null);
+        List<KnowledgeChunk> implementation = representative == null
+                ? List.of()
+                : collectImplementation(context, context.chunksById().get(representative.id()));
+        List<String> dataOperations = implementation.stream()
+                .flatMap(chunk -> context.referencesBySource().getOrDefault(chunk.getId(), List.of()).stream())
+                .filter(reference -> "DATA_ACCESS".equals(reference.getReferenceKind()))
+                .map(this::dataOperation)
+                .distinct()
+                .limit(8)
+                .toList();
+        List<String> implementationFlow = implementation.stream()
+                .map(chunk -> layerLabel(layer(chunk, context.documentsById().get(chunk.getDocumentId())))
+                        + "：" + flowLabel(chunk.getSymbolName()))
+                .toList();
+        List<String> failureSignals = failureSignals(implementation);
+        List<String> featureNames = module.features().stream().map(BusinessFeatureResponse::name).limit(4).toList();
+        String goal = MODULE_GOALS.getOrDefault(moduleKey(module.controllerSymbol()), featureNames.isEmpty()
+                ? "当前只识别到模块入口，具体业务目标仍需确认。"
+                : "用户可以" + String.join("、", featureNames) + "。具体规则可继续查看接口与实现代码。");
+        List<String> files = implementation.stream()
+                .map(chunk -> context.documentsById().get(chunk.getDocumentId()))
+                .filter(Objects::nonNull)
+                .map(KnowledgeDocument::getFilePath)
+                .distinct()
+                .toList();
+        return new BusinessJourneyResponse(
+                module.id(),
+                module.name(),
+                goal,
+                module.features().stream()
+                        .map(feature -> String.join("/", feature.httpMethods()) + " " + feature.path()
+                                + " · " + feature.name())
+                        .toList(),
+                implementationFlow,
+                dataOperations,
+                failureSignals,
+                files
+        );
+    }
+
+    private List<String> failureSignals(List<KnowledgeChunk> implementation) {
+        String content = implementation.stream().map(KnowledgeChunk::getContent)
+                .filter(Objects::nonNull).collect(Collectors.joining("\n"));
+        List<String> signals = new ArrayList<>();
+        if (content.contains("throw new ") || content.contains("orElseThrow(")) {
+            signals.add("存在显式异常分支，条件不满足时会中断当前流程。");
+        }
+        if (content.contains("catch (")) {
+            signals.add("存在异常捕获逻辑，需要结合实现确认是恢复、转换还是记录失败状态。");
+        }
+        if (Pattern.compile("(?i)(setStatus|updateStatus|status\\s*[=!]=)").matcher(content).find()) {
+            signals.add("实现涉及状态读取或更新，修改时需要核对允许的状态转换。");
+        }
+        return signals.isEmpty()
+                ? List.of("当前证据链未识别到显式失败信号，仍需结合测试和运行日志确认边界。")
+                : List.copyOf(signals);
+    }
+
+    private List<ProjectStateModelResponse> stateModels(BusinessMapContext context) {
+        return context.chunks().stream()
+                .filter(chunk -> "CLASS".equals(chunk.getChunkType()))
+                .filter(chunk -> simpleSymbol(chunk.getSymbolName()).matches(".*(Status|State|Stage)$"))
+                .map(chunk -> {
+                    KnowledgeDocument document = context.documentsById().get(chunk.getDocumentId());
+                    return new ProjectStateModelResponse(
+                            chunk.getId(),
+                            simpleSymbol(chunk.getSymbolName()),
+                            enumValues(chunk.getContent()),
+                            document == null ? null : document.getFilePath(),
+                            chunk.getStartLine(),
+                            chunk.getEndLine()
+                    );
+                })
+                .filter(state -> !state.values().isEmpty())
+                .sorted(Comparator.comparing(ProjectStateModelResponse::name))
+                .limit(20)
+                .toList();
+    }
+
+    private List<String> enumValues(String content) {
+        Matcher body = ENUM_VALUES.matcher(value(content));
+        if (!body.find()) return List.of();
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String candidate : body.group(1).split(",")) {
+            Matcher constant = ENUM_CONSTANT.matcher(candidate);
+            if (constant.find()) values.add(constant.group(1));
+        }
+        return List.copyOf(values);
+    }
+
+    private List<ProjectDataAssetResponse> dataAssets(BusinessMapContext context) {
+        return context.chunks().stream()
+                .filter(chunk -> "DATABASE_TABLE".equals(chunk.getChunkType()))
+                .map(chunk -> {
+                    KnowledgeDocument document = context.documentsById().get(chunk.getDocumentId());
+                    return new ProjectDataAssetResponse(
+                            chunk.getId(), simpleSymbol(chunk.getSymbolName()),
+                            document == null ? null : document.getFilePath(),
+                            chunk.getStartLine(), chunk.getEndLine()
+                    );
+                })
+                .filter(asset -> asset.name() != null && !asset.name().isBlank())
+                .collect(Collectors.collectingAndThen(
+                        Collectors.toMap(ProjectDataAssetResponse::name, asset -> asset, (left, right) -> left,
+                                LinkedHashMap::new),
+                        values -> values.values().stream().limit(30).toList()
+                ));
+    }
+
+    private List<String> detectedCapabilities(
+            BusinessMapContext context,
+            List<BusinessModuleResponse> modules,
+            List<ProjectDataAssetResponse> dataAssets,
+            List<ProjectStateModelResponse> stateModels
+    ) {
+        LinkedHashSet<String> capabilities = new LinkedHashSet<>();
+        if (!modules.isEmpty()) capabilities.add("Spring Web REST 接口");
+        if (context.chunks().stream().anyMatch(chunk -> layer(chunk,
+                context.documentsById().get(chunk.getDocumentId())).equals("SERVICE"))) {
+            capabilities.add("Service 业务编排");
+        }
+        if (!dataAssets.isEmpty() || context.referencesBySource().values().stream().flatMap(List::stream)
+                .anyMatch(reference -> "DATA_ACCESS".equals(reference.getReferenceKind()))) {
+            capabilities.add("数据库持久化");
+        }
+        if (!stateModels.isEmpty()) capabilities.add("显式业务状态模型");
+        String searchable = context.chunks().stream().map(KnowledgeChunk::getSymbolName)
+                .filter(Objects::nonNull).collect(Collectors.joining(" ")).toLowerCase(Locale.ROOT);
+        if (searchable.contains("security") || searchable.contains("jwt") || searchable.contains("auth")) {
+            capabilities.add("认证与访问控制");
+        }
+        if (searchable.contains("embedding") || searchable.contains("retrieval") || searchable.contains("vector")) {
+            capabilities.add("RAG 检索与向量索引");
+        }
+        if (searchable.contains("agent") || searchable.contains("aireview")) {
+            capabilities.add("LLM Agent 与受控工具调用");
+        }
+        return List.copyOf(capabilities);
+    }
+
+    private String architectureSummary(
+            BusinessMapContext context,
+            List<BusinessModuleResponse> modules,
+            List<ProjectDataAssetResponse> dataAssets
+    ) {
+        long serviceMethods = context.chunks().stream()
+                .filter(chunk -> "METHOD".equals(chunk.getChunkType()))
+                .filter(chunk -> layer(chunk, context.documentsById().get(chunk.getDocumentId())).equals("SERVICE"))
+                .count();
+        return "外部请求由 " + modules.size() + " 个 Controller 模块接收，当前证据中包含 "
+                + serviceMethods + " 个 Service 方法和 " + dataAssets.size()
+                + " 个数据库表定义。建议按“业务入口 → 服务编排 → 状态与数据 → 失败路径”理解项目。";
+    }
+
+    private List<ProjectReadingStepResponse> readingOrder(
+            BusinessMapContext context,
+            List<BusinessModuleResponse> modules,
+            List<BusinessJourneyResponse> journeys,
+            List<ProjectDataAssetResponse> dataAssets
+    ) {
+        List<ProjectReadingStepResponse> result = new ArrayList<>();
+        Set<String> visitedFiles = new HashSet<>();
+        context.chunks().stream()
+                .filter(chunk -> "CLASS".equals(chunk.getChunkType()))
+                .filter(chunk -> simpleSymbol(chunk.getSymbolName()).endsWith("Application"))
+                .findFirst()
+                .ifPresent(chunk -> addReadingStep(result, visitedFiles, context, chunk, "启动入口",
+                        "先确认应用如何启动、扫描哪些组件。"));
+        journeys.stream().map(journey -> journey.moduleId()).limit(4).forEach(moduleId -> {
+            BusinessModuleResponse module = modules.stream()
+                    .filter(candidate -> candidate.id().equals(moduleId)).findFirst().orElse(null);
+            if (module == null) return;
+            KnowledgeChunk controller = context.classesByName().get(module.controllerSymbol());
+            if (controller != null) addReadingStep(result, visitedFiles, context, controller, "业务入口",
+                    "从 " + module.name() + " 的 HTTP 接口理解用户可以执行什么操作。");
+        });
+        journeys.stream().flatMap(journey -> journey.evidenceFiles().stream()).limit(4).forEach(path -> {
+            context.documentsById().values().stream().filter(document -> path.equals(document.getFilePath()))
+                    .findFirst().ifPresent(document -> context.chunks().stream()
+                            .filter(chunk -> Objects.equals(chunk.getDocumentId(), document.getId()))
+                            .filter(chunk -> "METHOD".equals(chunk.getChunkType()))
+                            .filter(chunk -> layer(chunk, document).equals("SERVICE"))
+                            .findFirst().ifPresent(chunk -> addReadingStep(
+                                    result, visitedFiles, context, chunk, "业务实现",
+                                    "沿 Service 代码确认规则、状态变化和跨组件协作。"
+                            )));
+        });
+        dataAssets.stream().limit(3).forEach(asset -> {
+            KnowledgeChunk chunk = context.chunksById().get(asset.chunkId());
+            if (chunk != null) addReadingStep(result, visitedFiles, context, chunk, "数据模型",
+                    "最后结合表结构确认业务数据、约束和持久化边界。");
+        });
+        context.chunks().stream()
+                .filter(chunk -> "CLASS".equals(chunk.getChunkType()))
+                .filter(chunk -> simpleSymbol(chunk.getSymbolName()).matches(".*(Configuration|Config|Properties)$"))
+                .limit(2)
+                .forEach(chunk -> addReadingStep(result, visitedFiles, context, chunk, "运行配置",
+                        "完成业务主线后，再理解外部依赖、开关和运行参数。"));
+        return List.copyOf(result);
+    }
+
+    private void addReadingStep(
+            List<ProjectReadingStepResponse> result,
+            Set<String> visitedFiles,
+            BusinessMapContext context,
+            KnowledgeChunk chunk,
+            String category,
+            String reason
+    ) {
+        if (result.size() >= 12) return;
+        KnowledgeDocument document = context.documentsById().get(chunk.getDocumentId());
+        if (document == null || !visitedFiles.add(document.getFilePath())) return;
+        result.add(new ProjectReadingStepResponse(
+                result.size() + 1,
+                category,
+                simpleSymbol(chunk.getSymbolName()),
+                reason,
+                document.getFilePath(),
+                chunk.getSymbolName(),
+                chunk.getStartLine()
+        ));
+    }
+
+    private String layerLabel(String layer) {
+        return switch (layer) {
+            case "CONTROLLER" -> "接口入口";
+            case "SERVICE" -> "业务服务";
+            case "DATA_ACCESS" -> "数据访问";
+            default -> "关联实现";
+        };
     }
 
     @Transactional(readOnly = true)
@@ -164,6 +546,7 @@ public class ProjectBusinessMapService {
         for (List<ControllerEndpoint> endpoints : grouped.values()) {
             ControllerEndpoint first = endpoints.getFirst();
             String moduleName = moduleName(first.controller().getSymbolName());
+            String moduleKey = moduleKey(first.controller().getSymbolName());
             List<BusinessFeatureResponse> features = endpoints.stream()
                     .map(endpoint -> {
                         List<KnowledgeChunk> implementation = collectImplementation(context, endpoint.method());
@@ -176,7 +559,8 @@ public class ProjectBusinessMapService {
             modules.add(new BusinessModuleResponse(
                     String.valueOf(first.controller().getId()),
                     moduleName,
-                    moduleName + "包含 " + features.size() + " 个可访问接口入口。",
+                    MODULE_GOALS.getOrDefault(moduleKey,
+                            moduleName + "包含 " + features.size() + " 个可访问接口入口。"),
                     first.controller().getSymbolName(),
                     first.document().getFilePath(),
                     first.controller().getStartLine(),
@@ -194,10 +578,11 @@ public class ProjectBusinessMapService {
             boolean accessesData
     ) {
         String moduleName = moduleName(endpoint.controller().getSymbolName());
+        String moduleKey = moduleKey(endpoint.controller().getSymbolName());
         String methodName = methodName(endpoint.method().getSymbolName());
         return new BusinessFeatureResponse(
                 endpoint.method().getId(),
-                featureName(moduleName, methodName, endpoint.mapping().methods()),
+                featureName(moduleKey, moduleName, methodName, endpoint.mapping().methods()),
                 "通过 " + String.join("/", endpoint.mapping().methods()) + " " + endpoint.mapping().path()
                         + " 进入 " + simpleSymbol(endpoint.method().getSymbolName()) + "。",
                 endpoint.mapping().methods(),
@@ -300,7 +685,10 @@ public class ProjectBusinessMapService {
                 Wrappers.lambdaQuery(KnowledgeChunk.class)
                         .eq(KnowledgeChunk::getProjectId, projectId)
                         .eq(KnowledgeChunk::getRevision, project.getCurrentRevision())
-                        .in(KnowledgeChunk::getChunkType, List.of("CLASS", "METHOD"))
+                        .in(KnowledgeChunk::getChunkType, List.of(
+                                "CLASS", "METHOD", "CONFIG_PROPERTY", "DATABASE_TABLE",
+                                "DATABASE_COLUMN", "DATABASE_INDEX", "DATABASE_CONSTRAINT", "DATABASE_CHANGE"
+                        ))
                         .orderByAsc(KnowledgeChunk::getId)
         );
         List<CodeReference> references = referenceMapper.selectList(
@@ -495,14 +883,24 @@ public class ProjectBusinessMapService {
     }
 
     private String moduleName(String controllerSymbol) {
-        String simple = simpleSymbol(controllerSymbol).replaceFirst("Controller$", "");
-        return MODULE_NAMES.getOrDefault(simple, splitCamelCase(simple) + "业务");
+        String key = moduleKey(controllerSymbol);
+        return MODULE_NAMES.getOrDefault(key, splitCamelCase(key) + "业务");
     }
 
-    private String featureName(String module, String methodName, List<String> httpMethods) {
+    private String moduleKey(String controllerSymbol) {
+        return simpleSymbol(controllerSymbol).replaceFirst("Controller$", "");
+    }
+
+    private String featureName(String moduleKey, String module, String methodName, List<String> httpMethods) {
+        String businessAction = BUSINESS_ACTION_NAMES.get(moduleKey + "#" + methodName);
+        if (businessAction != null) return businessAction;
         String lower = methodName.toLowerCase(Locale.ROOT);
         if (lower.contains("login")) return "用户登录";
         if (lower.contains("register")) return "用户注册";
+        if (lower.contains("import")) return "导入" + module;
+        if (lower.contains("index")) return "构建" + module;
+        if (lower.contains("review")) return "执行" + module;
+        if (lower.contains("feedback")) return "提交" + module;
         if (startsWithAny(lower, "create", "add", "save", "start", "execute", "run", "import")) {
             return "创建或执行" + module;
         }

@@ -10,6 +10,8 @@ public record AiReviewContext(
         Long aiReviewTaskId,
         Long invocationId,
         Long staticAnalysisTaskId,
+        String provider,
+        String modelName,
         CodeReviewTask reviewTask,
         List<ReviewFinding> staticFindings
 ) {

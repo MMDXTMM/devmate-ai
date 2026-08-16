@@ -84,7 +84,7 @@ class AgentAiReviewControllerTest {
         AiReviewModel finalModel = finalModel(fixture.chunkId());
         ReviewAgentModel agentModel = mock(ReviewAgentModel.class);
         given(finalModelRegistry.current()).willReturn(finalModel);
-        given(agentModelRegistry.current()).willReturn(agentModel);
+        given(agentModelRegistry.current("TEST", "test-model")).willReturn(agentModel);
         given(retrievalService.search(any(), any())).willReturn(retrieval(fixture));
         given(agentModel.next(any(), any())).willReturn(
                 toolTurn("call-search-1", "searchCode", "{\"query\":\"库存并发扣减风险\"}", 30),
@@ -120,7 +120,7 @@ class AgentAiReviewControllerTest {
         AiReviewModel finalModel = mock(AiReviewModel.class);
         ReviewAgentModel agentModel = mock(ReviewAgentModel.class);
         given(finalModelRegistry.current()).willReturn(finalModel);
-        given(agentModelRegistry.current()).willReturn(agentModel);
+        given(agentModelRegistry.current("TEST", "test-model")).willReturn(agentModel);
 
         mockMvc.perform(post("/api/projects/{projectId}/ai-reviews/agent", fixture.projectId())
                         .contentType(APPLICATION_JSON)
@@ -131,6 +131,7 @@ class AgentAiReviewControllerTest {
 
         verify(finalModelRegistry, never()).current();
         verify(agentModelRegistry, never()).current();
+        verify(agentModelRegistry, never()).current(any(), any());
         verify(finalModel, never()).review(any());
         verify(agentModel, never()).next(any(), any());
         assertThat(aiReviewTaskMapper.selectCount(Wrappers.lambdaQuery(AiReviewTask.class)
@@ -145,7 +146,7 @@ class AgentAiReviewControllerTest {
         AiReviewModel finalModel = finalModel(fixture.chunkId());
         given(finalModelRegistry.current()).willReturn(finalModel);
         ReviewAgentModel agentModel = mock(ReviewAgentModel.class);
-        given(agentModelRegistry.current()).willReturn(agentModel);
+        given(agentModelRegistry.current("TEST", "test-model")).willReturn(agentModel);
         given(agentModel.next(any(), any())).willReturn(finalTurn(10));
 
         mockMvc.perform(agentAiReviewPost(fixture))

@@ -1,5 +1,6 @@
 package com.devmate.knowledge.embedding;
 
+import com.devmate.agent.service.SpringAiChatClientFactory;
 import com.devmate.knowledge.config.EmbeddingProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -50,7 +51,9 @@ class DashScopeEmbeddingProviderTest {
                         }
                         """.formatted(vector(1), vector(0)), MediaType.APPLICATION_JSON));
 
-        DashScopeEmbeddingProvider provider = new DashScopeEmbeddingProvider(properties, builder);
+        DashScopeEmbeddingProvider provider = new DashScopeEmbeddingProvider(
+                properties, new SpringAiChatClientFactory(builder, false)
+        );
         EmbeddingBatch result = provider.embed(List.of("first", "second"));
 
         assertThat(result.vectors()).hasSize(2);
@@ -65,7 +68,7 @@ class DashScopeEmbeddingProviderTest {
         properties.setApiKey("");
         DashScopeEmbeddingProvider provider = new DashScopeEmbeddingProvider(
                 properties,
-                RestClient.builder()
+                new SpringAiChatClientFactory(RestClient.builder(), false)
         );
 
         assertThatThrownBy(() -> provider.embed(List.of("code")))
@@ -81,7 +84,9 @@ class DashScopeEmbeddingProviderTest {
         server.expect(requestTo("https://embedding.example/v1/embeddings"))
                 .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
 
-        DashScopeEmbeddingProvider provider = new DashScopeEmbeddingProvider(properties, builder);
+        DashScopeEmbeddingProvider provider = new DashScopeEmbeddingProvider(
+                properties, new SpringAiChatClientFactory(builder, false)
+        );
 
         assertThatThrownBy(() -> provider.embed(List.of("code")))
                 .isInstanceOf(EmbeddingException.class)
