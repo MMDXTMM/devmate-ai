@@ -537,6 +537,11 @@ tbody tr:hover { background: #fbfcfb; }
 .review-workflow-status li.failed { color: #9b493c; }
 .review-workflow-status li.failed i { border-color: #9b493c; background: #9b493c; }
 .review-workflow-status p { margin: 14px 0 0; padding: 10px 12px; border-radius: 5px; background: #fff3ef; color: #7f3c31; font-size: 11px; line-height: 1.6; }
+.review-workflow-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--muted); font-size: 11px; }
+.review-workflow-toolbar > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.review-workflow-toolbar button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--text); font-size: 11px; cursor: pointer; }
+.review-workflow-toolbar button:hover:not(:disabled) { border-color: #8eaa99; color: var(--green); }
+.review-workflow-toolbar button:disabled { cursor: wait; opacity: .55; }
 .workspace-content-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); border-bottom: 1px solid var(--line); }
 .workspace-files, .workspace-guide { padding: 34px 30px 36px 0; }
 .workspace-guide { padding-right: 0; padding-left: 30px; border-left: 1px solid var(--line); }
@@ -702,6 +707,8 @@ tbody tr:hover { background: #fbfcfb; }
   .understanding-summary div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .workspace-primary-actions { grid-template-columns: 1fr; }
   .review-workflow-status ol { grid-template-columns: 1fr 1fr; }
+  .review-workflow-toolbar { align-items: flex-start; flex-direction: column; }
+  .review-workflow-toolbar > div { justify-content: flex-start; }
   .content-breakdown { grid-template-columns: repeat(2, 1fr); }
   .advanced-actions { grid-template-columns: 1fr; }
   .workspace-management button.danger { margin-left: 0; }
@@ -726,3 +733,47 @@ tbody tr:hover { background: #fbfcfb; }
 .model-modal-footer > div { display: flex; align-items: center; gap: 12px; }
 .model-test-result { color: var(--green); font-size: 12px; font-weight: 700; }
 @media (max-width: 800px) { .model-provider-grid { grid-template-columns: 1fr; } .model-modal-footer { align-items: stretch; flex-direction: column; } }
+
+.agent-chat-modal { width: min(1120px, calc(100vw - 48px)); height: min(780px, calc(100vh - 48px)); overflow: hidden; }
+.agent-chat-layout { min-height: 0; height: calc(100% - 78px); display: grid; grid-template-columns: 250px minmax(0, 1fr); }
+.conversation-list { min-height: 0; padding: 18px; overflow-y: auto; border-right: 1px solid var(--line); background: #f6f8f6; }
+.conversation-list > .button { width: 100%; margin-bottom: 15px; }
+.conversation-list > p { color: var(--muted); font-size: 10px; }
+.conversation-list > button:not(.button) { width: 100%; margin-bottom: 7px; padding: 11px; border: 1px solid transparent; border-radius: 8px; display: block; background: transparent; text-align: left; }
+.conversation-list > button:not(.button).active { border-color: #abc5b3; background: #fff; }
+.conversation-list b, .conversation-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-list b { font-size: 11px; }
+.conversation-list small { margin-top: 5px; color: var(--muted); font: 500 8px 'DM Mono', monospace; }
+.agent-chat-main { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.agent-chat-main > .notice { margin: 12px 16px 0; }
+.agent-message-list { min-height: 0; padding: 20px; overflow-y: auto; background: #fff; }
+.agent-chat-empty { max-width: 480px; margin: 90px auto; color: var(--muted); text-align: center; }
+.agent-chat-empty b { color: var(--ink); font-size: 18px; }
+.agent-chat-empty p { font-size: 11px; line-height: 1.7; }
+.agent-message-list article { max-width: 82%; margin-bottom: 14px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 10px; }
+.agent-message-list article.user { margin-left: auto; border-color: #c9dfd0; background: #f0f7f2; }
+.agent-message-list article.assistant { margin-right: auto; background: #fbfcfb; }
+.agent-message-list article > header { display: flex; justify-content: space-between; gap: 12px; }
+.agent-message-list article > header b { font-size: 10px; }
+.agent-message-list article > header span { color: var(--muted); font: 600 8px 'DM Mono', monospace; }
+.agent-message-list article > p { margin: 9px 0 0; white-space: pre-wrap; font-size: 11px; line-height: 1.75; }
+.agent-message-list details { margin-top: 12px; border-top: 1px solid var(--line); }
+.agent-message-list summary { padding-top: 10px; color: var(--green); cursor: pointer; font-size: 9px; font-weight: 700; }
+.chat-evidence { margin-top: 9px; }
+.chat-evidence b, .chat-evidence small { display: block; overflow-wrap: anywhere; }
+.chat-evidence b { font: 600 8px 'DM Mono', monospace; }
+.chat-evidence small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.chat-evidence pre { max-height: 220px; margin: 6px 0 0; padding: 10px; overflow: auto; border-radius: 6px; color: #dcebe0; background: #102a1b; font-size: 9px; }
+.agent-chat-input { padding: 14px 18px; border-top: 1px solid var(--line); background: #fafbfa; }
+.agent-chat-input textarea { width: 100%; padding: 11px; resize: none; border: 1px solid var(--line); border-radius: 8px; outline: none; }
+.agent-chat-input textarea:focus { border-color: #719982; }
+.agent-chat-input > div { margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.agent-chat-input small { color: var(--muted); font-size: 9px; }
+.stream-cursor { display: inline-block; width: 6px; height: 12px; margin-left: 2px; background: var(--green); animation: pulse 1s infinite; }
+@media (max-width: 700px) {
+  .agent-chat-modal { width: calc(100vw - 20px); height: calc(100vh - 20px); }
+  .agent-chat-layout { grid-template-columns: 1fr; grid-template-rows: 130px minmax(0, 1fr); }
+  .conversation-list { display: flex; gap: 8px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .conversation-list > .button, .conversation-list > button:not(.button) { min-width: 150px; margin: 0; }
+  .agent-message-list article { max-width: 94%; }
+}

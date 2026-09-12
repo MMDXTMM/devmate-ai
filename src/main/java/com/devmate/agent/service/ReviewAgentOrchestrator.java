@@ -81,9 +81,9 @@ public class ReviewAgentOrchestrator {
 
             List<ReviewAgentToolCall> calls = turn.message().toolCalls();
             if (calls == null || calls.isEmpty()) {
-                RetrievalSearchResponse merged = mergeRetrievals(context, retrievals);
-                return new ReviewAgentResearchResult(
-                        merged, promptTokens, completionTokens, totalTokens, toolCallCount
+                return completeResearch(
+                        context, retrievals, promptTokens, completionTokens, totalTokens,
+                        toolCallCount
                 );
             }
 
@@ -104,9 +104,32 @@ public class ReviewAgentOrchestrator {
                         && !result.retrieval().hits().isEmpty()) {
                     retrievals.add(result.retrieval());
                 }
+                if (toolCallCount >= properties.getMaxToolCalls() && !retrievals.isEmpty()) {
+                    return completeResearch(
+                            context, retrievals, promptTokens, completionTokens, totalTokens,
+                            toolCallCount
+                    );
+                }
             }
         }
         throw new AiReviewException("Agent未能在限定轮次内完成取证");
+    }
+
+    private ReviewAgentResearchResult completeResearch(
+            AiReviewContext context,
+            List<RetrievalSearchResponse> retrievals,
+            int promptTokens,
+            int completionTokens,
+            int totalTokens,
+            int toolCallCount
+    ) {
+        return new ReviewAgentResearchResult(
+                mergeRetrievals(context, retrievals),
+                promptTokens,
+                completionTokens,
+                totalTokens,
+                toolCallCount
+        );
     }
 
     private String userPrompt(AiReviewContext context) {

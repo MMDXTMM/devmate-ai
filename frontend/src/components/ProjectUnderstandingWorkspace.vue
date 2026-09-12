@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   back: []
   structure: []
+  chat: []
   search: [query: string]
   reparse: []
   rebuild: []
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   staticAnalysis: []
   review: []
   runReview: []
+  refreshReview: []
   evaluation: []
   edit: []
   delete: []
@@ -52,11 +54,27 @@ const reviewStages = computed(() => [
   { key: 'AGENT_REVIEW', label: 'Agent 审查', completed: Boolean(props.reviewWorkflow?.aiReviewTaskId) },
 ])
 
+const persistedReviewRunning = computed(() => props.reviewWorkflow?.status === 'RUNNING')
+const reviewActionDisabled = computed(() => props.reviewing || persistedReviewRunning.value)
+const reviewActionLabel = computed(() => {
+  if (props.reviewing || persistedReviewRunning.value) return '审查进行中'
+  if (props.reviewWorkflow?.status === 'SUCCEEDED') return '重新审查'
+  if (props.reviewWorkflow?.status === 'FAILED') return '重新审查'
+  return '开始代码审查'
+})
+const reviewActionDescription = computed(() => {
+  if (props.reviewing || persistedReviewRunning.value) return '任务正在后台执行，请稍候或刷新状态'
+  if (props.reviewWorkflow?.status === 'SUCCEEDED') return '重新执行变更定位、静态检查、RAG 取证和 Agent 审查'
+  if (props.reviewWorkflow?.status === 'FAILED') return '根据失败阶段的恢复建议修复配置后重新执行'
+  return '自动完成变更定位、静态检查、RAG 取证和 Agent 审查'
+})
+
 function reviewStageState(stage: { key: string; completed: boolean }) {
   if (stage.completed) return 'completed'
   if (props.reviewWorkflow?.status === 'FAILED'
       && props.reviewWorkflow.currentStage === stage.key) return 'failed'
-  if (props.reviewing && props.reviewWorkflow?.currentStage === stage.key) return 'running'
+  if ((props.reviewing || props.reviewWorkflow?.status === 'RUNNING')
+      && props.reviewWorkflow?.currentStage === stage.key) return 'running'
   return 'pending'
 }
 
@@ -143,10 +161,10 @@ watch(
         </div>
 
         <div class="workspace-primary-actions">
-          <button class="review-primary-action" type="button" :disabled="reviewing" @click="emit('runReview')">
+          <button class="review-primary-action" type="button" :disabled="reviewActionDisabled" @click="emit('runReview')">
             <span class="action-index">01</span>
-            <b>{{ reviewing ? '正在执行完整审查…' : '开始代码审查' }}</b>
-            <small>自动完成变更定位、静态检查、RAG 取证和 Agent 审查</small>
+            <b>{{ reviewActionLabel }}</b>
+            <small>{{ reviewActionDescription }}</small>
             <i>→</i>
           </button>
           <button type="button" @click="emit('structure')">
@@ -155,23 +173,34 @@ watch(
             <small>查看文件、类、方法、注解和调用关系</small>
             <i>→</i>
           </button>
-          <button type="button" @click="emit('search', '')">
+          <button type="button" @click="emit('chat')">
             <span class="action-index">03</span>
             <b>向项目提问</b>
-            <small>搜索业务入口、调用链、配置和数据库关系</small>
+            <small>多轮追问业务入口、调用链、配置和数据库关系</small>
             <i>→</i>
           </button>
         </div>
 
-        <div v-if="reviewing || reviewWorkflow" class="review-workflow-status" :class="reviewWorkflow?.status.toLowerCase()">
+        <div v-if="reviewing || reviewWorkflow" class="review-workflow-status" :class="(reviewWorkflow?.status || 'RUNNING').toLowerCase()">
           <div class="review-workflow-heading">
             <div>
-              <b v-if="reviewing">审查任务正在运行</b>
+              <b v-if="reviewing || reviewWorkflow?.status === 'RUNNING'">审查任务正在运行</b>
               <b v-else-if="reviewWorkflow?.status === 'SUCCEEDED'">最近一次完整审查已完成</b>
               <b v-else>最近一次完整审查未完成</b>
-              <small>系统按固定顺序执行，失败后不会继续消耗后续模型请求。</small>
+              <small v-if="reviewing || reviewWorkflow?.status === 'RUNNING'">系统按固定顺序执行，当前阶段完成后会自动进入下一阶段。</small>
+              <small v-else>系统按固定顺序执行，失败后不会继续消耗后续模型请求。</small>
             </div>
             <span>{{ reviewWorkflow?.status === 'SUCCEEDED' ? '完成' : reviewWorkflow?.status === 'FAILED' ? '失败' : '运行中' }}</span>
+          </div>
+          <div class="review-workflow-toolbar">
+            <span v-if="reviewWorkflow?.status === 'RUNNING'">页面重新打开后仍可通过刷新恢复任务状态。</span>
+            <span v-else-if="reviewWorkflow?.status === 'SUCCEEDED'">审查结果已保存，可直接查看最近报告。</span>
+            <span v-else-if="reviewWorkflow?.status === 'FAILED'">请先按下方建议处理，再重新提交审查。</span>
+            <span v-else>正在创建审查任务…</span>
+            <div>
+              <button v-if="reviewWorkflow?.status === 'SUCCEEDED'" type="button" @click="emit('review')">查看最近审查报告</button>
+              <button type="button" :disabled="reviewing" @click="emit('refreshReview')">刷新状态</button>
+            </div>
           </div>
           <ol>
             <li v-for="stage in reviewStages" :key="stage.key" :class="reviewStageState(stage)">
@@ -231,6 +260,7 @@ watch(
           <i>⌄</i>
         </summary>
         <div class="advanced-actions">
+          <button type="button" @click="emit('search', '')"><b>搜索代码证据</b><small>直接使用 Hybrid RAG 检索</small></button>
           <button type="button" @click="emit('diff')"><b>变更范围</b><small>查看最新 Git Diff 覆盖</small></button>
           <button type="button" @click="emit('staticAnalysis')"><b>静态检查</b><small>检查确定性代码问题</small></button>
           <button type="button" @click="emit('review')"><b>最近审查报告</b><small>读取已保存的结构化结果</small></button>

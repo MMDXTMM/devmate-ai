@@ -18,6 +18,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
+
+import java.net.SocketTimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -151,6 +154,21 @@ class ModelConnectionServiceTest {
         assertThatThrownBy(service::test)
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("模型连接成功但没有返回内容");
+    }
+
+    @Test
+    void reportsModelReadTimeoutInsteadOfMisleadingNetworkFailure() {
+        loginAs(8101L, "model-user-a");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "timeout-secret"));
+        when(chatClientFactory.chat(
+                "https://api.deepseek.com", "timeout-secret", "deepseek-v4-flash",
+                "你是连接检查器。", "只回复 OK", null
+        )).thenThrow(new ResourceAccessException("read timed out", new SocketTimeoutException("Read timed out")));
+
+        assertThatThrownBy(service::test)
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("模型服务在90秒内未响应，请稍后重试或切换更快的模型")
+                .hasMessageNotContaining("timeout-secret");
     }
 
     private void loginAs(long id, String username) {

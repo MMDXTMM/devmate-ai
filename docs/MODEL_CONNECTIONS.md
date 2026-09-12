@@ -11,16 +11,17 @@
 - 一个账户只能启用一个提供方连接；
 - 提供方地址由后端白名单决定，用户不能提交任意请求地址；
 - API Key 只在模型调用边界短暂使用，不进入响应、日志或 Prompt；
-- 连接超时为 5 秒、读取超时为 30 秒，连接测试不自动重试；
+- 连接超时为 5 秒、读取超时为 90 秒，连接测试不自动重试；读取超时与网络连接失败分别返回可读提示；
 - DeepSeek、通义千问和 OpenAI 通过同一 Spring AI 调用契约接入。
 
-账户模型已经接入固定流水线审查、Agent 审查和中文项目深度报告，不再只用于连接测试：
+账户模型已经接入固定流水线审查、Agent 审查、中文项目深度报告和项目多轮对话，不再只用于连接测试：
 
 - 固定流水线通过 Spring AI `ChatClient.responseEntity(...)` 把模型输出转换为 `AiReviewFinding` 结构；
 - Agent 通过 Spring AI `ChatModel` 发送工具定义和多轮消息，并关闭框架内部工具执行，由现有 Java 编排器继续执行权限、参数、超时、循环上限和审计；
 - 远程 DashScope Embedding 通过 Spring AI `EmbeddingModel` 调用；本地确定性 Embedding 作为无网络降级能力继续保留；
 - 每次审查固定使用任务开始时解析出的账户模型快照，provider 和 model 同步写入现有任务审计。
 - 项目理解报告通过 `ChatClient.responseEntity(...)` 获得结构化业务流程，只允许模型引用 Java 服务提供的证据 ID；真实路径、行号和代码由服务端校验并回填。
+- 项目多轮对话通过 `ChatClient.stream().content()` 获得增量文本；每轮由 Java 重新执行 Hybrid RAG，SSE 断开后最终回答仍会保存。
 
 因此模型协议、结构化输出、Token 元数据和 Tool Calling 已进入 Spring AI 契约；业务权限、证据校验、任务状态和持久化仍由 DevMate Java 服务负责。
 

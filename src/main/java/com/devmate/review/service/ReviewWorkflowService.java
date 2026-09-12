@@ -105,6 +105,11 @@ public class ReviewWorkflowService {
                 && businessException.getErrorCode() != ErrorCode.INTERNAL_ERROR) {
             return businessException.getMessage();
         }
+        if (stage == ReviewWorkflowStage.AGENT_REVIEW
+                && exception instanceof BusinessException
+                && isSafeAgentFailure(exception.getMessage())) {
+            return exception.getMessage();
+        }
         return switch (stage) {
             case SOURCE_IMPORT -> "源码解析失败，请检查仓库和数据库迁移状态";
             case DIFF -> "Git变更范围生成失败";
@@ -115,13 +120,21 @@ public class ReviewWorkflowService {
         };
     }
 
+    private boolean isSafeAgentFailure(String message) {
+        return message != null && (message.startsWith("Agent工具")
+                || message.startsWith("Agent未获得")
+                || message.startsWith("Agent检索")
+                || message.startsWith("Agent模型")
+                || message.startsWith("Agent未能"));
+    }
+
     private String recoveryAction(ReviewWorkflowStage stage) {
         return switch (stage) {
             case SOURCE_IMPORT -> "确认仓库地址、分支、访问权限和V20迁移后重新执行";
             case DIFF -> "确认仓库至少包含两次提交后重新执行";
             case STATIC_ANALYSIS -> "查看静态分析子任务错误并修复源码范围问题后重试";
             case EMBEDDING -> "检查Embedding配置，或使用本地Embedding Provider后重试";
-            case AGENT_REVIEW -> "配置模型密钥并检查额度；遇到429时不要立即重复请求";
+            case AGENT_REVIEW -> "先测试模型连接；若连接正常，请查看工具调用记录并重新审查";
             case COMPLETED -> "刷新页面后重新执行";
         };
     }

@@ -121,5 +121,11 @@ class DatabaseSchemaTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(report_json) FROM project_understanding_report", Integer.class
         )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(prompt_version) FROM conversation", Integer.class
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(evidence_json) FROM conversation_message", Integer.class
+        )).isZero();
     }
 }

@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ProjectUnderstandingWorkspace from './ProjectUnderstandingWorkspace.vue'
 import { projectApi } from '../services/projectApi'
-import type { Project } from '../types/project'
+import type { Project, ReviewWorkflow } from '../types/project'
 
 const project: Project = {
   id: '2084116785588305922',
@@ -17,6 +17,16 @@ const project: Project = {
   createdAt: '2026-08-03T00:00:00Z',
   updatedAt: '2026-08-07T00:00:00Z',
   lastIndexedAt: '2026-08-07T00:00:00Z',
+}
+
+function workflow(status: ReviewWorkflow['status']): ReviewWorkflow {
+  return {
+    id: '30', projectId: project.id, attemptKey: '123e4567-e89b-42d3-a456-426614174000',
+    status, currentStage: status === 'SUCCEEDED' ? 'COMPLETED' : 'AGENT_REVIEW',
+    indexTaskId: '31', reviewTaskId: '32', staticAnalysisTaskId: '33',
+    ...(status === 'FAILED' ? { errorMessage: '模型服务暂时不可用', recoveryAction: '测试模型连接后重试' } : {}),
+    createdAt: '2026-08-07T00:00:00Z',
+  }
 }
 
 describe('ProjectUnderstandingWorkspace', () => {
@@ -95,5 +105,33 @@ describe('ProjectUnderstandingWorkspace', () => {
     expect(wrapper.get('.review-workflow-status').text()).toContain('检查Embedding配置后重试')
     expect(wrapper.findAll('.review-workflow-status li.completed')).toHaveLength(3)
     expect(wrapper.findAll('.review-workflow-status li.failed')).toHaveLength(1)
+  })
+
+  it('uses explicit actions for a running persisted workflow', async () => {
+    vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
+    vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
+    const wrapper = mount(ProjectUnderstandingWorkspace, {
+      props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false, reviewWorkflow: workflow('RUNNING') },
+    })
+    await flushPromises()
+
+    const action = wrapper.get('.review-primary-action')
+    expect(action.attributes('disabled')).toBeDefined()
+    expect(action.text()).toContain('审查进行中')
+    expect(wrapper.get('.review-workflow-toolbar').text()).toContain('刷新恢复任务状态')
+  })
+
+  it('offers report and refresh actions after success', async () => {
+    vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
+    vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
+    const wrapper = mount(ProjectUnderstandingWorkspace, {
+      props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false, reviewWorkflow: workflow('SUCCEEDED') },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.review-primary-action').text()).toContain('重新审查')
+    expect(wrapper.get('.review-workflow-toolbar').text()).toContain('查看最近审查报告')
+    await wrapper.get('.review-workflow-toolbar button:last-child').trigger('click')
+    expect(wrapper.emitted('refreshReview')).toHaveLength(1)
   })
 })
