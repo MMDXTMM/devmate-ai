@@ -11,6 +11,7 @@ import com.devmate.review.dto.StaticAnalysisResponse;
 import com.devmate.review.entity.ReviewWorkflowRun;
 import com.devmate.review.mapper.ReviewWorkflowRunMapper;
 import com.devmate.review.model.ReviewWorkflowStage;
+import com.devmate.review.model.ReviewWorkflowStatus;
 import com.devmate.knowledge.dto.EmbeddingIndexTaskResponse;
 import com.devmate.knowledge.dto.IndexTaskResponse;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -182,8 +183,10 @@ public class ReviewWorkflowStateService {
             AiReviewResponse aiReview
     ) {
         return new ReviewWorkflowResponse(
-                run.getId(), run.getProjectId(), run.getAttemptKey(), run.getStatus(),
-                run.getCurrentStage(), run.getIndexTaskId(), run.getReviewTaskId(),
+                run.getId(), run.getProjectId(), run.getAttemptKey(),
+                ReviewWorkflowStatus.valueOf(run.getStatus()),
+                ReviewWorkflowStage.valueOf(run.getCurrentStage()),
+                run.getIndexTaskId(), run.getReviewTaskId(),
                 run.getStaticAnalysisTaskId(), run.getEmbeddingTaskId(), run.getAiReviewTaskId(),
                 run.getErrorMessage(), run.getRecoveryAction(), run.getCreatedAt(),
                 run.getStartedAt(), run.getFinishedAt(), sourceImport, reviewDiff,

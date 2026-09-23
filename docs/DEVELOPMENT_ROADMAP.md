@@ -1,13 +1,16 @@
 # 分阶段开发路线
 
-## 当前小闭环：Spring AI 中文项目深度理解报告
+## 当前小闭环：多轮项目 Agent 与 SSE（已完成，待页面验收）
 
-- 当前账户选择的 DeepSeek、通义千问或 OpenAI 模型可以通过 Spring AI 生成中文项目理解报告。
-- 模型输入固定为当前项目 revision、静态业务地图和受限代码证据；输出只能引用输入中真实存在的 Chunk ID。
-- Java 服务端校验引用并回填文件、行号和代码块，模型伪造证据时任务失败，不把模型文本冒充源码事实。
-- 报告使用 `attempt_key` 避免一次点击重复计费，`running_key` 阻止同项目同版本并发生成，超时任务会失败并释放重试入口。
-- 页面打开时不会自动调用模型，只有用户明确点击“生成新的深度报告”才会产生额度消耗。
-- 下一步由用户使用自己的模型 API Key 和已导入项目完成真实页面验收；通过前不宣称真实模型输出质量。
+- 对话固定当前项目 revision、账户 provider/model 和 Prompt 版本；源码变化后要求新建对话。
+- 每轮问题执行 Hybrid RAG，并把最近已完成消息与本轮代码证据交给 Spring AI `ChatClient.stream()`。
+- 页面通过带 JWT 的 POST SSE 接收 `message/evidence/token/done/failed`，刷新后仍可读取已持久化历史。
+- `attempt_key` 防止响应丢失导致重复付费，`running_key` 与会话行锁阻止同会话并发回答。
+- 模型调用、RAG 和 SSE 都不进入数据库长事务；断开页面不会阻止最终状态落库。
+- H2 V1-V25、后端 185 项、前端 70 项、Benchmark Node 48 项及 Vue 生产构建已通过；真实厂商流式效果待用户用自己的 Key 页面验收。
+- 下一闭环才实现 Spring AI MCP Streamable HTTP 只读工具服务，不采用旧 MCP SSE transport。
+
+完整契约和 MCP 边界见 [多轮项目 Agent、SSE 与 MCP](PROJECT_CONVERSATION_SSE_AND_MCP.md)。
 
 每个开发阶段对应的知识点、AI 协作边界和面试检查题见 [面试导向学习与开发路线](LEARNING_ROADMAP.md)。
 
@@ -168,7 +171,7 @@
 - 已通过 17 个自动化测试完成项目管理基础 CRUD 回归。
 - 已完成独立 Vue 3 + TypeScript 项目管理前端，覆盖筛选、新增、修改和删除。
 - 已通过 Vite 代理完成前后端真实 CRUD 联调，并通过 6 个前端测试、生产构建和依赖安全审计。
-- OpenAPI 文档作为后续接口治理任务补充，不阻塞源码导入主线。
+- 已完成全部 20 个 Controller、54 个 HTTP 操作的 OpenAPI 契约治理；全局门禁验证业务摘要、JWT、401/403、BIGINT 字符串和敏感字段规则，项目 CRUD 与一键审查另有细粒度契约测试。
 
 ## 阶段 2：源码导入与结构化解析
 

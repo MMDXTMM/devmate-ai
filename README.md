@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/MMDXTMM/devmate-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/MMDXTMM/devmate-ai/actions/workflows/ci.yml)
 
-DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导入 Java Git 仓库后，通过 Git Diff 限定变更范围，结合 AST、PMD、调用关系和混合检索补充项目上下文，再由受控 Tool Calling Agent 输出带真实代码证据的结构化审查结论。
+DevMate AI 当前聚焦为一个**基于 RAG 的 Java 项目理解与代码审查 Agent**：导入 Java Git 仓库后，既可以通过带代码证据的多轮对话理解业务，也可以通过 Git Diff、AST、PMD、调用关系和混合检索完成受控代码审查。
 
 当前已经完成登录认证、项目管理、Git 导入、Java AST、Diff 精确映射、PMD 与项目规则、混合 RAG、证据约束的 AI 审查、受控 Tool Calling、反馈和固定评测集等工程底座。接下来的开发不再扩张产品范围，而是把已有能力收敛成可一键演示、可量化验证、本人能够完整解释的求职项目闭环。
 
@@ -40,11 +40,14 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导
 → 找到业务入口和继续开发范围
 ```
 
+“向项目提问”会创建固定项目版本和模型的持久化对话。每一轮先执行 Hybrid RAG，再通过 Spring AI 流式调用模型，并以 SSE 增量展示回答和真实文件/行号证据；刷新页面后仍可继续追问。MCP 只读工具服务属于下一闭环，尚未作为已完成功能发布，设计见 [多轮项目 Agent、SSE 与 MCP](docs/PROJECT_CONVERSATION_SSE_AND_MCP.md)。
+
 ## 当前已具备
 
 - Java 21 + Spring Boot 3.5 + Spring AI 1.1.8
 - Maven Wrapper，多台电脑无需预装 Maven
 - Spring Web、Validation、Actuator
+- Springdoc OpenAPI 与 Swagger UI（覆盖全部 20 个 Controller、54 个 HTTP 操作，并有全局契约回归门禁）
 - MyBatis-Plus
 - Flyway 数据库版本管理
 - MySQL 运行配置模板
@@ -83,6 +86,8 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 代码审查 Agent**：导
 - Spring AI Tool Calling 多轮协议与 Java 受控工具执行器
 - DeepSeek、通义千问和 OpenAI 模型连接中心，支持账户级加密配置、模型切换和显式连接测试
 - Spring AI 中文项目深度报告，包含核心业务流程、阅读顺序、风险边界和服务端回填的真实代码证据
+- 项目版本固定的持久化多轮对话、每轮 Hybrid RAG 与 Spring AI 流式回答
+- 基于 POST + JWT 的 SSE 事件流、代码证据展示、失败落库和网络重试幂等
 - 项目版本固定、证据 ID 白名单、付费请求幂等、并发限制、超时恢复及 Token/耗时审计
 - Diff、静态分析、代码检索和项目结构四个只读 Tool
 - Tool 参数校验、超时、调用/循环上限、证据预算和脱敏审计
@@ -106,10 +111,19 @@ export DEVMATE_MODEL_ENCRYPTION_SECRET='<another-stable-32-character-secret>'
 ./mvnw spring-boot:run
 ```
 
+本地也可以直接运行 `./scripts/start-local.sh`。首次运行会在 Git 忽略且仅当前用户可读的
+`.devmate-local-secrets` 中生成稳定的 JWT 和模型加密密钥，后续重启继续复用，避免已保存的模型
+API Key 因加密主密钥变化而失效。脚本首次运行还会以隐藏输入方式询问本机 MySQL 密码并保存在
+同一文件中。该文件不能提交或分享。
+
 默认激活 `local` Profile 并连接本机 MySQL。数据库连接信息保存在不会提交 Git 的 `application-local.yml`；安全默认开启，JWT 和模型 API Key 加密密钥都必须至少 32 个字符、通过环境注入且不能写入 Git。`DEVMATE_MODEL_ENCRYPTION_SECRET` 必须长期保持稳定，否则已保存的模型 Key 需要重新填写。访问：
 
 - `GET http://localhost:8080/api/health`
 - `GET http://localhost:8080/actuator/health`
+- OpenAPI：`http://localhost:8080/v3/api-docs`
+- Swagger UI：`http://localhost:8080/swagger-ui.html`
+
+本地默认开启接口文档；生产环境设置 `DEVMATE_OPENAPI_ENABLED=false` 关闭 OpenAPI 和 Swagger UI。
 
 运行测试：
 
@@ -172,6 +186,7 @@ cp src/main/resources/application-local.yml.example \
 
 - [开发贡献检查清单](CONTRIBUTING.md)
 - [工程开发与运维规范](docs/ENGINEERING_STANDARDS.md)
+- [API 契约治理](docs/API_CONTRACTS.md)
 - [运维手册](docs/OPERATIONS_RUNBOOK.md)
 - [HTTP 请求追踪与日志关联](docs/REQUEST_CORRELATION.md)
 - [持续集成与远端质量门禁](docs/CONTINUOUS_INTEGRATION.md)

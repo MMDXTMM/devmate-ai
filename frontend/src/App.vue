@@ -11,6 +11,7 @@ import RetrievalModal from './components/RetrievalModal.vue'
 import AiReviewModal from './components/AiReviewModal.vue'
 import ReviewEvaluationModal from './components/ReviewEvaluationModal.vue'
 import ModelConnectionModal from './components/ModelConnectionModal.vue'
+import AgentConversationModal from './components/AgentConversationModal.vue'
 import { ApiError, projectApi } from './services/projectApi'
 import { runProjectUnderstanding } from './services/projectUnderstandingWorkflow'
 import { clearAuthSession, getAuthSession, setAuthSession, subscribeAuthSession } from './services/authSession'
@@ -37,11 +38,13 @@ const retrievalProject = ref<Project | null>(null)
 const aiReviewProject = ref<Project | null>(null)
 const evaluationProject = ref<Project | null>(null)
 const modelConnectionsOpen = ref(false)
+const conversationProject = ref<Project | null>(null)
 const reviewingId = ref<string | null>(null)
 const reviewWorkflow = ref<ReviewWorkflow | undefined>()
 const authSession = ref<AuthSession | null>(getAuthSession())
 const workspaceArea = ref<'projects' | 'generation'>('projects')
 let unsubscribeAuth: (() => void) | undefined
+let reviewStatusTimer: ReturnType<typeof window.setInterval> | undefined
 
 const hasProjects = computed(() => pageData.value.items.length > 0)
 const rangeText = computed(() => {
@@ -183,12 +186,13 @@ async function understandProject(project: Project) {
 
 async function runReviewWorkflow(project: Project) {
   reviewingId.value = project.id
-  reviewWorkflow.value = undefined
   errorMessage.value = ''
   successMessage.value = ''
+  startReviewStatusPolling(project, true)
   try {
     const result = await projectApi.createReviewWorkflow(project.id)
     reviewWorkflow.value = result
+    if (result.status !== 'RUNNING') stopReviewStatusPolling()
     if (result.status === 'SUCCEEDED') {
       showSuccess('完整代码审查已完成，正在打开审查报告')
       aiReviewProject.value = project
@@ -200,17 +204,57 @@ async function runReviewWorkflow(project: Project) {
     await loadProjects(pageData.value.page)
   } catch (error) {
     showError(error)
+    await loadLatestReviewWorkflow(project)
   } finally {
     reviewingId.value = null
   }
 }
 
 async function loadLatestReviewWorkflow(project: Project) {
+  stopReviewStatusPolling()
   reviewWorkflow.value = undefined
+  const latest = await fetchLatestReviewWorkflow(project, true)
+  if (latest?.status === 'RUNNING') startReviewStatusPolling(project)
+}
+
+function stopReviewStatusPolling() {
+  if (reviewStatusTimer !== undefined) {
+    window.clearInterval(reviewStatusTimer)
+    reviewStatusTimer = undefined
+  }
+}
+
+function startReviewStatusPolling(project: Project, fetchImmediately = false) {
+  stopReviewStatusPolling()
+  const poll = async () => {
+    if (selectedProject.value?.id !== project.id) {
+      stopReviewStatusPolling()
+      return
+    }
+    await fetchLatestReviewWorkflow(project, true)
+  }
+  reviewStatusTimer = window.setInterval(poll, 3000)
+  if (fetchImmediately) void poll()
+}
+
+async function refreshReviewWorkflow(project: Project) {
+  const latest = await fetchLatestReviewWorkflow(project, false)
+  if (latest?.status === 'RUNNING') startReviewStatusPolling(project)
+}
+
+async function fetchLatestReviewWorkflow(project: Project, tolerateMissing: boolean) {
   try {
-    reviewWorkflow.value = await projectApi.latestReviewWorkflow(project.id)
+    const latest = await projectApi.latestReviewWorkflow(project.id)
+    reviewWorkflow.value = latest
+    if (latest.status !== 'RUNNING') stopReviewStatusPolling()
+    return latest
   } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 404) showError(error)
+    if (error instanceof ApiError && error.status === 404) {
+      if (!tolerateMissing) reviewWorkflow.value = undefined
+      return
+    }
+    stopReviewStatusPolling()
+    showError(error)
   }
 }
 
@@ -221,11 +265,13 @@ function openWorkspace(project: Project) {
 }
 
 function openProjectArea() {
+  stopReviewStatusPolling()
   workspaceArea.value = 'projects'
   selectedProject.value = null
 }
 
 function openGenerationArea() {
+  stopReviewStatusPolling()
   workspaceArea.value = 'generation'
   selectedProject.value = null
 }
@@ -258,6 +304,7 @@ function handleAuthenticated(session: AuthSession) {
 }
 
 function logout() {
+  stopReviewStatusPolling()
   clearAuthSession()
   authSession.value = null
   pageData.value = { page: 1, size: 10, total: 0, pages: 0, items: [] }
@@ -271,7 +318,10 @@ onMounted(() => {
   })
   if (authSession.value) void loadProjects()
 })
-onUnmounted(() => unsubscribeAuth?.())
+onUnmounted(() => {
+  stopReviewStatusPolling()
+  unsubscribeAuth?.()
+})
 </script>
 
 <template>
@@ -305,8 +355,9 @@ onUnmounted(() => unsubscribeAuth?.())
         :deleting="deletingId === selectedProject.id"
         :reviewing="reviewingId === selectedProject.id"
         :review-workflow="reviewWorkflow?.projectId === selectedProject.id ? reviewWorkflow : undefined"
-        @back="selectedProject = null"
+        @back="openProjectArea()"
         @structure="sourceProject = selectedProject"
+        @chat="conversationProject = selectedProject"
         @search="openRetrieval(selectedProject, $event)"
         @reparse="understandProject(selectedProject)"
         @rebuild="rebuildSource(selectedProject)"
@@ -314,6 +365,7 @@ onUnmounted(() => unsubscribeAuth?.())
         @static-analysis="analysisProject = selectedProject"
         @review="aiReviewProject = selectedProject"
         @run-review="runReviewWorkflow(selectedProject)"
+        @refresh-review="refreshReviewWorkflow(selectedProject)"
         @evaluation="evaluationProject = selectedProject"
         @edit="openEdit(selectedProject)"
         @delete="removeProject(selectedProject)"
@@ -470,5 +522,11 @@ onUnmounted(() => unsubscribeAuth?.())
       @close="evaluationProject = null"
     />
     <ModelConnectionModal :open="modelConnectionsOpen" @close="modelConnectionsOpen = false" />
+    <AgentConversationModal
+      :open="conversationProject !== null"
+      :project-id="conversationProject?.id"
+      :project-name="conversationProject?.name"
+      @close="conversationProject = null"
+    />
   </div>
 </template>

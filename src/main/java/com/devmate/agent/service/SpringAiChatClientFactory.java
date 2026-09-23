@@ -43,7 +43,7 @@ public class SpringAiChatClientFactory {
                 "OPENAI_COMPATIBLE", model, baseUrl, apiKey
         );
         return chat(connection, systemPrompt, userPrompt, maxTokens,
-                Duration.ofSeconds(5), Duration.ofSeconds(30));
+                Duration.ofSeconds(5), Duration.ofSeconds(90));
     }
 
     public String chat(ModelConnectionSnapshot connection, String systemPrompt,

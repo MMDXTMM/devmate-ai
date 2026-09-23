@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -56,11 +57,29 @@ public class GetDiffCoverageTool implements AgentTool {
         ReviewDiffResponse response = diffStateService.getByTask(
                 context.projectId(), context.reviewTaskId()
         );
-        List<DiffFile> files = response.files().stream()
+        List<DiffFile> candidates = response.files().stream()
                 .limit(properties.getMaxDiffFiles())
                 .map(this::toFile)
                 .toList();
-        DiffOutput output = new DiffOutput(
+        List<DiffFile> files = new ArrayList<>(candidates);
+        String content = writeJson(toOutput(response, files));
+        while (!files.isEmpty()
+                && content.length() > properties.getMaxToolOutputCharacters()) {
+            files.removeLast();
+            content = writeJson(toOutput(response, files));
+        }
+        if (content.length() > properties.getMaxToolOutputCharacters()) {
+            throw new AgentToolExecutionException("Diff摘要超过工具输出上限");
+        }
+        return AgentToolResult.success(
+                content,
+                "changedFiles=" + response.changedFiles() + ";returnedFiles=" + files.size(),
+                null
+        );
+    }
+
+    private DiffOutput toOutput(ReviewDiffResponse response, List<DiffFile> files) {
+        return new DiffOutput(
                 response.baseRevision(),
                 response.targetRevision(),
                 response.changedFiles(),
@@ -68,12 +87,7 @@ public class GetDiffCoverageTool implements AgentTool {
                 response.partiallyMappedFiles(),
                 response.skippedFiles(),
                 response.files().size() > files.size(),
-                files
-        );
-        return AgentToolResult.success(
-                writeJson(output),
-                "changedFiles=" + response.changedFiles() + ";returnedFiles=" + files.size(),
-                null
+                List.copyOf(files)
         );
     }
 

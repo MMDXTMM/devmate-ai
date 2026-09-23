@@ -197,6 +197,11 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - `message_role` 可取 `SYSTEM`、`USER`、`ASSISTANT`、`TOOL`。
 - `(conversation_id, sequence_no)` 保证消息顺序唯一。
 - Token 字段记录在 AI 回复消息上，便于按会话统计。
+- V25 为对话增加固定的 `revision/provider/model_name/prompt_version`，防止项目或模型变化后把不同上下文混进同一历史。
+- 回复消息以 `RUNNING/COMPLETED/FAILED` 记录生命周期，`attempt_key + request_hash` 实现安全幂等。
+- `running_key` 只在生成中等于会话 ID，唯一约束保证同一会话只有一个回答任务；完成或失败时必须显式置空。
+- `evidence_json` 只保存 Chunk ID 数组，不复制完整源码；回读时由服务端重新校验文件与代码位置。
+- `error_code/error_message/latency_ms` 保存脱敏失败和耗时，不保存完整 Prompt、Key 或模型原始响应。
 
 ### 3.11 `bug_analysis`
 
@@ -397,6 +402,7 @@ V23 保存登录账户的大模型连接配置：
 - `V22__add_review_workflow_run.sql`：一键审查编排状态、子任务关联、幂等与并发控制。
 - `V23__add_user_model_connection.sql`：账户级模型配置、加密 API Key 和当前提供方索引。
 - `V24__add_project_understanding_report.sql`：版本固定、证据约束的中文项目理解报告、付费幂等与超时恢复状态。
+- `V25__add_streaming_agent_conversation.sql`：项目多轮对话的版本/模型快照、消息状态、证据引用、幂等和并发运行键。
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。

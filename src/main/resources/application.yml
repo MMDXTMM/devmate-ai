@@ -38,6 +38,15 @@ management:
     health:
       show-details: never
 
+springdoc:
+  api-docs:
+    enabled: ${DEVMATE_OPENAPI_ENABLED:true}
+  swagger-ui:
+    enabled: ${DEVMATE_OPENAPI_ENABLED:true}
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
 logging:
   level:
     root: info
@@ -101,6 +110,14 @@ devmate:
     connect-timeout: 5s
     read-timeout: 90s
     stale-task-timeout: 10m
+  project-conversation:
+    prompt-version: project-conversation-v1
+    history-messages: 12
+    top-k: 6
+    token-budget: 5000
+    max-answer-characters: 16000
+    connect-timeout: 5s
+    read-timeout: 90s
   review-agent:
     prompt-version: review-agent-v1
     max-tool-calls: 6

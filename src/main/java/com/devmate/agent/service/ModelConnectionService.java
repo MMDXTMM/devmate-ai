@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.ai.retry.NonTransientAiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -25,6 +27,7 @@ import java.util.Map;
 @Service
 public class ModelConnectionService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ModelConnectionService.class);
     private static final Map<String, ProviderDefinition> PROVIDERS = providers();
 
     private final CurrentUserService currentUserService;
@@ -104,9 +107,18 @@ public class ModelConnectionService {
             if (Integer.valueOf(429).equals(status)) {
                 throw new BusinessException(ErrorCode.CONFLICT, "模型额度不足或请求过于频繁");
             }
+            if (hasCause(exception, java.net.SocketTimeoutException.class)
+                    || hasCause(exception, java.net.http.HttpTimeoutException.class)) {
+                LOGGER.warn("Model connection test timed out provider={} model={} elapsedMs={}",
+                        connection.provider(), connection.model(), elapsedMs(started));
+                throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+                        "模型服务在90秒内未响应，请稍后重试或切换更快的模型");
+            }
             if (hasCause(exception, ResourceAccessException.class)
-                    || hasCause(exception, java.net.ConnectException.class)
-                    || hasCause(exception, java.net.SocketTimeoutException.class)) {
+                    || hasCause(exception, java.net.ConnectException.class)) {
+                LOGGER.warn("Model connection test network failure provider={} model={} elapsedMs={} exception={}",
+                        connection.provider(), connection.model(), elapsedMs(started),
+                        exception.getClass().getSimpleName());
                 throw new BusinessException(ErrorCode.INTERNAL_ERROR, "无法连接模型服务，请检查网络后重试");
             }
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "模型连接测试失败，请稍后重试");
@@ -124,6 +136,16 @@ public class ModelConnectionService {
         ProviderDefinition provider = provider(state.getProvider());
         String apiKey = apiKeyCipher.decrypt(userId, state.getProvider(), state.getEncryptedApiKey());
         return new ModelConnectionSnapshot(provider.id(), state.getModelName(), provider.baseUrl(), apiKey);
+    }
+
+    public ModelConnectionSnapshot requireActiveConnection(String expectedProvider, String expectedModel) {
+        ModelConnectionSnapshot connection = requireActiveConnection();
+        if (!connection.provider().equals(expectedProvider) || !connection.model().equals(expectedModel)) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "该对话固定使用 " + expectedProvider + "/" + expectedModel
+                            + "，请切回该模型或新建对话");
+        }
+        return connection;
     }
 
     private Integer responseStatus(Throwable throwable) {

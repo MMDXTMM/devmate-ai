@@ -52,6 +52,10 @@ bug             Bug 分析记录
 
 ## 4. API 规范
 
+- OpenAPI 是前后端接口契约的机器可读来源；接口行为、Bean Validation 和业务规则仍以运行代码与测试为准。
+- 新增或修改接口时同步维护 `@Tag`、`@Operation`、认证要求、关键字段含义、枚举、成功状态和主要错误响应。
+- 契约中的字段类型必须与真实 JSON 一致，尤其是 `BIGINT/Long` ID 必须声明为 `string`。
+- 可能破坏兼容性的路径、方法、字段、类型、必填约束、枚举和认证变化必须先标记并补契约回归测试。
 - REST 路径使用复数资源，例如 `/api/projects/{projectId}/imports`。
 - `GET` 查询、`POST` 创建或触发任务、`PUT` 完整更新允许字段、`DELETE` 删除。
 - 请求必须使用 Bean Validation，业务约束在 Service 再校验。
@@ -128,6 +132,7 @@ bug             Bug 分析记录
 
 - TypeScript 类型与后端契约保持一致，ID 一律使用 `string`。
 - API 调用集中在 `services`，页面组件不重复解析统一响应和错误。
+- 手写 TypeScript 类型必须与 OpenAPI 契约保持一致；引入生成客户端后只修改契约和生成配置，不手改生成文件。
 - 组件区分加载、空数据、成功和失败状态。
 - 危险操作需要确认，提交期间禁用重复操作。
 - 不在前端保存 Git Token、模型 Key 或数据库凭证。

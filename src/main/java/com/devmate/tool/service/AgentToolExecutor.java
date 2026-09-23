@@ -12,6 +12,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -100,7 +103,17 @@ public class AgentToolExecutor {
             ReviewAgentContext context,
             JsonNode arguments
     ) {
-        FutureTask<AgentToolResult> task = new FutureTask<>(() -> tool.execute(context, arguments));
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        FutureTask<AgentToolResult> task = new FutureTask<>(() -> {
+            SecurityContext workerContext = SecurityContextHolder.createEmptyContext();
+            workerContext.setAuthentication(authentication);
+            SecurityContextHolder.setContext(workerContext);
+            try {
+                return tool.execute(context, arguments);
+            } finally {
+                SecurityContextHolder.clearContext();
+            }
+        });
         Thread worker = Thread.ofVirtual().name("devmate-agent-tool").start(task);
         try {
             return task.get(properties.getToolTimeout().toMillis(), TimeUnit.MILLISECONDS);
