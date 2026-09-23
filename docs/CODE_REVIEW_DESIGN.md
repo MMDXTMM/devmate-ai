@@ -60,6 +60,8 @@ RAG 检索调用方、被调用方、配置、SQL、规范和测试
 
 当前一键入口由 Java 编排器顺序执行 `SOURCE_IMPORT → DIFF → STATIC_ANALYSIS → EMBEDDING → AGENT_REVIEW`。`review_workflow_run` 只保存阶段状态和子任务引用，各阶段仍保留自己的事实表和失败状态。相同 `attempt_key` 幂等返回，同一项目只允许一条运行中流水线；任何阶段失败都会停止后续调用并给出恢复动作。
 
+一键入口的请求、响应、认证、状态枚举和错误语义已经纳入 OpenAPI 契约治理，具体端点与兼容约定见 [API 契约治理](API_CONTRACTS.md)。
+
 源码解析在这里是证据层，不是最终的项目理解报告。面向陌生项目的中文业务地图会先把 Controller、Service、Mapper、数据库和调用关系组织成业务流程，再作为 Agent 判断局部 Diff 的全局背景。
 
 当前 Diff MVP 已落地，具体实现与覆盖状态见 [Git Diff 与覆盖清单](GIT_DIFF.md)。

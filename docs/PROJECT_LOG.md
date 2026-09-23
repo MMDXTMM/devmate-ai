@@ -1,5 +1,33 @@
 # 项目决策与变更日志
 
+## 2026-09-23：完成全量 HTTP API 契约规范化
+
+- 将全部 20 个 Controller、54 个 HTTP 操作纳入 Springdoc 契约治理；按认证、模型、项目、源码、检索、理解、审查、评测、对话和冻结需求生成功能提供中文业务分组与操作摘要。
+- 新增全局 OpenAPI 契约定制器，使受保护的 `/api/**` 操作统一声明 JWT Bearer、401 和 403；注册、登录和健康检查保持公开，文档规则与 Spring Security 运行规则一致。
+- Java `Long` 类型的 `id/*Id/*Ids` 在 OpenAPI 中统一发布为字符串，并通过全局契约测试防止后续接口重新生成 number；Vue 当前所有业务 ID 继续使用 `string`。
+- 模型 API Key 在契约中声明为只写，幂等键统一为小写 UUID v4；项目对话、理解报告和 AI 审查明确重试必须复用原键，避免重复模型费用。
+- 全局契约测试遍历实际 `/v3/api-docs`，验证每个操作的摘要、认证、401/403、公开端点、ID 类型、敏感字段和幂等格式；项目 CRUD 与一键审查继续保留更细粒度契约回归。
+- 本次只规范已有行为，没有改变接口路径、响应 JSON、业务状态、数据库结构或 Vue 操作流程，也没有新增 Flyway 迁移。
+- 全量通过后端 193 项、前端 72 项测试、Vue TypeScript 检查与生产构建，并通过 `git diff --check` 和敏感信息扫描。
+
+## 2026-09-23：完成一键代码审查工作流契约治理
+
+- 将 `POST /api/projects/{projectId}/review-workflows` 与 `GET /api/projects/{projectId}/review-workflows/latest` 纳入 OpenAPI，明确 JWT、同步执行、主要成功/错误状态、幂等和并发语义。
+- 对外响应使用 `ReviewWorkflowStatus` 与 `ReviewWorkflowStage` 闭合状态集合，并显式声明工作流、项目及各子任务的 `BIGINT/Long` ID 为字符串；真实 JSON 值和现有 Vue 类型保持兼容。
+- `attemptKey` 的 Bean Validation 与 OpenAPI 统一为小写 UUID v4；相同键幂等返回原运行，同项目不同键并发运行返回 409，最近运行不存在返回 404。
+- 新增实际 `/v3/api-docs` 契约回归测试，覆盖端点摘要、Bearer 认证、响应状态、字符串 ID、必填幂等键、正则及状态/阶段枚举；原工作流接口、状态服务和完整五阶段业务测试继续通过。
+- 同步 README、开发路线、代码审查设计和 API 契约文档。本闭环未改接口路径、实际 JSON、前端行为或数据库结构，也未新增 Flyway 迁移。
+- 全量通过后端 192 项、前端 72 项测试、Vue 生产构建及 `git diff --check`。
+
+## 2026-09-23：按契约优先规范完成首个 API 治理闭环
+
+- 引入 Springdoc OpenAPI，并发布 `/v3/api-docs` 与 `/swagger-ui.html`；文档端点在 JWT 安全开启时保持公开，生产可通过 `DEVMATE_OPENAPI_ENABLED=false` 关闭。
+- 首批治理项目管理 CRUD 与认证前置契约，补充业务含义、Bean Validation、JWT Bearer、HTTP 成功/错误状态、源码类型与项目状态枚举、分页约束和示例。
+- 契约显式声明数据库 `BIGINT/Long` ID 在 JSON 中为字符串；密码字段为只写、访问令牌为只读，避免前端生成或调试时误处理敏感字段。
+- 新增实际 `/v3/api-docs` 契约回归测试，验证登录公开、`/me` 和项目接口认证、创建 201、字符串 ID、枚举及必填字段；安全集成测试验证 OpenAPI 公开而项目列表无令牌仍返回 401。
+- 同步工程规范、项目管理说明、路线、README 和 API 契约治理文档；当前 Vue 仍复用已有集中式手写类型和 API Client，未同时引入第二套生成客户端。
+- 本闭环未改变接口路径、请求/响应 JSON、数据库或前端行为。全量通过后端 191 项、前端 72 项测试、Vue 生产构建及 `git diff --check`。
+
 ## 2026-09-12：修复项目对话 SSE 的连接泄漏与失败可观测性
 
 - 对话任务被线程池拒绝时不再抛业务异常导致 `SseEmitter` 无人关闭，改为发送 `message(FAILED)` 与 `failed` 事件后显式 `complete()`，客户端拿到可读失败而不是断开的流。

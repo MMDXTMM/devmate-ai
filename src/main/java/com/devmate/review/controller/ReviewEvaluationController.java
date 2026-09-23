@@ -7,6 +7,8 @@ import com.devmate.review.dto.ReviewEvaluationRunResponse;
 import com.devmate.review.dto.RunReviewEvaluationRequest;
 import com.devmate.review.service.ReviewEvaluationCaseService;
 import com.devmate.review.service.ReviewEvaluationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -26,6 +28,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/projects/{projectId}")
 @Validated
+@Tag(name = "审查评测", description = "维护人工标准答案并计算审查命中、漏报和误报结果")
 public class ReviewEvaluationController {
 
     private final ReviewEvaluationCaseService caseService;
@@ -40,6 +43,7 @@ public class ReviewEvaluationController {
     }
 
     @PostMapping("/review-evaluation-cases")
+    @Operation(summary = "创建审查评测用例")
     public ApiResponse<ReviewEvaluationCaseResponse> createCase(
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId,
             @Valid @RequestBody CreateReviewEvaluationCaseRequest request
@@ -48,6 +52,7 @@ public class ReviewEvaluationController {
     }
 
     @GetMapping("/review-evaluation-cases")
+    @Operation(summary = "查询审查评测用例")
     public ApiResponse<List<ReviewEvaluationCaseResponse>> listCases(
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId,
             @NotBlank(message = "评测集版本不能为空")
@@ -64,6 +69,7 @@ public class ReviewEvaluationController {
     }
 
     @PostMapping("/review-evaluation-runs")
+    @Operation(summary = "执行审查评测")
     public ApiResponse<ReviewEvaluationRunResponse> run(
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId,
             @Valid @RequestBody RunReviewEvaluationRequest request
@@ -72,6 +78,7 @@ public class ReviewEvaluationController {
     }
 
     @GetMapping("/review-evaluation-runs")
+    @Operation(summary = "查询审查评测运行")
     public ApiResponse<List<ReviewEvaluationRunResponse>> listRuns(
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId,
             @NotBlank(message = "评测集版本不能为空")

@@ -63,10 +63,20 @@ DTO 不直接复用 `Project` 实体，原因是接口参数、数据库字段�
 
 ## 5. 当前边界
 
-- 暂未实现登录认证，`owner_id` 当前允许为空。
-- 暂未拉取 Git 仓库；创建接口只保存项目元数据。
-- 暂未建立知识库和执行代码审查。
-- 项目管理基础 CRUD 已完成，下一步补充 OpenAPI 文档并进入源码导入阶段。
+- 项目管理接口已接入 JWT 认证和项目成员隔离；历史 `owner_id` 为空的数据不会自动暴露给新账号。
+- 创建接口只保存项目元数据；源码拉取、结构解析、向量索引和代码审查由独立任务接口显式触发。
+- 项目 CRUD 已发布 Springdoc OpenAPI 契约，包含字段约束、分页、JWT Bearer、字符串 ID 和主要错误响应。
+- 当前 Vue 客户端仍使用集中式手写 TypeScript 类型；生成式客户端将在全量接口契约完成后单独迁移，避免新旧调用方式并存。
+
+## 5.1 OpenAPI 验收
+
+本地启动后访问：
+
+- 契约 JSON：`http://localhost:8080/v3/api-docs`
+- Swagger UI：`http://localhost:8080/swagger-ui.html`
+
+Swagger UI 中先使用登录接口获得 JWT，再点击 Authorize 填入令牌，即可调试受保护接口。生产环境通过
+`DEVMATE_OPENAPI_ENABLED=false` 同时关闭契约与调试页面。
 
 ## 6. 查询项目详情
 

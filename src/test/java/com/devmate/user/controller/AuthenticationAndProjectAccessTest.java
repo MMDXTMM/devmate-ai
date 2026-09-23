@@ -119,6 +119,10 @@ class AuthenticationAndProjectAccessTest {
         mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("UP"));
+
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("DevMate AI API"));
     }
 
     @Test

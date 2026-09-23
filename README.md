@@ -47,6 +47,7 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 项目理解与代码审�
 - Java 21 + Spring Boot 3.5 + Spring AI 1.1.8
 - Maven Wrapper，多台电脑无需预装 Maven
 - Spring Web、Validation、Actuator
+- Springdoc OpenAPI 与 Swagger UI（覆盖全部 20 个 Controller、54 个 HTTP 操作，并有全局契约回归门禁）
 - MyBatis-Plus
 - Flyway 数据库版本管理
 - MySQL 运行配置模板
@@ -119,6 +120,10 @@ API Key 因加密主密钥变化而失效。脚本首次运行还会以隐藏输
 
 - `GET http://localhost:8080/api/health`
 - `GET http://localhost:8080/actuator/health`
+- OpenAPI：`http://localhost:8080/v3/api-docs`
+- Swagger UI：`http://localhost:8080/swagger-ui.html`
+
+本地默认开启接口文档；生产环境设置 `DEVMATE_OPENAPI_ENABLED=false` 关闭 OpenAPI 和 Swagger UI。
 
 运行测试：
 
@@ -181,6 +186,7 @@ cp src/main/resources/application-local.yml.example \
 
 - [开发贡献检查清单](CONTRIBUTING.md)
 - [工程开发与运维规范](docs/ENGINEERING_STANDARDS.md)
+- [API 契约治理](docs/API_CONTRACTS.md)
 - [运维手册](docs/OPERATIONS_RUNBOOK.md)
 - [HTTP 请求追踪与日志关联](docs/REQUEST_CORRELATION.md)
 - [持续集成与远端质量门禁](docs/CONTINUOUS_INTEGRATION.md)
