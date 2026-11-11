@@ -174,6 +174,23 @@ class ModelConnectionServiceTest {
                 .hasMessageNotContaining("timeout-secret");
     }
 
+    @Test
+    void selectsSavedModelsWithoutChangingActiveConnectionAndRejectsOtherAccounts() {
+        loginAs(8101L, "model-user-a");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "test-secret-a"));
+        service.update(new ModelConnectionUpdateRequest("DASHSCOPE", "qwen-plus", "test-secret-b"));
+        var selected = service.requireSavedConnection("DEEPSEEK", "deepseek-v4-pro");
+        assertThat(selected.provider()).isEqualTo("DEEPSEEK");
+        assertThat(selected.model()).isEqualTo("deepseek-v4-pro");
+        assertThat(selected.apiKey()).isEqualTo("test-secret-a");
+        assertThat(service.requireActiveConnection().provider()).isEqualTo("DASHSCOPE");
+        assertThatThrownBy(() -> service.requireSavedConnection("DEEPSEEK", "not-allowed"))
+                .hasMessageContaining("不属于");
+        loginAs(8102L, "model-user-b");
+        assertThatThrownBy(() -> service.requireSavedConnection("DEEPSEEK", "deepseek-v4-pro"))
+                .hasMessageContaining("先保存");
+    }
+
     private void loginAs(long id, String username) {
         when(currentUserService.getRequiredUser()).thenReturn(new AuthenticatedUser(id, username));
     }

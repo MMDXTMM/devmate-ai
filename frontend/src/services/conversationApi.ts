@@ -8,10 +8,10 @@ import { clearAuthSession, getAuthSession } from './authSession'
 import { ApiError, apiRequest } from './apiClient'
 
 export const conversationApi = {
-  create(projectId: string, title?: string): Promise<AgentConversation> {
+  create(projectId: string, title?: string, model?: { provider: string; model: string }): Promise<AgentConversation> {
     return apiRequest(`/api/projects/${encodeURIComponent(projectId)}/agent-conversations`, {
       method: 'POST',
-      body: JSON.stringify({ title: title || null }),
+      body: JSON.stringify({ title: title || null, ...model }),
     })
   },
 
@@ -23,6 +23,20 @@ export const conversationApi = {
     return apiRequest(
       `/api/projects/${encodeURIComponent(projectId)}/agent-conversations/${encodeURIComponent(conversationId)}/messages`,
     )
+  },
+
+  rename(projectId: string, conversationId: string, title: string): Promise<AgentConversation> {
+    return apiRequest(`/api/projects/${encodeURIComponent(projectId)}/agent-conversations/${encodeURIComponent(conversationId)}`, {
+      method: 'PUT', body: JSON.stringify({ title }),
+    })
+  },
+
+  delete(projectId: string, conversationId: string): Promise<void> {
+    return apiRequest(`/api/projects/${encodeURIComponent(projectId)}/agent-conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' })
+  },
+
+  cancel(projectId: string, conversationId: string, messageId: string): Promise<{ messageId: string; cancellationRequested: boolean }> {
+    return apiRequest(`/api/projects/${encodeURIComponent(projectId)}/agent-conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/cancellations`, { method: 'POST' })
   },
 
   async streamMessage(

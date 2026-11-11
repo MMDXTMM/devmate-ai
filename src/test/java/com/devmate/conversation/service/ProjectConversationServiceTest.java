@@ -272,6 +272,90 @@ class ProjectConversationServiceTest {
         verify(modelRegistry, times(0)).current();
     }
 
+    @Test
+    void renamesAndSoftDeletesWithoutRemovingMessages() {
+        when(model.stream(any())).thenReturn(Flux.just("已完成的回答"));
+        var conversation = service.create(project.getId(), new CreateConversationRequest(null));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest(
+                "创建流程", "623e4567-e89b-42d3-a456-426614174000"));
+        assertThat(service.rename(project.getId(), conversation.id(), "  我的业务说明  ").title()).isEqualTo("我的业务说明");
+        assertThatThrownBy(() -> service.rename(project.getId(), conversation.id(), "   ")).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.rename(project.getId(), conversation.id(), "x".repeat(101))).isInstanceOf(BusinessException.class);
+        service.delete(project.getId(), conversation.id());
+        assertThat(service.list(project.getId())).isEmpty();
+        assertThat(messageMapper.selectCount(null)).isEqualTo(2);
+        assertThatThrownBy(() -> service.messages(project.getId(), conversation.id())).hasMessageContaining("不存在");
+        assertThatThrownBy(() -> service.rename(project.getId(), conversation.id(), "恢复")).hasMessageContaining("不存在");
+    }
+
+    @Test
+    void cancelsQueuedTurnWithoutCallingModelAndAllowsAnotherQuestion() {
+        java.util.concurrent.atomic.AtomicReference<Runnable> queued = new java.util.concurrent.atomic.AtomicReference<>();
+        doAnswer(invocation -> { queued.set(invocation.getArgument(0)); return null; }).when(taskExecutor).execute(any(Runnable.class));
+        var conversation = service.create(project.getId(), new CreateConversationRequest(null));
+        var request = new CreateConversationMessageRequest("准备问题", "723e4567-e89b-42d3-a456-426614174000");
+        service.stream(project.getId(), conversation.id(), request);
+        var running = service.messages(project.getId(), conversation.id()).get(1);
+        assertThatThrownBy(() -> service.rename(project.getId(), conversation.id(), "不能改")).hasMessageContaining("先停止");
+        assertThatThrownBy(() -> service.delete(project.getId(), conversation.id())).hasMessageContaining("先停止");
+        assertThat(service.cancel(project.getId(), conversation.id(), running.id()).cancellationRequested()).isTrue();
+        assertThat(service.cancel(project.getId(), conversation.id(), running.id()).cancellationRequested()).isTrue();
+        queued.get().run();
+        var cancelled = service.messages(project.getId(), conversation.id()).get(1);
+        assertThat(cancelled.status()).isEqualTo("CANCELLED");
+        assertThat(cancelled.content()).isEmpty();
+        assertThat(messageMapper.selectById(running.id()).getRunningKey()).isNull();
+        assertThat(service.cancel(project.getId(), conversation.id(), running.id()).cancellationRequested()).isFalse();
+        service.stream(project.getId(), conversation.id(), request);
+        verify(model, times(0)).stream(any());
+        assertThat(service.messages(project.getId(), conversation.id())).hasSize(2);
+        when(model.stream(any())).thenReturn(Flux.just("新一轮正常回答"));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest(
+                "另一个问题", "823e4567-e89b-42d3-a456-426614174000"));
+        queued.get().run();
+        assertThat(service.messages(project.getId(), conversation.id()).get(3).status()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void stoppingCancelsUpstreamAndPersistsPartialTextAndEvidence() {
+        var conversation = service.create(project.getId(), new CreateConversationRequest(null));
+        var upstreamCancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        when(model.stream(any())).thenReturn(Flux.concat(Flux.just("已生成的部分"), Flux.defer(() -> {
+            var running = service.messages(project.getId(), conversation.id()).get(1);
+            service.cancel(project.getId(), conversation.id(), running.id());
+            return Flux.<String>never().doOnCancel(() -> upstreamCancelled.set(true));
+        })));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest(
+                "需要停止的长问题", "923e4567-e89b-42d3-a456-426614174000"));
+        var answer = service.messages(project.getId(), conversation.id()).get(1);
+        assertThat(answer.status()).isEqualTo("CANCELLED");
+        assertThat(answer.content()).isEqualTo("已生成的部分");
+        assertThat(answer.evidence()).hasSize(1);
+        assertThat(upstreamCancelled).isTrue();
+    }
+
+    @Test
+    void rejectsForeignUsersForEveryManagementOperationAndWrongMessageIds() {
+        var conversation = service.create(project.getId(), new CreateConversationRequest(null));
+        assertThatThrownBy(() -> service.cancel(project.getId(), conversation.id(), -1L)).hasMessageContaining("消息不存在");
+        when(currentUserService.getRequiredUser()).thenReturn(new AuthenticatedUser(99999L, "someone-else"));
+        assertThatThrownBy(() -> service.rename(project.getId(), conversation.id(), "不能改")).hasMessageContaining("无权");
+        assertThatThrownBy(() -> service.delete(project.getId(), conversation.id())).hasMessageContaining("无权");
+        assertThatThrownBy(() -> service.cancel(project.getId(), conversation.id(), -1L)).hasMessageContaining("无权");
+        assertThat(service.list(project.getId())).isEmpty();
+    }
+
+    @Test
+    void createsWithAnExplicitSavedModelAndRejectsUnpairedSelection() {
+        var selected = service.create(project.getId(), new CreateConversationRequest("明确选择", "TEST", "test-model"));
+        assertThat(selected.modelName()).isEqualTo("test-model");
+        verify(modelRegistry).current("TEST", "test-model");
+        assertThatThrownBy(() -> service.create(project.getId(), new CreateConversationRequest(null, "TEST", null)))
+                .hasMessageContaining("必须同时指定");
+        assertThatThrownBy(() -> service.create(project.getId(), new CreateConversationRequest(null, null, "test-model")))
+                .hasMessageContaining("必须同时指定");
+    }
+
     private RetrievalSearchResponse retrieval() {
         RetrievalHitResponse hit = new RetrievalHitResponse(
                 evidence.getId(), evidence.getDocumentId(),

@@ -151,6 +151,19 @@ public class ModelConnectionService {
         return connection;
     }
 
+    public ModelConnectionSnapshot requireSavedConnection(String providerId, String model) {
+        ProviderDefinition definition = provider(providerId);
+        if (!definition.models().contains(model)) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "所选模型不属于当前提供方");
+        }
+        Long userId = currentUserService.getRequiredUser().id();
+        UserModelConnection connection = connectionMapper.selectOne(Wrappers.lambdaQuery(UserModelConnection.class)
+                .eq(UserModelConnection::getUserId, userId).eq(UserModelConnection::getProvider, providerId));
+        if (connection == null) throw new BusinessException(ErrorCode.CONFLICT, "请先保存该提供方的模型连接");
+        return new ModelConnectionSnapshot(providerId, model, definition.baseUrl(),
+                apiKeyCipher.decrypt(userId, providerId, connection.getEncryptedApiKey()));
+    }
+
     private Integer responseStatus(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {

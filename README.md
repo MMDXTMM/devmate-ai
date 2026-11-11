@@ -40,14 +40,14 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 项目理解与代码审�
 → 找到业务入口和继续开发范围
 ```
 
-“向项目提问”会创建固定项目版本和模型的持久化对话。每一轮根据已保存报告的业务线索定位真实代码，未匹配时执行 Hybrid RAG，再通过 Spring AI 流式调用模型，并以 SSE 逐字展示回答和真实文件/行号证据；历史可按标题查找，刷新或关闭后仍可继续追问。也可从报告中的某条业务直接进入聊天。MCP 只读工具服务属于下一闭环，尚未作为已完成功能发布，设计见 [多轮项目 Agent、SSE 与 MCP](docs/PROJECT_CONVERSATION_SSE_AND_MCP.md)。
+“向项目提问”会创建固定项目版本和模型的持久化对话。每一轮根据已保存报告的业务线索定位真实代码，未匹配时执行 Hybrid RAG，再通过 Spring AI 流式调用模型，并以 SSE 逐字展示回答和真实文件/行号证据；历史可按标题查找，刷新或关闭后仍可继续追问。也可从报告中的某条业务直接进入聊天。聊天工作台借鉴 Ragent 交互，支持日期分组、历史改名/删除、已配置模型选择、Markdown 表格与代码复制、代码证据侧栏，以及停止生成并保存半段回答，迁移范围与验收见 [工作台迁移记录](docs/CHAT_WORKSPACE_MIGRATION.md)。MCP 只读工具服务属于下一闭环，尚未作为已完成功能发布，设计见 [多轮项目 Agent、SSE 与 MCP](docs/PROJECT_CONVERSATION_SSE_AND_MCP.md)。
 
 ## 当前已具备
 
 - Java 21 + Spring Boot 3.5 + Spring AI 1.1.8
 - Maven Wrapper，多台电脑无需预装 Maven
 - Spring Web、Validation、Actuator
-- Springdoc OpenAPI 与 Swagger UI（覆盖全部 20 个 Controller、54 个 HTTP 操作，并有全局契约回归门禁）
+- Springdoc OpenAPI 与 Swagger UI，覆盖业务接口并有全局契约回归门禁
 - MyBatis-Plus
 - Flyway 数据库版本管理
 - MySQL 运行配置模板

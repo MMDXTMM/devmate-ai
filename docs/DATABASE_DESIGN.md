@@ -199,7 +199,8 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - Token 字段记录在 AI 回复消息上，便于按会话统计。
 - V25 为对话增加固定的 `revision/provider/model_name/prompt_version`，防止项目或模型变化后把不同上下文混进同一历史。
 - 2026-11-11 的历史搜索、逐字显示与业务报告辅助检索沿用该结构；聊天正文仍由服务器持久化，前端标题搜索针对当前账号、当前项目最近 50 段对话，新会话记录 `project-conversation-v2`，无新增迁移。
-- 回复消息以 `RUNNING/COMPLETED/FAILED` 记录生命周期，`attempt_key + request_hash` 实现安全幂等。
+- 回复消息以 `RUNNING/COMPLETED/FAILED/CANCELLED` 记录生命周期，`attempt_key + request_hash` 实现安全幂等。
+- 停止后保存部分正文/证据/耗时，释放 `running_key`；取消的回答不进入后续模型历史。会话重命名与逻辑删除复用原列及行锁，生成中返回 409，无新增迁移。
 - `running_key` 只在生成中等于会话 ID，唯一约束保证同一会话只有一个回答任务；完成或失败时必须显式置空。
 - `evidence_json` 只保存 Chunk ID 数组，不复制完整源码；回读时由服务端重新校验文件与代码位置。
 - `error_code/error_message/latency_ms` 保存脱敏失败和耗时，不保存完整 Prompt、Key 或模型原始响应。

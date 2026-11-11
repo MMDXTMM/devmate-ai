@@ -10,6 +10,7 @@ import com.devmate.common.error.ErrorCode;
 import com.devmate.conversation.dto.ConversationEvidenceResponse;
 import com.devmate.conversation.dto.ConversationMessageResponse;
 import com.devmate.conversation.dto.ConversationResponse;
+import com.devmate.conversation.dto.ConversationCancellationResponse;
 import com.devmate.conversation.dto.CreateConversationMessageRequest;
 import com.devmate.conversation.dto.CreateConversationRequest;
 import com.devmate.conversation.entity.Conversation;
@@ -48,6 +49,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import reactor.core.publisher.Sinks;
 
 @Service
 public class ProjectConversationService {
@@ -69,6 +73,17 @@ public class ProjectConversationService {
             除非用户要求深入，默认控制在约 800 个汉字内；不声称执行过代码或验证运行时行为。
             """;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() { };
+
+    private final Map<Long, ActiveTurn> activeTurns = new ConcurrentHashMap<>();
+
+    private static final class ActiveTurn {
+        final AtomicBoolean cancelled = new AtomicBoolean();
+        final Sinks.Empty<Void> stop = Sinks.empty();
+        void cancel() {
+            cancelled.set(true);
+            stop.tryEmitEmpty();
+        }
+    }
 
     private final ProjectAccessService accessService;
     private final ProjectService projectService;
@@ -112,7 +127,13 @@ public class ProjectConversationService {
         if (!"READY".equals(project.status()) || project.currentRevision() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "请先完成项目源码解析");
         }
-        ProjectConversationModel model = modelRegistry.current();
+        boolean providerSpecified = request != null && request.provider() != null;
+        boolean modelSpecified = request != null && request.model() != null;
+        if (providerSpecified != modelSpecified) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "提供方和模型必须同时指定");
+        }
+        ProjectConversationModel model = providerSpecified
+                ? modelRegistry.current(request.provider(), request.model()) : modelRegistry.current();
         return response(stateService.create(
                 projectId, project.currentRevision(), model.providerName(), model.modelName(),
                 properties.getPromptVersion(), request == null ? null : request.title()
@@ -127,6 +148,26 @@ public class ProjectConversationService {
     public List<ConversationMessageResponse> messages(Long projectId, Long conversationId) {
         accessService.requireMember(projectId);
         return stateService.messages(conversationId, projectId).stream().map(this::messageResponse).toList();
+    }
+
+    public ConversationResponse rename(Long projectId, Long conversationId, String title) {
+        accessService.requireMember(projectId);
+        return response(stateService.rename(conversationId, projectId, title));
+    }
+
+    public void delete(Long projectId, Long conversationId) {
+        accessService.requireMember(projectId);
+        stateService.delete(conversationId, projectId);
+    }
+
+    public ConversationCancellationResponse cancel(Long projectId, Long conversationId, Long messageId) {
+        accessService.requireMember(projectId);
+        ConversationMessage message = stateService.requireMessage(conversationId, projectId, messageId);
+        if (!"RUNNING".equals(message.getStatus())) return new ConversationCancellationResponse(messageId, false);
+        ActiveTurn turn = activeTurns.get(messageId);
+        if (turn == null) throw new BusinessException(ErrorCode.CONFLICT, "任务状态正在恢复，请刷新历史后重试");
+        turn.cancel();
+        return new ConversationCancellationResponse(messageId, true);
     }
 
     public SseEmitter stream(Long projectId, Long conversationId,
@@ -183,9 +224,12 @@ public class ProjectConversationService {
             return emitter;
         }
         ProjectConversationPrompt prompt = prompt(prepared.history(), retrieval.hits(), conversation.getPromptVersion());
+        ActiveTurn activeTurn = new ActiveTurn();
+        activeTurns.put(prepared.assistant().getId(), activeTurn);
         try {
-            taskExecutor.execute(() -> runStream(emitter, prepared, model, prompt, retrieval.hits()));
+            taskExecutor.execute(() -> runStream(emitter, prepared, model, prompt, retrieval.hits(), activeTurn));
         } catch (RuntimeException exception) {
+            activeTurns.remove(prepared.assistant().getId(), activeTurn);
             LOGGER.warn("Conversation task executor rejected: projectId={}, conversationId={}, messageId={}",
                     projectId, conversationId, prepared.assistant().getId());
             stateService.fail(prepared.assistant().getId(), "EXECUTOR_REJECTED",
@@ -203,7 +247,7 @@ public class ProjectConversationService {
 
     private void runStream(SseEmitter emitter, ConversationStateService.PreparedTurn prepared,
                            ProjectConversationModel model, ProjectConversationPrompt prompt,
-                           List<RetrievalHitResponse> evidence) {
+                           List<RetrievalHitResponse> evidence, ActiveTurn turn) {
         long started = System.nanoTime();
         safeSend(emitter, "message", Map.of(
                 "conversationId", String.valueOf(prepared.conversation().getId()),
@@ -215,16 +259,25 @@ public class ProjectConversationService {
         safeSend(emitter, "evidence", evidence.stream().map(this::evidenceResponse).toList());
         StringBuilder answer = new StringBuilder();
         try {
-            model.stream(prompt)
-                    .doOnNext(token -> appendToken(answer, token, emitter))
-                    .blockLast(properties.getReadTimeout());
-            if (answer.toString().isBlank()) throw new AiReviewException("模型没有返回回答");
-            ConversationMessage completed = stateService.complete(
-                    prepared.assistant().getId(), answer.toString(), elapsedMs(started)
-            );
+            if (!turn.cancelled.get()) {
+                model.stream(prompt)
+                        .takeUntilOther(turn.stop.asMono())
+                        .doOnNext(token -> appendToken(answer, token, emitter))
+                        .blockLast(properties.getReadTimeout());
+            }
+            if (answer.toString().isBlank() && !turn.cancelled.get()) throw new AiReviewException("模型没有返回回答");
+            ConversationMessage completed = turn.cancelled.get()
+                    ? stateService.cancel(prepared.assistant().getId(), answer.toString(), elapsedMs(started))
+                    : stateService.complete(prepared.assistant().getId(), answer.toString(), elapsedMs(started));
             safeSend(emitter, "done", messageResponse(completed));
             emitter.complete();
         } catch (RuntimeException exception) {
+            if (turn.cancelled.get()) {
+                ConversationMessage cancelled = stateService.cancel(prepared.assistant().getId(), answer.toString(), elapsedMs(started));
+                safeSend(emitter, "done", messageResponse(cancelled));
+                emitter.complete();
+                return;
+            }
             String message = exception instanceof AiReviewException && exception.getMessage() != null
                     ? exception.getMessage() : "项目对话生成失败，请稍后重试";
             LOGGER.warn("Project conversation failed: projectId={}, conversationId={}, messageId={}, errorType={}",
@@ -235,6 +288,8 @@ public class ProjectConversationService {
             safeSend(emitter, "failed", Map.of("messageId", String.valueOf(prepared.assistant().getId()),
                     "message", message));
             emitter.complete();
+        } finally {
+            activeTurns.remove(prepared.assistant().getId(), turn);
         }
     }
 
@@ -278,7 +333,7 @@ public class ProjectConversationService {
                 "conversationId", String.valueOf(message.getConversationId()),
                 "messageId", String.valueOf(message.getId()), "status", message.getStatus()
         ));
-        if ("COMPLETED".equals(message.getStatus())) {
+        if ("COMPLETED".equals(message.getStatus()) || "CANCELLED".equals(message.getStatus())) {
             safeSend(emitter, "done", messageResponse(message));
         } else if ("FAILED".equals(message.getStatus())) {
             safeSend(emitter, "failed", Map.of("messageId", String.valueOf(message.getId()),

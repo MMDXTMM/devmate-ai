@@ -1,47 +1,50 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import ModelAnswerInline from './ModelAnswerInline.vue'
+import { computed, defineComponent, h, type VNodeChild } from 'vue'
+import MarkdownIt from 'markdown-it'
+import type Token from 'markdown-it/lib/token.mjs'
+import AnswerCodeBlock from './AnswerCodeBlock.vue'
 const props = defineProps<{ content: string }>()
-type Block = { kind: 'code' | 'heading' | 'paragraph' | 'ul' | 'ol'; text: string; language?: string; items?: string[] }
-// A small text-only Markdown subset. No model HTML, URL or arbitrary tag is executed.
-const blocks = computed(() => {
-  const result: Block[] = []
-  let code: Block | undefined
-  for (const line of props.content.split('\n')) {
-    const fence = line.match(/^```([^\s]*)\s*$/)
-    if (fence) {
-      if (code) { result.push(code); code = undefined }
-      else code = { kind: 'code', text: '', language: fence[1] }
-      continue
+// Parse Markdown, then create Vue nodes from a fixed tag/attribute whitelist. No v-html or model HTML.
+const markdown = new MarkdownIt({ html: false, linkify: false, breaks: true })
+const allowedTags = new Set(['p', 'ul', 'ol', 'li', 'blockquote', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'strong', 'em', 's'])
+function safeLink(value: string) {
+  try { const url = new URL(value); return ['https:', 'http:', 'mailto:'].includes(url.protocol) ? url.href : undefined }
+  catch { return undefined }
+}
+function renderTokens(tokens: Token[]): VNodeChild[] {
+  let index = 0
+  function read(): VNodeChild[] {
+    const nodes: VNodeChild[] = []
+    while (index < tokens.length) {
+      const token = tokens[index++]!
+      if (token.nesting === -1) return nodes
+      if (token.nesting === 1) {
+        const children = read()
+        if (token.type === 'link_open') {
+          const href = safeLink(token.attrGet('href') || '')
+          nodes.push(h(href ? 'a' : 'span', href ? { href, target: '_blank', rel: 'noopener noreferrer' } : {}, children))
+        } else {
+          const tag = token.type === 'heading_open' ? (Number(token.tag.slice(1)) <= 2 ? 'h3' : 'h4') : token.tag
+          if (allowedTags.has(tag) || tag === 'h3' || tag === 'h4') {
+            const attrs = tag === 'ol' && token.attrGet('start') ? { start: Number(token.attrGet('start')) } : {}
+            const element = h(tag, attrs, children)
+            nodes.push(tag === 'table' ? h('div', { class: 'answer-table', tabindex: 0, 'aria-label': '可横向滚动的表格' }, [element]) : element)
+          } else nodes.push(...children)
+        }
+      } else if (token.type === 'inline') nodes.push(...renderTokens(token.children || []))
+      else if (token.type === 'fence' || token.type === 'code_block') {
+        nodes.push(h(AnswerCodeBlock, { code: token.content, language: token.info.trim().split(/\s+/)[0] }))
+      } else if (token.type === 'code_inline') nodes.push(h('code', { class: 'inline-code' }, token.content))
+      else if (token.type === 'softbreak' || token.type === 'hardbreak') nodes.push(h('br'))
+      else if (token.type === 'hr') nodes.push(h('hr'))
+      else if (token.type === 'image') nodes.push(h('span', { class: 'answer-image-label' }, `[图片：${token.content || '未加载'}]`))
+      else nodes.push(token.content)
     }
-    if (code) { code.text += (code.text ? '\n' : '') + line; continue }
-    if (!line.trim()) { result.push({ kind: 'paragraph', text: '' }); continue }
-    const heading = line.match(/^#{1,6}\s+(.+)$/)
-    if (heading) { result.push({ kind: 'heading', text: heading[1] }); continue }
-    const list = line.match(/^\s*(?:([-*])\s+|\d+[.)]\s+)(.*)$/)
-    if (list) {
-      const kind = list[1] ? 'ul' : 'ol'
-      const last = result.at(-1)
-      if (last?.kind === kind) last.items!.push(list[2])
-      else result.push({ kind, text: '', items: [list[2]] })
-      continue
-    }
-    const last = result.at(-1)
-    if (last?.kind === 'paragraph' && last.text) last.text += '\n' + line
-    else result.push({ kind: 'paragraph', text: line })
+    return nodes
   }
-  if (code) result.push(code)
-  return result.filter(block => block.kind === 'code' || block.text || block.items?.length)
-})
+  return read()
+}
+const tokens = computed(() => markdown.parse(props.content, {}))
+const Content = defineComponent({ setup: () => () => h('div', { class: 'model-answer' }, renderTokens(tokens.value)) })
 </script>
-
-<template>
-  <div class="model-answer">
-    <template v-for="(block, index) in blocks" :key="index">
-      <div v-if="block.kind === 'code'" class="answer-code"><small v-if="block.language">{{ block.language }}</small><pre><code>{{ block.text.trimEnd() }}</code></pre></div>
-      <h3 v-else-if="block.kind === 'heading'"><ModelAnswerInline :text="block.text" /></h3>
-      <component v-else-if="block.kind === 'ul' || block.kind === 'ol'" :is="block.kind"><li v-for="(item, i) in block.items" :key="i"><ModelAnswerInline :text="item" /></li></component>
-      <p v-else><ModelAnswerInline :text="block.text" /></p>
-    </template>
-  </div>
-</template>
+<template><Content /></template>
