@@ -1,5 +1,5 @@
 export interface ModelProvider {
-  provider: 'DEEPSEEK' | 'DASHSCOPE' | 'OPENAI'
+  provider: 'DEEPSEEK' | 'DASHSCOPE' | 'OPENAI' | 'COMPATIBLE'
   displayName: string
   baseUrl: string
   models: string[]

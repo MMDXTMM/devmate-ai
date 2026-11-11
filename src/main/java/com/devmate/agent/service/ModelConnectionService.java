@@ -2,6 +2,7 @@ package com.devmate.agent.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.devmate.agent.dto.ModelConnectionTestResponse;
+import com.devmate.agent.config.CompatibleModelProperties;
 import com.devmate.agent.dto.ModelConnectionUpdateRequest;
 import com.devmate.agent.dto.ModelProviderResponse;
 import com.devmate.agent.entity.UserModelConnection;
@@ -28,7 +29,7 @@ import java.util.Map;
 public class ModelConnectionService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ModelConnectionService.class);
-    private static final Map<String, ProviderDefinition> PROVIDERS = providers();
+    private final Map<String, ProviderDefinition> providers;
 
     private final CurrentUserService currentUserService;
     private final SpringAiChatClientFactory chatClientFactory;
@@ -36,11 +37,13 @@ public class ModelConnectionService {
     private final ModelApiKeyCipher apiKeyCipher;
 
     public ModelConnectionService(CurrentUserService currentUserService, SpringAiChatClientFactory chatClientFactory,
-                                  UserModelConnectionMapper connectionMapper, ModelApiKeyCipher apiKeyCipher) {
+                                  UserModelConnectionMapper connectionMapper, ModelApiKeyCipher apiKeyCipher,
+                                  CompatibleModelProperties compatible) {
         this.currentUserService = currentUserService;
         this.chatClientFactory = chatClientFactory;
         this.connectionMapper = connectionMapper;
         this.apiKeyCipher = apiKeyCipher;
+        this.providers = providers(compatible);
     }
 
     public List<ModelProviderResponse> list() {
@@ -48,7 +51,7 @@ public class ModelConnectionService {
         Map<String, UserModelConnection> connections = connectionMapper.selectList(
                 Wrappers.lambdaQuery(UserModelConnection.class).eq(UserModelConnection::getUserId, userId)
         ).stream().collect(java.util.stream.Collectors.toMap(UserModelConnection::getProvider, item -> item));
-        return PROVIDERS.values().stream().map(provider -> new ModelProviderResponse(
+        return providers.values().stream().map(provider -> new ModelProviderResponse(
                 provider.id(), provider.displayName(), provider.baseUrl(), provider.models(),
                 connections.containsKey(provider.id()),
                 connections.containsKey(provider.id()) && Integer.valueOf(1).equals(connections.get(provider.id()).getIsActive()),
@@ -175,14 +178,14 @@ public class ModelConnectionService {
     }
 
     private ProviderDefinition provider(String id) {
-        ProviderDefinition provider = PROVIDERS.get(id == null ? "" : id.trim().toUpperCase());
+        ProviderDefinition provider = providers.get(id == null ? "" : id.trim().toUpperCase(java.util.Locale.ROOT));
         if (provider == null) throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "暂不支持该模型提供方");
         return provider;
     }
 
     private long elapsedMs(long started) { return (System.nanoTime() - started) / 1_000_000; }
 
-    private static Map<String, ProviderDefinition> providers() {
+    private static Map<String, ProviderDefinition> providers(CompatibleModelProperties compatible) {
         Map<String, ProviderDefinition> providers = new LinkedHashMap<>();
         providers.put("DEEPSEEK", new ProviderDefinition("DEEPSEEK", "DeepSeek",
                 "https://api.deepseek.com", List.of("deepseek-v4-flash", "deepseek-v4-pro")));
@@ -191,6 +194,11 @@ public class ModelConnectionService {
                 List.of("qwen-plus", "qwen3.7-plus", "qwen3-coder-plus", "qwen-flash")));
         providers.put("OPENAI", new ProviderDefinition("OPENAI", "OpenAI",
                 "https://api.openai.com/v1", List.of("gpt-5.1", "gpt-5-mini", "gpt-4.1")));
+        compatible.validate();
+        if (compatible.isEnabled()) {
+            providers.put("COMPATIBLE", new ProviderDefinition("COMPATIBLE", compatible.getDisplayName(),
+                    compatible.getBaseUrl(), List.copyOf(compatible.getModels())));
+        }
         return Collections.unmodifiableMap(providers);
     }
 

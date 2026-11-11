@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -21,10 +22,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
+    private final SecurityContextRepository contextRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper) {
+    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper,
+                                   SecurityContextRepository contextRepository) {
         this.jwtService = jwtService;
         this.objectMapper = objectMapper;
+        this.contextRepository = contextRepository;
     }
 
     @Override
@@ -44,7 +48,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(principal, null, List.of());
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            var context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            SecurityContextHolder.setContext(context);
+            // Retain the verified identity only for this request's ASYNC/ERROR redispatches.
+            // No HTTP session or anonymous dispatcher bypass is introduced.
+            contextRepository.saveContext(context, request, response);
             filterChain.doFilter(request, response);
         } catch (JwtService.InvalidJwtException exception) {
             SecurityContextHolder.clearContext();

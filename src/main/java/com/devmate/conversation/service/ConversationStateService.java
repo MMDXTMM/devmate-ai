@@ -88,6 +88,17 @@ public class ConversationStateService {
         return message;
     }
 
+    @Transactional(readOnly = true)
+    public String previousQuestion(Long conversationId, Long projectId) {
+        requireOwned(conversationId, projectId);
+        ConversationMessage previous = messageMapper.selectOne(Wrappers.lambdaQuery(ConversationMessage.class)
+                .eq(ConversationMessage::getConversationId, conversationId)
+                .eq(ConversationMessage::getMessageRole, "USER")
+                .eq(ConversationMessage::getStatus, "COMPLETED")
+                .orderByDesc(ConversationMessage::getSequenceNo).last("LIMIT 1"));
+        return previous == null ? "" : previous.getContent();
+    }
+
     @Transactional
     public PreparedTurn prepareTurn(Long conversationId, Long projectId, String question,
                                     String attemptKey, String requestHash, String evidenceJson,

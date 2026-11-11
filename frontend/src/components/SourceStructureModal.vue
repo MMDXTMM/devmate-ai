@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ApiError, projectApi } from '../services/projectApi'
 import type {
   BusinessFeature,
@@ -20,7 +20,7 @@ const props = defineProps<{
   projectName?: string
 }>()
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; configureModel: []; chat: [question: string] }>()
 
 const documents = ref<SourceDocument[]>([])
 const businessMap = ref<ProjectBusinessMap | null>(null)
@@ -43,6 +43,22 @@ const loadingSymbols = ref(false)
 const loadingDetail = ref(false)
 const copiedSymbolId = ref('')
 const errorMessage = ref('')
+const summaryExpanded = ref(false)
+let reportGeneration = 0
+onBeforeUnmount(() => { reportGeneration += 1 })
+
+const SUMMARY_COLLAPSE_THRESHOLD = 180
+const hasLongUnderstandingSummary = computed(
+  () => (understandingReport.value?.executiveSummary?.length ?? 0) > SUMMARY_COLLAPSE_THRESHOLD,
+)
+const displayedUnderstandingSummary = computed(() => {
+  const summary = understandingReport.value?.executiveSummary ?? ''
+  if (!hasLongUnderstandingSummary.value || summaryExpanded.value) return summary
+  return `${summary.slice(0, SUMMARY_COLLAPSE_THRESHOLD).trimEnd()}…`
+})
+const understandingSummaryId = computed(
+  () => `understanding-summary-${understandingReport.value?.id ?? 'latest'}`,
+)
 
 function errorText(error: unknown) {
   return error instanceof ApiError ? error.message : '源码结构加载失败'
@@ -50,6 +66,8 @@ function errorText(error: unknown) {
 
 async function loadBusinessMap() {
   if (!props.projectId) return
+  const generation = reportGeneration
+  const projectId = props.projectId
   loadingBusinessMap.value = true
   errorMessage.value = ''
   businessMap.value = null
@@ -57,47 +75,69 @@ async function loadBusinessMap() {
   selectedModuleId.value = ''
   selectedFeatureId.value = ''
   try {
-    businessMap.value = await projectApi.getBusinessMap(props.projectId)
+    const result = await projectApi.getBusinessMap(projectId)
+    if (generation !== reportGeneration) return
+    businessMap.value = result
+    void loadLatestUnderstandingReport(true)
     const firstModule = businessMap.value.modules[0]
     if (firstModule) {
       await selectModule(firstModule)
     }
   } catch (error) {
-    errorMessage.value = errorText(error)
+    if (generation === reportGeneration) errorMessage.value = errorText(error)
   } finally {
-    loadingBusinessMap.value = false
+    if (generation === reportGeneration) loadingBusinessMap.value = false
   }
 }
 
 async function generateUnderstandingReport() {
   if (!props.projectId || !businessMap.value) return
+  const generation = reportGeneration
+  const projectId = props.projectId
+  const revision = businessMap.value.revision
   generatingUnderstanding.value = true
   errorMessage.value = ''
   try {
-    understandingReport.value = await projectApi.createUnderstandingReport(
-      props.projectId,
-      businessMap.value.revision,
+    const report = await projectApi.createUnderstandingReport(
+      projectId,
+      revision,
       crypto.randomUUID(),
     )
+    if (generation === reportGeneration && report.projectId === projectId && report.revision === revision) {
+      understandingReport.value = report
+    }
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : 'AI深度理解报告生成失败'
+    if (generation === reportGeneration) errorMessage.value = error instanceof ApiError ? error.message : 'AI深度理解报告生成失败'
   } finally {
-    generatingUnderstanding.value = false
+    if (generation === reportGeneration) generatingUnderstanding.value = false
   }
 }
 
-async function loadLatestUnderstandingReport() {
+async function loadLatestUnderstandingReport(silent = false) {
   if (!props.projectId) return
+  const generation = reportGeneration
+  const projectId = props.projectId
   loadingUnderstanding.value = true
   errorMessage.value = ''
   try {
-    understandingReport.value = await projectApi.latestUnderstandingReport(props.projectId)
+    const report = await projectApi.latestUnderstandingReport(projectId)
+    if (generation !== reportGeneration) return
+    if (report.projectId !== projectId || report.revision !== businessMap.value?.revision) {
+      understandingReport.value = null
+      errorMessage.value = '上次报告对应其他源码版本，请为当前版本生成新的报告'
+      return
+    }
+    understandingReport.value = report
   } catch (error) {
-    errorMessage.value = error instanceof ApiError && error.status === 404
-      ? '当前项目还没有AI深度理解报告'
-      : errorText(error)
+    if (generation !== reportGeneration) return
+    understandingReport.value = null
+    if (!(silent && error instanceof ApiError && error.status === 404)) {
+      errorMessage.value = error instanceof ApiError && error.status === 404
+        ? '当前项目还没有AI深度理解报告'
+        : errorText(error)
+    }
   } finally {
-    loadingUnderstanding.value = false
+    if (generation === reportGeneration) loadingUnderstanding.value = false
   }
 }
 
@@ -109,17 +149,18 @@ async function selectModule(module: BusinessModule) {
 
 async function selectFeature(feature: BusinessFeature) {
   if (!props.projectId) return
+  const generation = reportGeneration
   selectedFeatureId.value = feature.id
   featureDetail.value = null
   loadingFeatureDetail.value = true
   errorMessage.value = ''
   try {
     const detail = await projectApi.getBusinessFeatureDetail(props.projectId, feature.id)
-    if (selectedFeatureId.value === feature.id) featureDetail.value = detail
+    if (generation === reportGeneration && selectedFeatureId.value === feature.id) featureDetail.value = detail
   } catch (error) {
-    if (selectedFeatureId.value === feature.id) errorMessage.value = errorText(error)
+    if (generation === reportGeneration && selectedFeatureId.value === feature.id) errorMessage.value = errorText(error)
   } finally {
-    if (selectedFeatureId.value === feature.id) loadingFeatureDetail.value = false
+    if (generation === reportGeneration && selectedFeatureId.value === feature.id) loadingFeatureDetail.value = false
   }
 }
 
@@ -152,6 +193,7 @@ function evidenceLayerLabel(layer: BusinessFeatureDetail['implementation'][numbe
 
 async function loadDocuments() {
   if (!props.projectId) return
+  const generation = reportGeneration
   loadingDocuments.value = true
   errorMessage.value = ''
   symbols.value = []
@@ -163,15 +205,16 @@ async function loadDocuments() {
       projectApi.listSourceDocuments(props.projectId),
       projectApi.listSourceReferences(props.projectId),
     ])
+    if (generation !== reportGeneration) return
     documents.value = loadedDocuments
     references.value = loadedReferences
     if (documents.value.length > 0) {
       await selectDocument(documents.value[0].id)
     }
   } catch (error) {
-    errorMessage.value = errorText(error)
+    if (generation === reportGeneration) errorMessage.value = errorText(error)
   } finally {
-    loadingDocuments.value = false
+    if (generation === reportGeneration) loadingDocuments.value = false
   }
 }
 
@@ -239,26 +282,31 @@ function symbolExplanation(symbol: SourceSymbolDetail) {
 
 async function selectDocument(documentId: string) {
   if (!props.projectId) return
+  const generation = reportGeneration
   selectedDocumentId.value = documentId
   selectedSymbolId.value = ''
   symbolDetail.value = null
   loadingSymbols.value = true
   errorMessage.value = ''
   try {
-    symbols.value = await projectApi.listSourceSymbols(props.projectId, documentId)
+    const result = await projectApi.listSourceSymbols(props.projectId, documentId)
+    if (generation !== reportGeneration || selectedDocumentId.value !== documentId) return
+    symbols.value = result
     if (symbols.value.length > 0) {
       await selectSymbol(symbols.value[0])
     }
   } catch (error) {
+    if (generation !== reportGeneration || selectedDocumentId.value !== documentId) return
     symbols.value = []
     errorMessage.value = errorText(error)
   } finally {
-    loadingSymbols.value = false
+    if (generation === reportGeneration && selectedDocumentId.value === documentId) loadingSymbols.value = false
   }
 }
 
 async function selectSymbol(symbol: SourceSymbol) {
   if (!props.projectId) return
+  const generation = reportGeneration
   selectedSymbolId.value = symbol.id
   symbolDetail.value = null
   loadingDetail.value = true
@@ -269,11 +317,11 @@ async function selectSymbol(symbol: SourceSymbol) {
       symbol.documentId,
       symbol.id,
     )
-    if (selectedSymbolId.value === symbol.id) symbolDetail.value = detail
+    if (generation === reportGeneration && selectedSymbolId.value === symbol.id) symbolDetail.value = detail
   } catch (error) {
-    if (selectedSymbolId.value === symbol.id) errorMessage.value = errorText(error)
+    if (generation === reportGeneration && selectedSymbolId.value === symbol.id) errorMessage.value = errorText(error)
   } finally {
-    if (selectedSymbolId.value === symbol.id) loadingDetail.value = false
+    if (generation === reportGeneration && selectedSymbolId.value === symbol.id) loadingDetail.value = false
   }
 }
 
@@ -293,12 +341,39 @@ async function copyCode() {
 watch(
   () => [props.open, props.projectId] as const,
   ([open]) => {
+    reportGeneration += 1
+    understandingReport.value = null
+    generatingUnderstanding.value = false
+    loadingUnderstanding.value = false
+    loadingBusinessMap.value = false
+    loadingDocuments.value = false
+    loadingSymbols.value = false
+    loadingDetail.value = false
+    loadingFeatureDetail.value = false
+    businessMap.value = null
+    featureDetail.value = null
+    documents.value = []
+    symbols.value = []
+    references.value = []
+    symbolDetail.value = null
+    selectedDocumentId.value = ''
+    selectedSymbolId.value = ''
+    selectedModuleId.value = ''
+    selectedFeatureId.value = ''
+    errorMessage.value = ''
     if (open) {
       activeView.value = 'GUIDE'
       void loadBusinessMap()
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => understandingReport.value?.id,
+  () => {
+    summaryExpanded.value = false
+  },
 )
 </script>
 
@@ -310,6 +385,7 @@ watch(
           <p class="eyebrow">项目深层理解</p>
           <h2 id="source-title">{{ projectName }} · 业务与源码</h2>
         </div>
+        <div class="source-chat-actions"><button class="button secondary" type="button" @click="emit('chat', '')">与 AI 聊这个项目</button></div>
         <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">×</button>
       </header>
 
@@ -356,42 +432,87 @@ watch(
               <p>让当前账户选择的大模型结合业务地图和真实代码证据，解释核心业务，而不是逐行翻译代码。</p>
             </div>
             <div class="ai-understanding-actions">
-              <button class="button secondary" type="button" :disabled="loadingUnderstanding" @click="loadLatestUnderstandingReport">
+              <button class="button secondary" type="button" :disabled="loadingUnderstanding || generatingUnderstanding" @click="loadLatestUnderstandingReport()">
                 {{ loadingUnderstanding ? '读取中…' : '查看上次报告' }}
               </button>
-              <button class="button primary" type="button" :disabled="generatingUnderstanding" @click="generateUnderstandingReport">
+              <button class="button primary" type="button" :disabled="generatingUnderstanding || loadingUnderstanding" @click="generateUnderstandingReport">
                 {{ generatingUnderstanding ? 'AI分析中…' : '生成新的深度报告' }}
               </button>
             </div>
           </header>
           <div v-if="!understandingReport" class="ai-understanding-empty">
             生成报告会调用你在“大模型连接”中启用的模型，并消耗对应 API 额度；页面不会自动调用。
+            <button class="button secondary" type="button" @click="emit('configureModel')">配置或检查大模型连接</button>
           </div>
           <div v-else-if="understandingReport.status === 'FAILED'" class="notice error">
             {{ understandingReport.errorMessage || '报告生成失败，请检查模型连接后重试' }}
           </div>
-          <div v-else-if="understandingReport.status === 'SUCCEEDED'" class="ai-understanding-report">
-            <div class="ai-report-meta">
-              <span>{{ understandingReport.provider }} / {{ understandingReport.modelName }}</span>
-              <span>{{ understandingReport.totalTokens }} Tokens</span>
-              <span>{{ understandingReport.promptVersion }}</span>
-            </div>
-            <h4>{{ understandingReport.executiveSummary }}</h4>
-            <p>{{ understandingReport.architectureNarrative }}</p>
-            <section v-for="flow in understandingReport.businessFlows" :key="flow.name" class="ai-flow-card">
-              <h5>{{ flow.name }}</h5>
-              <p>{{ flow.goal }}</p>
-              <ol><li v-for="step in flow.steps" :key="step">{{ step }}</li></ol>
-              <div class="ai-flow-tags">
-                <code v-for="api in flow.apiEntries" :key="api">{{ api }}</code>
-                <code v-for="change in flow.dataChanges" :key="change">{{ change }}</code>
+          <div
+            v-else-if="understandingReport.status === 'SUCCEEDED'"
+            :key="understandingReport.id"
+            class="ai-understanding-report"
+          >
+            <div class="ai-report-heading">
+              <div>
+                <span class="eyebrow">报告概览</span>
+                <h4>先看结论，再按需展开实现证据</h4>
               </div>
-              <details v-for="evidence in flow.evidence" :key="evidence.chunkId">
-                <summary>{{ evidence.symbolName }} · {{ evidence.filePath }}:{{ evidence.startLine }}</summary>
-                <pre><code>{{ evidence.code }}</code></pre>
-                <small v-if="evidence.truncated">代码较长，当前仅展示受控预览。</small>
-              </details>
+              <span class="ai-report-model">{{ understandingReport.provider }} / {{ understandingReport.modelName }}</span>
+            </div>
+
+            <section class="ai-report-overview">
+              <p
+                :id="understandingSummaryId"
+                class="ai-report-summary-text"
+                :class="{ collapsed: hasLongUnderstandingSummary && !summaryExpanded }"
+              >{{ displayedUnderstandingSummary }}</p>
+              <button
+                v-if="hasLongUnderstandingSummary"
+                class="ai-report-summary-toggle"
+                type="button"
+                :aria-expanded="summaryExpanded"
+                :aria-controls="understandingSummaryId"
+                @click="summaryExpanded = !summaryExpanded"
+              >{{ summaryExpanded ? '收起摘要' : '展开完整摘要' }}</button>
+              <dl class="ai-report-facts">
+                <div><dt>核心流程</dt><dd>{{ understandingReport.businessFlows.length }}</dd></div>
+                <div><dt>阅读步骤</dt><dd>{{ understandingReport.readingGuide.length }}</dd></div>
+                <div><dt>待确认项</dt><dd>{{ understandingReport.risksAndUnknowns.length }}</dd></div>
+              </dl>
             </section>
+
+            <details v-if="understandingReport.architectureNarrative" class="ai-architecture-details">
+              <summary>
+                <span>架构与实现说明</span>
+                <small>按需展开</small>
+              </summary>
+              <p>{{ understandingReport.architectureNarrative }}</p>
+            </details>
+
+            <div class="ai-report-section-heading">
+              <div><h5>核心业务流程</h5><p>默认收起技术细节，选择一个流程查看步骤和代码证据。</p></div>
+              <span>{{ understandingReport.businessFlows.length }} 条</span>
+            </div>
+            <details v-for="(flow, flowIndex) in understandingReport.businessFlows" :key="flow.name" class="ai-flow-card">
+              <summary>
+                <span class="ai-flow-index">{{ String(flowIndex + 1).padStart(2, '0') }}</span>
+                <span class="ai-flow-summary-copy"><b>{{ flow.name }}</b><small>{{ flow.goal }}</small></span>
+                <span class="ai-flow-open-label">查看实现</span>
+              </summary>
+              <div class="ai-flow-body">
+                <button class="button secondary ask-business-flow" type="button" @click="emit('chat', `请用通俗的话讲解“${flow.name}”：谁会使用、具体步骤、接口入口、数据变化和失败情况。请引用代码证据。`)">让 AI 讲解这条业务</button>
+                <ol><li v-for="step in flow.steps" :key="step">{{ step }}</li></ol>
+                <div class="ai-flow-tags">
+                  <code v-for="api in flow.apiEntries" :key="api">{{ api }}</code>
+                  <code v-for="change in flow.dataChanges" :key="change">{{ change }}</code>
+                </div>
+                <details v-for="evidence in flow.evidence" :key="evidence.chunkId" class="ai-evidence-details">
+                  <summary>{{ evidence.symbolName }} · {{ evidence.filePath }}:{{ evidence.startLine }}</summary>
+                  <pre><code>{{ evidence.code }}</code></pre>
+                  <small v-if="evidence.truncated">代码较长，当前仅展示受控预览。</small>
+                </details>
+              </div>
+            </details>
             <section v-if="understandingReport.readingGuide.length" class="ai-reading-guide">
               <h5>推荐阅读顺序</h5>
               <ol><li v-for="item in understandingReport.readingGuide" :key="`${item.order}-${item.title}`">
@@ -401,6 +522,13 @@ watch(
             <details v-if="understandingReport.risksAndUnknowns.length" class="onboarding-unknowns">
               <summary>模型明确标记的未知项</summary>
               <ul><li v-for="item in understandingReport.risksAndUnknowns" :key="item">{{ item }}</li></ul>
+            </details>
+            <details class="ai-report-diagnostics">
+              <summary>生成信息</summary>
+              <div class="ai-report-meta">
+                <span>{{ understandingReport.totalTokens }} Tokens</span>
+                <span>{{ understandingReport.promptVersion }}</span>
+              </div>
             </details>
           </div>
         </section>
@@ -453,7 +581,8 @@ watch(
               <div v-if="businessMap.onboarding.stateModels.length" class="fact-list">
                 <div v-for="state in businessMap.onboarding.stateModels" :key="state.chunkId">
                   <b>{{ state.name }}</b>
-                  <span>{{ state.values.length ? state.values.join(' → ') : '已识别状态类型，枚举值待确认' }}</span>
+                  <span>{{ state.values.length ? state.values.join('、') : '已识别状态类型，枚举值待确认' }}</span>
+                  <small>仅识别到状态取值；允许的转换顺序需要结合实现确认。</small>
                   <small>{{ state.filePath }} · 第 {{ state.startLine }} 行</small>
                 </div>
               </div>

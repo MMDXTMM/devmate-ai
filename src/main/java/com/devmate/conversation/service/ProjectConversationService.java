@@ -23,6 +23,7 @@ import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
 import com.devmate.knowledge.retrieval.ContextRetrievalService;
 import com.devmate.knowledge.retrieval.RetrievalMode;
 import com.devmate.knowledge.retrieval.RetrievalSearchCommand;
+import com.devmate.knowledge.service.ProjectUnderstandingReportService;
 import com.devmate.project.dto.ProjectResponse;
 import com.devmate.project.service.ProjectService;
 import com.devmate.user.service.ProjectAccessService;
@@ -58,12 +59,22 @@ public class ProjectConversationService {
             只能依据本轮提供的代码证据回答；每个关键事实用 [证据N] 标注。证据不足时明确说“当前证据无法确认”，不要虚构文件、接口、数据库表或运行时行为。
             类名、方法名、接口路径保持源码原文。优先先给结论，再解释业务流程，最后给推荐阅读或验证步骤。
             """;
+    private static final String READABLE_GUIDANCE = """
+            回答面向第一次接触项目的人，默认使用简短段落和少量列表，先用两三句话直接回答用户问题。
+            介绍项目时按“谁在使用 → 能完成什么 → 一条典型业务怎样走”组织，避免按类名罗列“某某业务”。
+            解释具体流程时按用户操作、接口入口、关键校验、数据变化、失败情况逐步说明；只解释本轮能核实的部分。
+            先讲业务含义，再用类名、方法名和文件定位支持结论，关键事实引用本轮 [证据N]。
+            追问时围绕上一轮主题补充，不重复整份报告；历史证据编号不是本轮编号，必须重新核对。
+            证据不足时简短说明缺少哪段实现，给出一条下一步阅读或提问建议，不长篇重复无法确认。
+            除非用户要求深入，默认控制在约 800 个汉字内；不声称执行过代码或验证运行时行为。
+            """;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() { };
 
     private final ProjectAccessService accessService;
     private final ProjectService projectService;
     private final ProjectConversationModelRegistry modelRegistry;
     private final ContextRetrievalService retrievalService;
+    private final ProjectUnderstandingReportService reportService;
     private final ConversationStateService stateService;
     private final KnowledgeChunkMapper chunkMapper;
     private final KnowledgeDocumentMapper documentMapper;
@@ -75,6 +86,7 @@ public class ProjectConversationService {
                                       ProjectService projectService,
                                       ProjectConversationModelRegistry modelRegistry,
                                       ContextRetrievalService retrievalService,
+                                      ProjectUnderstandingReportService reportService,
                                       ConversationStateService stateService,
                                       KnowledgeChunkMapper chunkMapper,
                                       KnowledgeDocumentMapper documentMapper,
@@ -85,6 +97,7 @@ public class ProjectConversationService {
         this.projectService = projectService;
         this.modelRegistry = modelRegistry;
         this.retrievalService = retrievalService;
+        this.reportService = reportService;
         this.stateService = stateService;
         this.chunkMapper = chunkMapper;
         this.documentMapper = documentMapper;
@@ -143,9 +156,15 @@ public class ProjectConversationService {
         ProjectConversationModel model = modelRegistry.current(
                 conversation.getProvider(), conversation.getModelName()
         );
+        String retrievalQuery = question;
+        if (question.matches("(?s).*(它|刚才|上述|继续|这段|该流程|进一步|这个流程).*") ) {
+            String previous = stateService.previousQuestion(conversationId, projectId);
+            if (!previous.isBlank()) retrievalQuery = previous + "\n" + question;
+        }
+        List<Long> seeds = reportService.conversationSeeds(projectId, conversation.getRevision(), retrievalQuery);
         RetrievalSearchResponse retrieval = retrievalService.search(projectId, new RetrievalSearchCommand(
-                question, conversation.getRevision(), List.of(), properties.getTopK(),
-                properties.getTokenBudget(), RetrievalMode.HYBRID
+                retrievalQuery, conversation.getRevision(), seeds, properties.getTopK(),
+                properties.getTokenBudget(), seeds.isEmpty() ? RetrievalMode.HYBRID : RetrievalMode.LEXICAL
         ));
         List<String> evidenceIds = retrieval.hits().stream()
                 .map(hit -> String.valueOf(hit.chunkId())).toList();
@@ -163,7 +182,7 @@ public class ProjectConversationService {
             replay(emitter, prepared.assistant());
             return emitter;
         }
-        ProjectConversationPrompt prompt = prompt(prepared.history(), retrieval.hits());
+        ProjectConversationPrompt prompt = prompt(prepared.history(), retrieval.hits(), conversation.getPromptVersion());
         try {
             taskExecutor.execute(() -> runStream(emitter, prepared, model, prompt, retrieval.hits()));
         } catch (RuntimeException exception) {
@@ -229,7 +248,7 @@ public class ProjectConversationService {
     }
 
     private ProjectConversationPrompt prompt(List<ConversationMessage> history,
-                                             List<RetrievalHitResponse> evidence) {
+                                             List<RetrievalHitResponse> evidence, String promptVersion) {
         List<ProjectConversationPrompt.Message> messages = new ArrayList<>();
         for (int index = 0; index < history.size(); index++) {
             ConversationMessage item = history.get(index);
@@ -237,7 +256,8 @@ public class ProjectConversationService {
             messages.add(new ProjectConversationPrompt.Message(item.getMessageRole(), currentQuestion
                     ? item.getContent() + evidencePrompt(evidence) : item.getContent()));
         }
-        return new ProjectConversationPrompt(SYSTEM_PROMPT, List.copyOf(messages));
+        return new ProjectConversationPrompt(SYSTEM_PROMPT
+                + ("project-conversation-v2".equals(promptVersion) ? READABLE_GUIDANCE : ""), List.copyOf(messages));
     }
 
     private String evidencePrompt(List<RetrievalHitResponse> evidence) {

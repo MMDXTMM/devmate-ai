@@ -89,6 +89,25 @@ class SourceImportControllerTest {
     Path tempDir;
 
     @Test
+    void leavesUnspecifiedBranchToRemoteDefaultAndPersistsImportedRevision() throws Exception {
+        ProjectResponse project = projectService.createProject(new CreateProjectRequest(
+                "remote-default", null, "GIT", "https://github.com/example/demo.git", null
+        ));
+        given(gitSourceClient.cloneRepository(anyString(), org.mockito.ArgumentMatchers.isNull(), any(Path.class)))
+                .willAnswer(invocation -> {
+                    Path target = invocation.getArgument(2);
+                    Files.createDirectories(target);
+                    Files.writeString(target.resolve("Demo.java"), "public class Demo {}");
+                    return new GitCloneResult(target, REVISION);
+                });
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.revision").value(REVISION));
+        assertThat(projectMapper.selectById(project.id()).getCurrentRevision()).isEqualTo(REVISION);
+    }
+
+    @Test
     void importsGitRepositoryAndPersistsJavaMetadata() throws Exception {
         ProjectResponse project = createGitProject("import-success");
         mockSuccessfulClone();

@@ -16,6 +16,9 @@ import com.devmate.knowledge.entity.KnowledgeDocument;
 import com.devmate.knowledge.mapper.KnowledgeChunkMapper;
 import com.devmate.knowledge.mapper.KnowledgeDocumentMapper;
 import com.devmate.knowledge.retrieval.ContextRetrievalService;
+import com.devmate.knowledge.retrieval.RetrievalSearchCommand;
+import com.devmate.knowledge.retrieval.RetrievalMode;
+import com.devmate.knowledge.service.ProjectUnderstandingReportService;
 import com.devmate.project.dto.ProjectResponse;
 import com.devmate.project.entity.Project;
 import com.devmate.project.mapper.ProjectMapper;
@@ -67,6 +70,7 @@ class ProjectConversationServiceTest {
     @MockitoBean private CurrentUserService currentUserService;
     @MockitoBean private ProjectService projectService;
     @MockitoBean private ContextRetrievalService retrievalService;
+    @MockitoBean private ProjectUnderstandingReportService reportService;
     @MockitoBean private ProjectConversationModelRegistry modelRegistry;
     @MockitoBean(name = "conversationTaskExecutor") private TaskExecutor taskExecutor;
 
@@ -180,6 +184,33 @@ class ProjectConversationServiceTest {
         assertThat(second.messages()).extracting(ProjectConversationPrompt.Message::content)
                 .anyMatch(content -> content.equals("订单由服务层创建。"))
                 .anyMatch(content -> content.contains("它会修改哪些数据？") && content.contains("[证据1]"));
+    }
+
+    @Test
+    void anchorsFollowupsToSavedBusinessEvidenceAndKeepsHistoryAfterListingAgain() {
+        when(model.stream(any())).thenReturn(Flux.just("订单由服务创建。"));
+        when(reportService.conversationSeeds(eq(project.getId()), eq(REVISION), any()))
+                .thenReturn(List.of(evidence.getId()));
+        var conversation = service.create(project.getId(), new CreateConversationRequest(null));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest(
+                "订单怎么创建？", "623e4567-e89b-42d3-a456-426614174000"));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest(
+                "它会改变哪些数据？", "723e4567-e89b-42d3-a456-426614174000"));
+        var commands = ArgumentCaptor.forClass(RetrievalSearchCommand.class);
+        verify(retrievalService, times(2)).search(eq(project.getId()), commands.capture());
+        assertThat(commands.getAllValues().get(1)).satisfies(command -> {
+            assertThat(command.query()).contains("订单怎么创建？", "它会改变哪些数据？");
+            assertThat(command.seedChunkIds()).containsExactly(evidence.getId());
+            assertThat(command.retrievalMode()).isEqualTo(RetrievalMode.LEXICAL);
+        });
+        assertThat(service.list(project.getId())).singleElement().satisfies(item -> {
+            assertThat(item.title()).isEqualTo("订单怎么创建？");
+            assertThat(item.promptVersion()).isEqualTo("project-conversation-v2");
+        });
+        assertThat(service.messages(project.getId(), conversation.id())).hasSize(4);
+        var prompts = ArgumentCaptor.forClass(ProjectConversationPrompt.class);
+        verify(model, times(2)).stream(prompts.capture());
+        assertThat(prompts.getValue().systemPrompt()).contains("先用两三句话", "不声称执行过代码", "不可信数据");
     }
 
     @Test

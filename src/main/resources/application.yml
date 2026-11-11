@@ -104,14 +104,14 @@ devmate:
     read-timeout: 90s
     stale-task-timeout: 10m
   project-understanding:
-    prompt-version: project-understanding-v1
+    prompt-version: project-understanding-v2
     max-evidence-chunks: 24
     max-evidence-characters: 24000
     connect-timeout: 5s
     read-timeout: 90s
     stale-task-timeout: 10m
   project-conversation:
-    prompt-version: project-conversation-v1
+    prompt-version: project-conversation-v2
     history-messages: 12
     top-k: 6
     token-budget: 5000
@@ -138,3 +138,8 @@ devmate:
     max-runs-returned: 100
   model-connections:
     encryption-secret: ${DEVMATE_MODEL_ENCRYPTION_SECRET:}
+    compatible:
+      enabled: ${DEVMATE_COMPATIBLE_ENABLED:false}
+      display-name: ${DEVMATE_COMPATIBLE_DISPLAY_NAME:OpenAI 兼容／中转站}
+      base-url: ${DEVMATE_COMPATIBLE_BASE_URL:}
+      models: ${DEVMATE_COMPATIBLE_MODELS:}

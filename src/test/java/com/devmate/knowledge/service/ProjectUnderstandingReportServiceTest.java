@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.devmate.agent.model.ProjectUnderstandingModel;
 import com.devmate.agent.model.ProjectUnderstandingModelRegistry;
 import com.devmate.agent.model.ProjectUnderstandingModelResult;
+import com.devmate.agent.model.ProjectUnderstandingPrompt;
 import com.devmate.common.error.BusinessException;
 import com.devmate.knowledge.dto.BusinessCodeEvidenceResponse;
 import com.devmate.knowledge.dto.BusinessFeatureDetailResponse;
@@ -27,6 +28,7 @@ import com.devmate.user.service.CurrentUserService;
 import com.devmate.user.service.ProjectAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -174,6 +176,142 @@ class ProjectUnderstandingReportServiceTest {
         assertThat(stored.getRunningKey()).isNull();
         assertThat(stored.getReportJson()).doesNotContain("orderService.create");
         verify(accessService, times(2)).requireMember(project.getId());
+    }
+
+    @Test
+    void usesOnlyCurrentUsersSuccessfulSameRevisionReportForConversationSeeds() {
+        ProjectUnderstandingModel model = successfulModel(String.valueOf(evidenceChunk.getId()));
+        when(modelRegistry.current()).thenReturn(model);
+        var report = service.create(project.getId(), new CreateProjectUnderstandingReportRequest(
+                REVISION, "723e4567-e89b-42d3-a456-426614174000"));
+        assertThat(service.conversationSeeds(project.getId(), REVISION, "订单怎么创建？"))
+                .containsExactly(evidenceChunk.getId());
+        assertThat(service.conversationSeeds(project.getId(), REVISION, "优惠券如何核销？")).isEmpty();
+        assertThat(service.conversationSeeds(project.getId(), "different-revision", "订单怎么创建？")).isEmpty();
+        when(currentUserService.getRequiredUser()).thenReturn(new AuthenticatedUser(USER_ID + 1, "other"));
+        assertThat(service.conversationSeeds(project.getId(), REVISION, "订单怎么创建？")).isEmpty();
+        when(currentUserService.getRequiredUser()).thenReturn(new AuthenticatedUser(USER_ID, "understanding-user"));
+        // A newer failed task must not hide the earlier verified business-to-code mapping.
+        ProjectUnderstandingReport failed = reportMapper.selectById(report.id());
+        failed.setId(null);
+        failed.setAttemptKey("823e4567-e89b-42d3-a456-426614174000");
+        failed.setStatus("FAILED");
+        failed.setCreatedAt(LocalDateTime.now().plusSeconds(1));
+        reportMapper.insert(failed);
+        assertThat(service.conversationSeeds(project.getId(), REVISION, "订单怎么创建？"))
+                .containsExactly(evidenceChunk.getId());
+        verify(model, times(1)).analyze(any());
+    }
+
+    @Test
+    void keepsUserFacingNarrativeConciseAndEvidenceIdsStructured() {
+        ProjectUnderstandingModel model = mock(ProjectUnderstandingModel.class);
+        when(model.providerName()).thenReturn("TEST");
+        when(model.modelName()).thenReturn("test-model");
+        String evidenceId = String.valueOf(evidenceChunk.getId());
+        when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(
+                "这是一个订单系统（evidenceId=" + evidenceId + "）。" + "它帮助用户创建和管理订单。".repeat(30),
+                "Controller 接收请求 (chunkId=" + evidenceId + ")，再交给 Service 处理。",
+                List.of(new ProjectUnderstandingModelResult.BusinessFlow(
+                        "创建订单 evidenceId=" + evidenceId,
+                        "用户提交订单（chunkId=" + evidenceId + "）",
+                        List.of("接收请求 evidence_id=" + evidenceId),
+                        List.of("GET /chunks?chunkId=" + evidenceId),
+                        List.of("更新 chunk_id=business-" + evidenceId), List.of(evidenceId)
+                )),
+                List.of(new ProjectUnderstandingModelResult.ReadingGuide(
+                        1, "订单入口 evidenceId=" + evidenceId,
+                        "先理解外部请求 (chunkId=" + evidenceId + ")", List.of(evidenceId)
+                )), List.of("动态调用待确认 evidenceId=" + evidenceId), 10, 20, 30
+        ));
+        when(modelRegistry.current()).thenReturn(model);
+
+        var response = service.create(project.getId(), new CreateProjectUnderstandingReportRequest(
+                REVISION, "623e4567-e89b-42d3-a456-426614174000"
+        ));
+
+        assertThat(response.executiveSummary())
+                .doesNotContain("evidenceId", evidenceId)
+                .endsWith("。")
+                .hasSizeLessThanOrEqualTo(220);
+        assertThat(response.architectureNarrative()).doesNotContain("chunkId", evidenceId);
+        assertThat(response.businessFlows()).singleElement()
+                .satisfies(flow -> {
+                    assertThat(flow.name()).isEqualTo("创建订单");
+                    assertThat(flow.goal()).isEqualTo("用户提交订单");
+                    assertThat(flow.steps()).containsExactly("接收请求");
+                    assertThat(flow.apiEntries()).containsExactly("GET /chunks?chunkId=" + evidenceId);
+                    assertThat(flow.dataChanges()).containsExactly("更新 chunk_id=business-" + evidenceId);
+                    assertThat(flow.evidence()).singleElement()
+                            .satisfies(evidence -> assertThat(evidence.chunkId()).isEqualTo(evidenceId));
+                });
+        assertThat(response.readingGuide()).singleElement().satisfies(item -> {
+            assertThat(item.title()).isEqualTo("订单入口");
+            assertThat(item.reason()).isEqualTo("先理解外部请求");
+        });
+        assertThat(response.risksAndUnknowns()).containsExactly("动态调用待确认");
+
+        ArgumentCaptor<ProjectUnderstandingPrompt> promptCaptor = ArgumentCaptor.forClass(
+                ProjectUnderstandingPrompt.class
+        );
+        verify(model).analyze(promptCaptor.capture());
+        assertThat(promptCaptor.getValue().systemPrompt())
+                .contains("2 至 3 个完整句子")
+                .contains("禁止出现在任何面向用户的自然语言字段中");
+    }
+
+    @Test
+    void rejectsNarrativeThatIsEmptyAfterEvidenceIdRemoval() {
+        ProjectUnderstandingModel model = mock(ProjectUnderstandingModel.class);
+        when(model.providerName()).thenReturn("TEST");
+        when(model.modelName()).thenReturn("test-model");
+        String evidenceId = String.valueOf(evidenceChunk.getId());
+        when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(
+                "（evidenceId=" + evidenceId + "）", "分层架构",
+                List.of(new ProjectUnderstandingModelResult.BusinessFlow(
+                        "创建订单", "用户提交订单", List.of("接收请求"),
+                        List.of("POST /orders"), List.of("新增订单记录"), List.of(evidenceId)
+                )), List.of(), List.of(), 10, 20, 30
+        ));
+        when(modelRegistry.current()).thenReturn(model);
+
+        assertThatThrownBy(() -> service.create(project.getId(), new CreateProjectUnderstandingReportRequest(
+                REVISION, "723e4567-e89b-42d3-a456-426614174000"
+        ))).isInstanceOf(BusinessException.class)
+                .hasMessage("模型报告缺少必填内容");
+
+        ProjectUnderstandingReport stored = reportMapper.selectOne(
+                Wrappers.lambdaQuery(ProjectUnderstandingReport.class)
+                        .eq(ProjectUnderstandingReport::getAttemptKey, "723e4567-e89b-42d3-a456-426614174000")
+        );
+        assertThat(stored.getStatus()).isEqualTo("FAILED");
+        assertThat(stored.getRunningKey()).isNull();
+    }
+
+    @Test
+    void truncatesLongNarrativeWithoutSplittingVersionNumbersOrExceedingLimit() {
+        ProjectUnderstandingModel model = mock(ProjectUnderstandingModel.class);
+        when(model.providerName()).thenReturn("TEST");
+        when(model.modelName()).thenReturn("test-model");
+        String evidenceId = String.valueOf(evidenceChunk.getId());
+        String summary = "项目基于 Spring Boot 3.4.5 提供订单能力，" + "并持续说明实现细节".repeat(40);
+        when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(
+                summary, "分层架构",
+                List.of(new ProjectUnderstandingModelResult.BusinessFlow(
+                        "创建订单", "用户提交订单", List.of("接收请求"),
+                        List.of("POST /orders"), List.of("新增订单记录"), List.of(evidenceId)
+                )), List.of(), List.of(), 10, 20, 30
+        ));
+        when(modelRegistry.current()).thenReturn(model);
+
+        var response = service.create(project.getId(), new CreateProjectUnderstandingReportRequest(
+                REVISION, "823e4567-e89b-42d3-a456-426614174000"
+        ));
+
+        assertThat(response.executiveSummary())
+                .contains("Spring Boot 3.4.5")
+                .endsWith("…")
+                .hasSizeLessThanOrEqualTo(220);
     }
 
     @Test

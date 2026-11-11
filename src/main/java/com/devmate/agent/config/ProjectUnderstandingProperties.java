@@ -8,7 +8,7 @@ import java.time.Duration;
 @Configuration
 @ConfigurationProperties(prefix = "devmate.project-understanding")
 public class ProjectUnderstandingProperties {
-    private String promptVersion = "project-understanding-v1";
+    private String promptVersion = "project-understanding-v2";
     private int maxEvidenceChunks = 24;
     private int maxEvidenceCharacters = 24000;
     private Duration connectTimeout = Duration.ofSeconds(5);

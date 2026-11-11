@@ -54,4 +54,23 @@ describe('conversationApi SSE stream', () => {
     ])
     expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ id: '12', content: '订单' }))
   })
+  it('handles CRLF and multi-byte Chinese characters split across network packets', async () => {
+    const encoder = new TextEncoder()
+    const events = encoder.encode('event: token\r\ndata: {"content":"订单✅"}\r\n\r\nevent: done\r\ndata: {"content":"订单✅"}\r\n\r\n')
+    const body = new ReadableStream<Uint8Array>({ start(controller) {
+      for (const byte of events) controller.enqueue(new Uint8Array([byte]))
+      controller.close()
+    } })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }))
+    const onToken = vi.fn(), onDone = vi.fn()
+    await conversationApi.streamMessage('1', '11', '流程？', 'test-key', { onToken, onDone })
+    expect(onToken).toHaveBeenCalledExactlyOnceWith({ content: '订单✅' })
+    expect(onDone).toHaveBeenCalledExactlyOnceWith({ content: '订单✅' })
+  })
+
+  it('rejects a successful HTTP response that is not an SSE answer', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>proxy</html>', { headers: { 'Content-Type': 'text/html' } }))
+    await expect(conversationApi.streamMessage('1', '11', '流程？', 'test-key', {})).rejects.toThrow('未返回流式回答')
+  })
+
 })

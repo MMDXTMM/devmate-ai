@@ -31,14 +31,16 @@ public class JGitSourceClient implements GitSourceClient {
             String branch,
             Path targetDirectory
     ) {
-        String branchRef = Constants.R_HEADS + branch;
         CloneCommand command = Git.cloneRepository()
                 .setURI(repositoryUrl)
                 .setDirectory(targetDirectory.toFile())
-                .setBranch(branchRef)
-                .setBranchesToClone(List.of(branchRef))
                 .setDepth(properties.getCloneDepth())
                 .setTimeout(properties.getCloneTimeoutSeconds());
+        // Without an explicit branch JGit follows the remote HEAD, including master or custom defaults.
+        if (branch != null && !branch.isBlank()) {
+            String branchRef = Constants.R_HEADS + branch.trim();
+            command.setBranch(branchRef).setBranchesToClone(List.of(branchRef));
+        }
         credentialsProviderFactory.create().ifPresent(command::setCredentialsProvider);
 
         try (Git git = command.call()) {

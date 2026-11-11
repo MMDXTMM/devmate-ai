@@ -10,11 +10,14 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.reactive.JdkClientHttpConnector;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 
 /**
@@ -113,12 +116,21 @@ public class SpringAiChatClientFactory {
         if (configureTimeouts) {
             clientBuilder.requestFactory(requestFactory);
         }
+        JdkClientHttpConnector connector = new JdkClientHttpConnector(
+                HttpClient.newBuilder().connectTimeout(connectTimeout).build());
+        connector.setReadTimeout(readTimeout);
+        WebClient.Builder webClientBuilder = WebClient.builder().clientConnector(connector);
+        if ("COMPATIBLE".equals(connection.provider())) {
+            return new CompatibleStreamingOpenAiApi(connection.baseUrl(), connection.apiKey(),
+                    clientBuilder, webClientBuilder);
+        }
         return OpenAiApi.builder()
                 .baseUrl(connection.baseUrl())
                 .completionsPath("/chat/completions")
                 .embeddingsPath("/embeddings")
                 .apiKey(connection.apiKey())
                 .restClientBuilder(clientBuilder)
+                .webClientBuilder(webClientBuilder)
                 .build();
     }
 

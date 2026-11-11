@@ -61,23 +61,26 @@ export const conversationApi = {
       } catch { /* keep readable fallback */ }
       throw new ApiError(message, undefined, response.status)
     }
+    if (!response.headers.get('Content-Type')?.includes('text/event-stream')) throw new ApiError('后端未返回流式回答，请刷新后重试')
     if (!response.body) throw new ApiError('浏览器没有收到流式响应')
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n')
-      let boundary = buffer.indexOf('\n\n')
-      while (boundary >= 0) {
-        dispatchEventBlock(buffer.slice(0, boundary), handlers)
-        buffer = buffer.slice(boundary + 2)
-        boundary = buffer.indexOf('\n\n')
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        buffer = (buffer + decoder.decode(value, { stream: !done })).replace(/\r\n/g, '\n')
+        let boundary = buffer.indexOf('\n\n')
+        while (boundary >= 0) {
+          dispatchEventBlock(buffer.slice(0, boundary), handlers)
+          buffer = buffer.slice(boundary + 2)
+          boundary = buffer.indexOf('\n\n')
+        }
+        if (done) break
       }
-      if (done) break
-    }
-    if (buffer.trim()) dispatchEventBlock(buffer, handlers)
+      if (buffer.trim()) dispatchEventBlock(buffer, handlers)
+    } finally { reader.releaseLock() }
   },
 }
 

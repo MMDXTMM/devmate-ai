@@ -7,9 +7,10 @@ import jakarta.validation.constraints.Size;
 
 @Schema(description = "保存当前账户的模型连接")
 public record ModelConnectionUpdateRequest(
-        @Schema(description = "模型提供方", example = "DEEPSEEK")
+        @Schema(description = "模型提供方；COMPATIBLE 为通用 OpenAI 兼容网关或中转站，需服务端配置启用", example = "DEEPSEEK",
+                allowableValues = {"DEEPSEEK", "DASHSCOPE", "OPENAI", "COMPATIBLE"})
         @NotBlank(message = "模型提供方不能为空")
-        @Pattern(regexp = "DEEPSEEK|DASHSCOPE|OPENAI", message = "暂不支持该模型提供方")
+        @Pattern(regexp = "DEEPSEEK|DASHSCOPE|OPENAI|COMPATIBLE", message = "暂不支持该模型提供方")
         String provider,
         @Schema(description = "提供方实际支持的模型名称", example = "deepseek-chat")
         @NotBlank(message = "模型名称不能为空")

@@ -59,13 +59,13 @@ describe('ProjectUnderstandingWorkspace', () => {
     expect(wrapper.text()).toContain('1 个迁移文件')
     expect(wrapper.text()).toContain('8')
     expect(wrapper.text()).toContain('已解析调用关系')
-    expect(wrapper.get('.workspace-primary-actions').text()).toContain('浏览代码结构')
+    expect(wrapper.get('.workspace-primary-actions').text()).toContain('理解项目业务')
     expect(wrapper.get('.workspace-primary-actions').text()).toContain('向项目提问')
     expect(wrapper.get('.workspace-primary-actions').text()).toContain('开始代码审查')
     expect(wrapper.get('details.advanced-analysis').attributes('open')).toBeUndefined()
   })
 
-  it('passes a suggested learning question to project search', async () => {
+  it('passes a suggested business question to the AI conversation', async () => {
     vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
     vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
     const wrapper = mount(ProjectUnderstandingWorkspace, {
@@ -75,7 +75,7 @@ describe('ProjectUnderstandingWorkspace', () => {
 
     await wrapper.get('.question-examples button').trigger('click')
 
-    expect(wrapper.emitted('search')?.[0]?.[0]).toContain('Controller Service')
+    expect(wrapper.emitted('chat')?.[0]?.[0]).toContain('业务')
   })
 
   it('starts the review workflow and explains a persisted failure stage', async () => {

@@ -74,6 +74,7 @@ class ProjectBusinessMapControllerTest {
                 "com.example.project.ProjectController",
                 """
                         @RestController
+                        @Tag(name = "项目管理")
                         @RequestMapping("/api/projects")
                         public class ProjectController { }
                         """,
@@ -249,7 +250,7 @@ class ProjectBusinessMapControllerTest {
     }
 
     @Test
-    void explainsCommonDianpingControllersAsUserFacingBusinessCapabilities() throws Exception {
+    void doesNotInventBusinessRulesFromFamiliarControllerNames() throws Exception {
         controllerEndpoint("Blog", "/blog", "saveBlog", "PostMapping", "blog-controller");
         controllerEndpoint("User", "/user", "sendCode", "PostMapping", "user-controller");
         controllerEndpoint("Shop", "/shop", "queryById", "GetMapping", "shop-controller");
@@ -257,20 +258,30 @@ class ProjectBusinessMapControllerTest {
 
         mockMvc.perform(get("/api/projects/{projectId}/business-map", project.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.onboarding.purpose").value(
-                        org.hamcrest.Matchers.containsString("本地生活探店主线")
-                ))
-                .andExpect(jsonPath("$.data.onboarding.purpose").value(
-                        org.hamcrest.Matchers.containsString("发布、浏览和点赞探店笔记")
-                ))
-                .andExpect(jsonPath("$.data.modules[0].name").value("探店笔记与互动"))
+                .andExpect(jsonPath("$.data.modules[0].name").value("Blog接口"))
                 .andExpect(jsonPath("$.data.modules[0].description").value(
-                        "用户可以发布探店笔记、浏览热门或关注内容、点赞并查看互动用户。"
+                        org.hamcrest.Matchers.containsString("名称来自源码声明或标识符")
                 ))
-                .andExpect(jsonPath("$.data.modules[0].features[0].name").value("发布探店笔记"))
-                .andExpect(jsonPath("$.data.onboarding.coreJourneys[1].goal").value(
-                        "用户可以发布探店笔记、浏览热门或关注内容、点赞并查看互动用户。"
+                .andExpect(jsonPath("$.data.modules[0].features[0].name").value("创建或执行Blog接口"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("探店"))
                 ));
+    }
+
+    @Test
+    void usesDeclaredOperationSummaryRatherThanInventingFeatureNames() throws Exception {
+        controllerMethod.setContent("""
+                @Operation(summary = "提交维修申请")
+                @PostMapping
+                public ProjectResponse create(CreateProjectRequest request) {
+                    return projectService.create(request);
+                }
+                """);
+        chunkMapper.updateById(controllerMethod);
+        mockMvc.perform(get("/api/projects/{projectId}/business-map", project.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.modules[0].name").value("项目管理"))
+                .andExpect(jsonPath("$.data.modules[0].features[0].name").value("提交维修申请"));
     }
 
     private void controllerEndpoint(

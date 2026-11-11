@@ -45,7 +45,7 @@ describe('apiClient request correlation', () => {
     )
   })
 
-  it('keeps the request id when the backend response is not JSON', async () => {
+  it('explains that the backend is unavailable when the development proxy returns 502', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Bad Gateway', {
       status: 502,
       headers: { 'X-Request-Id': 'gateway-failure-9' },
@@ -53,9 +53,22 @@ describe('apiClient request correlation', () => {
 
     await expect(apiRequest('/api/projects/1')).rejects.toEqual(
       expect.objectContaining<ApiError>({
-        message: '后端返回了无法解析的响应（请求ID：gateway-failure-9）',
+        message: '后端服务暂不可用，请确认 Spring Boot 已启动后重试（请求ID：gateway-failure-9）',
         status: 502,
         requestId: 'gateway-failure-9',
+      }),
+    )
+  })
+
+  it('keeps the HTTP status when a non-gateway response is not JSON', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>failure</html>', {
+      status: 500,
+    }))
+
+    await expect(apiRequest('/api/projects/1')).rejects.toEqual(
+      expect.objectContaining<ApiError>({
+        message: '后端返回了无法解析的响应（HTTP 500）',
+        status: 500,
       }),
     )
   })

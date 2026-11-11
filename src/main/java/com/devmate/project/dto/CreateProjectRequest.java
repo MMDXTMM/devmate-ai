@@ -26,7 +26,7 @@ public record CreateProjectRequest(
         @Size(max = 1000, message = "源码位置不能超过1000个字符")
         String sourceLocation,
 
-        @Schema(description = "默认分支", example = "main", maxLength = 100)
+        @Schema(description = "要导入的分支；留空时跟随远程仓库默认分支", example = "main", maxLength = 100)
         @Size(max = 100, message = "默认分支不能超过100个字符")
         String defaultBranch
 ) {

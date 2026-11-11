@@ -8,7 +8,7 @@ import java.time.Duration;
 @Configuration
 @ConfigurationProperties(prefix = "devmate.project-conversation")
 public class ProjectConversationProperties {
-    private String promptVersion = "project-conversation-v1";
+    private String promptVersion = "project-conversation-v2";
     private int historyMessages = 12;
     private int topK = 6;
     private int tokenBudget = 5000;

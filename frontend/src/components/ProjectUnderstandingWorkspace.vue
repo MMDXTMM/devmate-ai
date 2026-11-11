@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ApiError, projectApi } from '../services/projectApi'
 import type { Project, ReviewWorkflow, SourceDocument, SourceReference } from '../types/project'
 
@@ -15,7 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   back: []
   structure: []
-  chat: []
+  chat: [question?: string]
   search: [query: string]
   reparse: []
   rebuild: []
@@ -33,6 +33,8 @@ const documents = ref<SourceDocument[]>([])
 const references = ref<SourceReference[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+let overviewEpoch = 0
+onBeforeUnmount(() => { overviewEpoch += 1 })
 
 const sourceFiles = computed(() => documents.value.filter((item) => item.sourceKind === 'SOURCE_CODE'))
 const configurationFiles = computed(() => documents.value.filter((item) => item.sourceKind === 'CONFIGURATION'))
@@ -55,7 +57,7 @@ const reviewStages = computed(() => [
 ])
 
 const persistedReviewRunning = computed(() => props.reviewWorkflow?.status === 'RUNNING')
-const reviewActionDisabled = computed(() => props.reviewing || persistedReviewRunning.value)
+const reviewActionDisabled = computed(() => props.reviewing || props.parsing || props.rebuilding || persistedReviewRunning.value)
 const reviewActionLabel = computed(() => {
   if (props.reviewing || persistedReviewRunning.value) return '审查进行中'
   if (props.reviewWorkflow?.status === 'SUCCEEDED') return '重新审查'
@@ -98,6 +100,11 @@ function formatDate(value?: string) {
 }
 
 async function loadOverview() {
+  const epoch = ++overviewEpoch
+  documents.value = []
+  references.value = []
+  loading.value = false
+  errorMessage.value = ''
   if (props.project.status !== 'READY') return
   loading.value = true
   errorMessage.value = ''
@@ -106,12 +113,13 @@ async function loadOverview() {
       projectApi.listSourceDocuments(props.project.id),
       projectApi.listSourceReferences(props.project.id),
     ])
+    if (epoch !== overviewEpoch) return
     documents.value = loadedDocuments
     references.value = loadedReferences
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '项目概览加载失败'
+    if (epoch === overviewEpoch) errorMessage.value = error instanceof ApiError ? error.message : '项目概览加载失败'
   } finally {
-    loading.value = false
+    if (epoch === overviewEpoch) loading.value = false
   }
 }
 
@@ -157,27 +165,23 @@ watch(
             <p class="eyebrow">START HERE</p>
             <h2>从这里理解项目</h2>
           </div>
-          <p>先看全局结构，再带着具体问题检索代码证据。</p>
+          <p>先了解项目能做什么，再选择流程查看实现，最后追问或审查。</p>
         </div>
 
         <div class="workspace-primary-actions">
-          <button class="review-primary-action" type="button" :disabled="reviewActionDisabled" @click="emit('runReview')">
-            <span class="action-index">01</span>
-            <b>{{ reviewActionLabel }}</b>
-            <small>{{ reviewActionDescription }}</small>
-            <i>→</i>
-          </button>
           <button type="button" @click="emit('structure')">
-            <span class="action-index">02</span>
-            <b>浏览代码结构</b>
-            <small>查看文件、类、方法、注解和调用关系</small>
-            <i>→</i>
+            <span class="action-index">01</span>
+            <b>理解项目业务</b>
+            <small>先看项目用途、核心流程、接口与实现代码；文件结构在其中的独立标签下</small><i>→</i>
           </button>
           <button type="button" @click="emit('chat')">
-            <span class="action-index">03</span>
+            <span class="action-index">02</span>
             <b>向项目提问</b>
-            <small>多轮追问业务入口、调用链、配置和数据库关系</small>
-            <i>→</i>
+            <small>让 AI 结合真实代码解释业务，并支持连续追问</small><i>→</i>
+          </button>
+          <button class="review-primary-action" type="button" :disabled="reviewActionDisabled" @click="emit('runReview')">
+            <span class="action-index">03</span><b>{{ reviewActionLabel }}</b>
+            <small>{{ reviewActionDescription }}；检查导入分支最新一次提交的变更，并消耗模型 API 额度</small><i>→</i>
           </button>
         </div>
 
@@ -247,9 +251,9 @@ watch(
           </ol>
           <div class="question-examples">
             <span>可以先问</span>
-            <button type="button" @click="emit('search', 'Controller Service 项目的主要请求入口和核心业务流程在哪里？')">主要业务流程在哪里？</button>
-            <button type="button" @click="emit('search', 'Mapper Repository DATABASE_TABLE 数据访问和数据库表关系在哪里？')">数据如何持久化？</button>
-            <button type="button" @click="emit('search', 'test 测试 修改功能应该从哪些文件开始？')">修改功能从哪里开始？</button>
+            <button type="button" @click="emit('chat', '请先用通俗中文介绍这个项目的用途和主要业务流程，再给出关键接口和代码证据。')">主要业务流程在哪里？</button>
+            <button type="button" @click="emit('chat', '请解释这个项目如何保存业务数据，列出关键数据表与相关代码证据。')">数据如何持久化？</button>
+            <button type="button" @click="emit('chat', '我第一次接触这个项目，修改一个功能前应该按什么顺序阅读代码和测试？请给出证据。')">修改功能从哪里开始？</button>
           </div>
         </div>
       </section>

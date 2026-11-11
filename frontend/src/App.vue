@@ -12,6 +12,7 @@ import AiReviewModal from './components/AiReviewModal.vue'
 import ReviewEvaluationModal from './components/ReviewEvaluationModal.vue'
 import ModelConnectionModal from './components/ModelConnectionModal.vue'
 import AgentConversationModal from './components/AgentConversationModal.vue'
+import { modelConnectionApi } from './services/modelConnectionApi'
 import { ApiError, projectApi } from './services/projectApi'
 import { runProjectUnderstanding } from './services/projectUnderstandingWorkflow'
 import { clearAuthSession, getAuthSession, setAuthSession, subscribeAuthSession } from './services/authSession'
@@ -39,6 +40,8 @@ const aiReviewProject = ref<Project | null>(null)
 const evaluationProject = ref<Project | null>(null)
 const modelConnectionsOpen = ref(false)
 const conversationProject = ref<Project | null>(null)
+const conversationInitialQuestion = ref('')
+const importStage = ref('')
 const reviewingId = ref<string | null>(null)
 const reviewWorkflow = ref<ReviewWorkflow | undefined>()
 const authSession = ref<AuthSession | null>(getAuthSession())
@@ -76,7 +79,6 @@ function showSuccess(message: string) {
 
 async function loadProjects(page = 1) {
   loading.value = true
-  errorMessage.value = ''
   try {
     pageData.value = await projectApi.list({
       page,
@@ -162,9 +164,18 @@ async function rebuildSource(project: Project) {
 }
 
 async function understandProject(project: Project) {
+  if (workflowId.value) return
   workflowId.value = project.id
+  errorMessage.value = ''
+  successMessage.value = ''
   try {
-    const result = await runProjectUnderstanding(project.id)
+    const result = await runProjectUnderstanding(project.id, projectApi, (stage) => {
+      importStage.value = {
+        SOURCE_IMPORT: '第 1/2 步：读取仓库并解析源码，请保持页面打开。',
+        EMBEDDING: '第 2/2 步：源码已解析，正在建立检索索引。',
+        COMPLETED: '源码与检索索引已准备好。',
+      }[stage]
+    })
     showSuccess(
       `项目解析完成：识别 ${result.sourceImport.processedFiles} 个文件，建立 ${result.embeddingIndex.processedChunks} 个新检索索引`,
     )
@@ -178,19 +189,26 @@ async function understandProject(project: Project) {
     }
   } catch (error) {
     showError(error)
+    if (importStage.value.startsWith('第 2/2')) {
+      errorMessage.value = `源码已解析，但检索索引未完成：${errorMessage.value}。可重新解析继续建立索引，已成功的同版本源码会复用。`
+    }
     await loadProjects(pageData.value.page)
   } finally {
     workflowId.value = null
+    importStage.value = ''
   }
 }
 
 async function runReviewWorkflow(project: Project) {
+  if (reviewingId.value) return
   reviewingId.value = project.id
-  errorMessage.value = ''
-  successMessage.value = ''
-  startReviewStatusPolling(project, true)
   try {
+    if (!await ensureModel()) return
+    errorMessage.value = ''
+    successMessage.value = ''
+    startReviewStatusPolling(project, true)
     const result = await projectApi.createReviewWorkflow(project.id)
+    if (selectedProject.value?.id !== project.id) return
     reviewWorkflow.value = result
     if (result.status !== 'RUNNING') stopReviewStatusPolling()
     if (result.status === 'SUCCEEDED') {
@@ -208,6 +226,32 @@ async function runReviewWorkflow(project: Project) {
   } finally {
     reviewingId.value = null
   }
+}
+
+async function ensureModel() {
+  try {
+    const providers = await modelConnectionApi.list()
+    if (providers.some((item) => item.active && item.configured)) return true
+    errorMessage.value = '先连接一个大模型并测试连接，再使用 AI 问答或审查。源码导入和业务线索浏览可以先使用。'
+    modelConnectionsOpen.value = true
+  } catch (error) {
+    showError(error)
+  }
+  return false
+}
+
+async function openConversation(project: Project, initialQuestion = '') {
+  // Reading saved conversations does not require a configured or currently reachable model.
+  if (selectedProject.value?.id !== project.id) return
+  conversationInitialQuestion.value = initialQuestion
+  conversationProject.value = project
+}
+
+async function chatFromSource(question: string) {
+  const project = sourceProject.value
+  if (!project || selectedProject.value?.id !== project.id) return
+  await openConversation(project, question)
+  if (sourceProject.value?.id === project.id) sourceProject.value = null
 }
 
 async function loadLatestReviewWorkflow(project: Project) {
@@ -245,10 +289,12 @@ async function refreshReviewWorkflow(project: Project) {
 async function fetchLatestReviewWorkflow(project: Project, tolerateMissing: boolean) {
   try {
     const latest = await projectApi.latestReviewWorkflow(project.id)
+    if (selectedProject.value?.id !== project.id) return
     reviewWorkflow.value = latest
     if (latest.status !== 'RUNNING') stopReviewStatusPolling()
     return latest
   } catch (error) {
+    if (selectedProject.value?.id !== project.id) return
     if (error instanceof ApiError && error.status === 404) {
       if (!tolerateMissing) reviewWorkflow.value = undefined
       return
@@ -335,8 +381,11 @@ onUnmounted(() => {
       <nav>
         <button class="nav-item" :class="{ active: workspaceArea === 'projects' && !selectedProject }" type="button" @click="openProjectArea"><span>⌘</span>代码审查项目</button>
         <button v-if="selectedProject" class="nav-item active" type="button"><span>◎</span>审查工作台</button>
-        <button class="nav-item" :class="{ active: workspaceArea === 'generation' }" type="button" @click="openGenerationArea"><span>＋</span>生成项目（实验）</button>
         <button class="nav-item" type="button" @click="modelConnectionsOpen = true"><span>◇</span>大模型连接</button>
+        <details class="experimental-nav"><summary>实验功能</summary>
+          <p>项目生成目前仅完成需求澄清，暂不生成工程。</p>
+          <button class="nav-item" type="button" @click="openGenerationArea">生成项目（需求草案）</button>
+        </details>
       </nav>
       <div class="sidebar-footer">
         <span class="connection-dot"></span>
@@ -346,6 +395,9 @@ onUnmounted(() => {
     </aside>
 
     <main>
+      <div v-if="errorMessage" class="notice error" role="alert">{{ errorMessage }}</div>
+      <div v-if="successMessage" class="notice success" role="status">{{ successMessage }}</div>
+      <div v-if="workflowId" class="notice" role="status">{{ importStage }} 大型仓库可能需要更长时间；请勿重复提交。</div>
       <GenerationWorkspace v-if="workspaceArea === 'generation'" />
       <ProjectUnderstandingWorkspace
         v-else-if="selectedProject"
@@ -357,7 +409,7 @@ onUnmounted(() => {
         :review-workflow="reviewWorkflow?.projectId === selectedProject.id ? reviewWorkflow : undefined"
         @back="openProjectArea()"
         @structure="sourceProject = selectedProject"
-        @chat="conversationProject = selectedProject"
+        @chat="openConversation(selectedProject, $event)"
         @search="openRetrieval(selectedProject, $event)"
         @reparse="understandProject(selectedProject)"
         @rebuild="rebuildSource(selectedProject)"
@@ -374,8 +426,9 @@ onUnmounted(() => {
       <header class="topbar">
         <div>
           <p class="eyebrow">WORKSPACE / PROJECTS</p>
-          <h1>审查 Java 代码变更</h1>
-          <p>导入 Java 仓库，通过 Diff、静态分析、RAG 和 Agent 发现有证据的工程风险。</p>
+          <h1>理解 Java 项目，再检查代码变更</h1>
+          <p>① 导入仓库　② 查看业务与实现　③ 向 AI 追问　④ 审查代码变更</p>
+          <p>首次使用 AI？先在左侧“大模型连接”保存并测试自己的 API Key。</p>
         </div>
         <button class="button primary" type="button" @click="openCreate"><span>＋</span> 导入项目</button>
       </header>
@@ -406,8 +459,6 @@ onUnmounted(() => {
           <button class="icon-button" type="button" aria-label="刷新" :disabled="loading" @click="loadProjects(pageData.page)">↻</button>
         </div>
 
-        <div v-if="errorMessage" class="notice error" role="alert">{{ errorMessage }}</div>
-        <div v-if="successMessage" class="notice success" role="status">{{ successMessage }}</div>
 
         <div v-if="loading" class="state-box"><span class="loader"></span><p>正在加载项目…</p></div>
         <div v-else-if="!hasProjects" class="state-box empty">
@@ -430,7 +481,7 @@ onUnmounted(() => {
                 </td>
                 <td>
                   <span class="source-badge">{{ project.sourceType }}</span>
-                  <small class="branch">{{ project.defaultBranch || '—' }}</small>
+                  <small class="branch">{{ project.defaultBranch || '仓库默认分支' }}</small>
                   <small v-if="project.currentStructureVersion" class="branch">{{ project.currentStructureVersion }}</small>
                 </td>
                 <td><span class="status" :class="project.status.toLowerCase()"><i></i>{{ statusLabel[project.status] }}</span></td>
@@ -485,9 +536,12 @@ onUnmounted(() => {
       @submit="saveProject"
     />
     <SourceStructureModal
+      :key="sourceProject?.id || 'closed-source'"
       :open="sourceProject !== null"
       :project-id="sourceProject?.id"
       :project-name="sourceProject?.name"
+      @configure-model="modelConnectionsOpen = true"
+      @chat="chatFromSource"
       @close="sourceProject = null"
     />
     <DiffReportModal
@@ -523,9 +577,12 @@ onUnmounted(() => {
     />
     <ModelConnectionModal :open="modelConnectionsOpen" @close="modelConnectionsOpen = false" />
     <AgentConversationModal
+      :key="conversationProject?.id || 'closed-chat'"
       :open="conversationProject !== null"
       :project-id="conversationProject?.id"
       :project-name="conversationProject?.name"
+      :initial-question="conversationInitialQuestion"
+      @configure-model="conversationProject = null; modelConnectionsOpen = true"
       @close="conversationProject = null"
     />
   </div>

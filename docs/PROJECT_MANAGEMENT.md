@@ -14,7 +14,7 @@
 | `description` | 项目说明 | 可选，最长 500 个字符 |
 | `source_type` | 源码来源 | `LOCAL`、`GIT` 或 `UPLOAD`，默认 `LOCAL` |
 | `source_location` | 本地路径、仓库地址或上传文件位置 | Git 项目必填 |
-| `default_branch` | 默认分支 | 可选，例如 `main` |
+| `default_branch` | 要导入的分支 | 可选；留空跟随远程默认分支，例如显式指定 `main` |
 | `current_revision` | 当前已索引提交 | 建立代码索引后写入 |
 | `status` | 项目状态 | 创建时为 `CREATED` |
 | `deleted` | 逻辑删除标记 | 创建时为 `0` |

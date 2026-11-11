@@ -128,7 +128,7 @@ public class SourceImportStateService {
 
         String branch = StringUtils.hasText(project.getDefaultBranch())
                 ? project.getDefaultBranch().trim()
-                : "main";
+                : null;
         return new SourceImportContext(
                 projectId,
                 task.getId(),

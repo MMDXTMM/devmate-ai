@@ -61,74 +61,6 @@ public class ProjectBusinessMapService {
             "\\benum\\s+[\\w$]+[^\\{]*\\{([^;}]+)", Pattern.DOTALL
     );
     private static final Pattern ENUM_CONSTANT = Pattern.compile("\\b([A-Z][A-Z0-9_]*)\\b");
-    private static final Map<String, String> MODULE_NAMES = Map.ofEntries(
-            Map.entry("Auth", "用户认证"),
-            Map.entry("User", "用户账号、登录与签到"),
-            Map.entry("Blog", "探店笔记与互动"),
-            Map.entry("Shop", "商铺查询与维护"),
-            Map.entry("ShopType", "商铺分类查询"),
-            Map.entry("Upload", "探店图片管理"),
-            Map.entry("Voucher", "优惠券管理"),
-            Map.entry("VoucherOrder", "优惠券秒杀下单"),
-            Map.entry("Follow", "用户关注关系"),
-            Map.entry("Project", "项目管理"),
-            Map.entry("SourceImport", "源码导入"),
-            Map.entry("SourceStructure", "源码结构"),
-            Map.entry("ProjectBusinessMap", "项目业务地图"),
-            Map.entry("Retrieval", "代码知识检索"),
-            Map.entry("RetrievalEvaluation", "检索效果评测"),
-            Map.entry("EmbeddingIndex", "向量索引"),
-            Map.entry("ReviewWorkflow", "一键代码审查流程"),
-            Map.entry("ReviewDiff", "代码变更分析"),
-            Map.entry("StaticAnalysis", "静态代码检查"),
-            Map.entry("AiReview", "AI代码审查"),
-            Map.entry("ReviewFeedback", "审查反馈"),
-            Map.entry("ReviewEvaluation", "审查效果评测"),
-            Map.entry("Conversation", "对话管理"),
-            Map.entry("GenerationSession", "项目生成需求")
-    );
-    private static final Map<String, String> MODULE_GOALS = Map.ofEntries(
-            Map.entry("User", "用户可以获取验证码并登录，查看个人信息和完成每日签到。"),
-            Map.entry("Blog", "用户可以发布探店笔记、浏览热门或关注内容、点赞并查看互动用户。"),
-            Map.entry("Shop", "用户可以查询商铺详情或按分类浏览商铺，管理端可以维护商铺信息。"),
-            Map.entry("ShopType", "查询商铺分类，供首页展示和商铺筛选使用。"),
-            Map.entry("Upload", "为探店笔记上传图片，并删除不再使用的图片。"),
-            Map.entry("Voucher", "查询商铺优惠券，并创建普通优惠券或秒杀优惠券。"),
-            Map.entry("VoucherOrder", "校验秒杀资格、扣减库存并创建优惠券订单。"),
-            Map.entry("Follow", "关注或取消关注其他用户，并查询双方共同关注的人。")
-    );
-    private static final Map<String, String> BUSINESS_ACTION_NAMES = Map.ofEntries(
-            Map.entry("Blog#saveBlog", "发布探店笔记"),
-            Map.entry("Blog#queryHotBlog", "浏览热门探店笔记"),
-            Map.entry("Blog#likeBlog", "点赞或取消点赞探店笔记"),
-            Map.entry("Blog#queryBlogLikes", "查看笔记点赞用户"),
-            Map.entry("Blog#queryBlogOfFollow", "查看关注用户的新笔记"),
-            Map.entry("Blog#queryBlogById", "查看探店笔记详情"),
-            Map.entry("Blog#queryBlogOfMe", "查看我发布的探店笔记"),
-            Map.entry("Blog#queryBlogByUserId", "查看指定用户的探店笔记"),
-            Map.entry("User#sendCode", "发送登录验证码"),
-            Map.entry("User#login", "用户登录"),
-            Map.entry("User#logout", "退出登录"),
-            Map.entry("User#me", "查看当前用户信息"),
-            Map.entry("User#queryUserById", "查看其他用户信息"),
-            Map.entry("User#sign", "完成每日签到"),
-            Map.entry("User#signCount", "统计连续签到天数"),
-            Map.entry("Shop#queryById", "查看商铺详情"),
-            Map.entry("Shop#queryShopById", "查看商铺详情"),
-            Map.entry("Shop#updateShop", "更新商铺信息"),
-            Map.entry("Shop#queryShopByType", "按分类或距离浏览商铺"),
-            Map.entry("ShopType#queryTypeList", "查询商铺分类"),
-            Map.entry("Upload#uploadImage", "上传探店图片"),
-            Map.entry("Upload#deleteBlogImg", "删除探店图片"),
-            Map.entry("Voucher#queryVoucherOfShop", "查询商铺优惠券"),
-            Map.entry("Voucher#addVoucher", "创建普通优惠券"),
-            Map.entry("Voucher#addSeckillVoucher", "创建秒杀优惠券"),
-            Map.entry("VoucherOrder#seckillVoucher", "抢购优惠券并创建订单"),
-            Map.entry("Follow#follow", "关注或取消关注用户"),
-            Map.entry("Follow#isFollow", "查看是否已关注用户"),
-            Map.entry("Follow#followCommons", "查看共同关注")
-    );
-
     private final ProjectMapper projectMapper;
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
@@ -214,49 +146,19 @@ public class ProjectBusinessMapService {
             String projectDescription,
             String journeyScope
     ) {
-        Set<String> moduleKeys = modules.stream()
-                .map(module -> moduleKey(module.controllerSymbol()))
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        List<String> userActions = new ArrayList<>();
-        if (moduleKeys.contains("User")) userActions.add("登录、查看个人信息和签到");
-        if (moduleKeys.contains("Shop") || moduleKeys.contains("ShopType")) userActions.add("浏览商铺及分类");
-        if (moduleKeys.contains("Blog")) userActions.add("发布、浏览和点赞探店笔记");
-        if (moduleKeys.contains("Follow")) userActions.add("关注其他用户");
-        if (moduleKeys.contains("Voucher")) userActions.add("查询和管理优惠券");
-        if (moduleKeys.contains("VoucherOrder")) userActions.add("参与优惠券秒杀并下单");
-        if (userActions.size() >= 3) {
-            String title = projectDescription.isBlank() ? context.project().getName() : projectDescription;
-            return title + "。从接口证据可以还原出本地生活探店主线：用户可以"
-                    + String.join("、", userActions) + "。";
-        }
         if (!projectDescription.isBlank()) {
             return projectDescription
-                    + (journeyScope.isBlank() ? "" : "。源码证据显示核心流程覆盖 " + journeyScope + " 等能力。");
+                    + (journeyScope.isBlank() ? "" : "。已识别的接口线索包括 " + journeyScope + "；具体业务含义需结合实现和 AI 报告确认。");
         }
         return journeyScope.isBlank()
                 ? context.project().getName() + " 的业务目标尚未在项目描述或可解析接口中明确。"
-                : context.project().getName() + " 主要覆盖 " + journeyScope + " 等能力。";
+                : context.project().getName() + " 的接口线索包括 " + journeyScope + "；具体业务含义需结合实现和 AI 报告确认。";
     }
 
     private int journeyPriority(BusinessModuleResponse module) {
         int score = module.features().stream()
                 .mapToInt(feature -> feature.implementationSteps() * 3 + (feature.accessesData() ? 10 : 0))
                 .max().orElse(0) + module.features().size();
-        String controller = simpleSymbol(module.controllerSymbol());
-        score += switch (controller) {
-            case "ProjectController" -> 200;
-            case "SourceImportController" -> 180;
-            case "EmbeddingIndexController" -> 160;
-            case "ReviewDiffController" -> 140;
-            case "StaticAnalysisController" -> 120;
-            case "AiReviewController" -> 100;
-            case "ReviewFeedbackController" -> 80;
-            case "AuthController" -> 60;
-            default -> 0;
-        };
-        if (controller.matches(".*(Project|SourceImport|ReviewWorkflow|AiReview|Auth)Controller")) score += 25;
-        if (controller.matches(".*(ReviewDiff|StaticAnalysis|EmbeddingIndex)Controller")) score += 15;
-        if (controller.matches(".*(Evaluation|Structure|Context|BusinessMap)Controller")) score -= 15;
         return score;
     }
 
@@ -281,9 +183,9 @@ public class ProjectBusinessMapService {
                 .toList();
         List<String> failureSignals = failureSignals(implementation);
         List<String> featureNames = module.features().stream().map(BusinessFeatureResponse::name).limit(4).toList();
-        String goal = MODULE_GOALS.getOrDefault(moduleKey(module.controllerSymbol()), featureNames.isEmpty()
+        String goal = featureNames.isEmpty()
                 ? "当前只识别到模块入口，具体业务目标仍需确认。"
-                : "用户可以" + String.join("、", featureNames) + "。具体规则可继续查看接口与实现代码。");
+                : "用户可以" + String.join("、", featureNames) + "。以上为接口线索，业务含义请结合 AI 报告和实现确认。";
         List<String> files = implementation.stream()
                 .map(chunk -> context.documentsById().get(chunk.getDocumentId()))
                 .filter(Objects::nonNull)
@@ -545,8 +447,7 @@ public class ProjectBusinessMapService {
         List<BusinessModuleResponse> modules = new ArrayList<>();
         for (List<ControllerEndpoint> endpoints : grouped.values()) {
             ControllerEndpoint first = endpoints.getFirst();
-            String moduleName = moduleName(first.controller().getSymbolName());
-            String moduleKey = moduleKey(first.controller().getSymbolName());
+            String moduleName = moduleName(first.controller());
             List<BusinessFeatureResponse> features = endpoints.stream()
                     .map(endpoint -> {
                         List<KnowledgeChunk> implementation = collectImplementation(context, endpoint.method());
@@ -559,8 +460,7 @@ public class ProjectBusinessMapService {
             modules.add(new BusinessModuleResponse(
                     String.valueOf(first.controller().getId()),
                     moduleName,
-                    MODULE_GOALS.getOrDefault(moduleKey,
-                            moduleName + "包含 " + features.size() + " 个可访问接口入口。"),
+                    moduleName + "包含 " + features.size() + " 个可访问接口入口；名称来自源码声明或标识符，具体业务规则尚需确认。",
                     first.controller().getSymbolName(),
                     first.document().getFilePath(),
                     first.controller().getStartLine(),
@@ -577,12 +477,12 @@ public class ProjectBusinessMapService {
             List<KnowledgeChunk> implementation,
             boolean accessesData
     ) {
-        String moduleName = moduleName(endpoint.controller().getSymbolName());
-        String moduleKey = moduleKey(endpoint.controller().getSymbolName());
+        String moduleName = moduleName(endpoint.controller());
         String methodName = methodName(endpoint.method().getSymbolName());
         return new BusinessFeatureResponse(
                 endpoint.method().getId(),
-                featureName(moduleKey, moduleName, methodName, endpoint.mapping().methods()),
+                documentedName(endpoint.method(), "Operation", "summary",
+                        featureName(moduleName, methodName, endpoint.mapping().methods())),
                 "通过 " + String.join("/", endpoint.mapping().methods()) + " " + endpoint.mapping().path()
                         + " 进入 " + simpleSymbol(endpoint.method().getSymbolName()) + "。",
                 endpoint.mapping().methods(),
@@ -882,18 +782,25 @@ public class ProjectBusinessMapService {
                 : combined;
     }
 
-    private String moduleName(String controllerSymbol) {
-        String key = moduleKey(controllerSymbol);
-        return MODULE_NAMES.getOrDefault(key, splitCamelCase(key) + "业务");
+    private String moduleName(KnowledgeChunk controller) {
+        return documentedName(controller, "Tag", "name", splitCamelCase(moduleKey(controller.getSymbolName())) + "接口");
+    }
+
+    private String documentedName(KnowledgeChunk chunk, String annotation, String attribute, String fallback) {
+        String header = "CLASS".equals(chunk.getChunkType())
+                ? classHeader(value(chunk.getContent()), simpleSymbol(chunk.getSymbolName()))
+                : value(chunk.getContent()).split("\\{", 2)[0];
+        Matcher matcher = Pattern.compile("@(?:[\\w]+\\.)*" + annotation
+                + "\\s*\\([^)]*?\\b" + attribute + "\\s*=\\s*\"([^\"\\r\\n]{1,120})\"")
+                .matcher(header);
+        return matcher.find() ? matcher.group(1) : fallback;
     }
 
     private String moduleKey(String controllerSymbol) {
         return simpleSymbol(controllerSymbol).replaceFirst("Controller$", "");
     }
 
-    private String featureName(String moduleKey, String module, String methodName, List<String> httpMethods) {
-        String businessAction = BUSINESS_ACTION_NAMES.get(moduleKey + "#" + methodName);
-        if (businessAction != null) return businessAction;
+    private String featureName(String module, String methodName, List<String> httpMethods) {
         String lower = methodName.toLowerCase(Locale.ROOT);
         if (lower.contains("login")) return "用户登录";
         if (lower.contains("register")) return "用户注册";

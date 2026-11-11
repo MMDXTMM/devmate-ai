@@ -114,6 +114,18 @@ public class ProjectUnderstandingReportStateService {
                 .last("LIMIT 1"));
     }
 
+    @Transactional(readOnly = true)
+    public ProjectUnderstandingReport latestSuccessfulForUser(Long projectId, String revision) {
+        return reportMapper.selectOne(Wrappers.lambdaQuery(ProjectUnderstandingReport.class)
+                .eq(ProjectUnderstandingReport::getProjectId, projectId)
+                .eq(ProjectUnderstandingReport::getUserId, currentUserService.getRequiredUser().id())
+                .eq(ProjectUnderstandingReport::getRevision, revision)
+                .eq(ProjectUnderstandingReport::getStatus, "SUCCEEDED")
+                .orderByDesc(ProjectUnderstandingReport::getCreatedAt)
+                .orderByDesc(ProjectUnderstandingReport::getId)
+                .last("LIMIT 1"));
+    }
+
     private ProjectUnderstandingReport byAttempt(Long userId, String attemptKey) {
         return reportMapper.selectOne(Wrappers.lambdaQuery(ProjectUnderstandingReport.class)
                 .eq(ProjectUnderstandingReport::getUserId, userId)

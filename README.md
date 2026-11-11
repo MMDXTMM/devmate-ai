@@ -40,7 +40,7 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 项目理解与代码审�
 → 找到业务入口和继续开发范围
 ```
 
-“向项目提问”会创建固定项目版本和模型的持久化对话。每一轮先执行 Hybrid RAG，再通过 Spring AI 流式调用模型，并以 SSE 增量展示回答和真实文件/行号证据；刷新页面后仍可继续追问。MCP 只读工具服务属于下一闭环，尚未作为已完成功能发布，设计见 [多轮项目 Agent、SSE 与 MCP](docs/PROJECT_CONVERSATION_SSE_AND_MCP.md)。
+“向项目提问”会创建固定项目版本和模型的持久化对话。每一轮根据已保存报告的业务线索定位真实代码，未匹配时执行 Hybrid RAG，再通过 Spring AI 流式调用模型，并以 SSE 逐字展示回答和真实文件/行号证据；历史可按标题查找，刷新或关闭后仍可继续追问。也可从报告中的某条业务直接进入聊天。MCP 只读工具服务属于下一闭环，尚未作为已完成功能发布，设计见 [多轮项目 Agent、SSE 与 MCP](docs/PROJECT_CONVERSATION_SSE_AND_MCP.md)。
 
 ## 当前已具备
 
@@ -86,7 +86,7 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 项目理解与代码审�
 - Spring AI Tool Calling 多轮协议与 Java 受控工具执行器
 - DeepSeek、通义千问和 OpenAI 模型连接中心，支持账户级加密配置、模型切换和显式连接测试
 - Spring AI 中文项目深度报告，包含核心业务流程、阅读顺序、风险边界和服务端回填的真实代码证据
-- 项目版本固定的持久化多轮对话、每轮 Hybrid RAG 与 Spring AI 流式回答
+- 项目版本固定的持久化多轮对话、业务报告辅助代码检索与 Spring AI 流式逐字回答
 - 基于 POST + JWT 的 SSE 事件流、代码证据展示、失败落库和网络重试幂等
 - 项目版本固定、证据 ID 白名单、付费请求幂等、并发限制、超时恢复及 Token/耗时审计
 - Diff、静态分析、代码检索和项目结构四个只读 Tool
@@ -103,18 +103,33 @@ DevMate AI 当前聚焦为一个**基于 RAG 的 Java 项目理解与代码审�
 
 ## 快速启动
 
-本机需要 JDK 21 或更高版本。
+本机需要 JDK 21 或更高版本，以及一个本地 MySQL。
+
+推荐直接运行一键启动脚本（兼容 sh / bash / zsh）：
+
+```bash
+./scripts/start-local.sh
+```
+
+脚本会在启动前依次检查 JDK 版本、本地数据库配置和数据库端口，并在缺少配置时自动从
+`application-local.yml.example` 生成 `application-local.yml`。不满足的前置条件会给出中文提示和
+可直接执行的修复命令，而不是直接抛出 Java 异常栈。启动成功后终端会打印健康检查、接口文档地址
+和前端启动命令。
+
+首次运行会在 Git 忽略且仅当前用户可读的 `.devmate-local-secrets` 中生成稳定的 JWT 和模型加密
+密钥，后续重启继续复用，避免已保存的模型 API Key 因加密主密钥变化而失效。脚本首次运行还会以
+隐藏输入方式询问本机 MySQL 密码并保存在同一文件中。该文件不能提交或分享。
+
+如果本机 MySQL 不在默认的 3306 端口（例如使用 3307），请先修改 `application-local.yml` 中的
+`jdbc:mysql://localhost:3306/devmate`；脚本会按该文件里的真实端口做连通性检查。
+
+也可以手动注入环境变量后启动：
 
 ```bash
 export DEVMATE_JWT_SECRET='<at-least-32-random-characters>'
 export DEVMATE_MODEL_ENCRYPTION_SECRET='<another-stable-32-character-secret>'
 ./mvnw spring-boot:run
 ```
-
-本地也可以直接运行 `./scripts/start-local.sh`。首次运行会在 Git 忽略且仅当前用户可读的
-`.devmate-local-secrets` 中生成稳定的 JWT 和模型加密密钥，后续重启继续复用，避免已保存的模型
-API Key 因加密主密钥变化而失效。脚本首次运行还会以隐藏输入方式询问本机 MySQL 密码并保存在
-同一文件中。该文件不能提交或分享。
 
 默认激活 `local` Profile 并连接本机 MySQL。数据库连接信息保存在不会提交 Git 的 `application-local.yml`；安全默认开启，JWT 和模型 API Key 加密密钥都必须至少 32 个字符、通过环境注入且不能写入 Git。`DEVMATE_MODEL_ENCRYPTION_SECRET` 必须长期保持稳定，否则已保存的模型 Key 需要重新填写。访问：
 
@@ -170,10 +185,10 @@ cp src/main/resources/application-local.yml.example \
    src/main/resources/application-local.yml
 ```
 
-3. 修改本机数据库账号密码，然后直接启动：
+3. 修改本机数据库账号、密码和端口（模板默认 `3306`），然后启动：
 
 ```bash
-./mvnw spring-boot:run
+./scripts/start-local.sh
 ```
 
 `application-local.yml` 已被 Git 忽略；两台电脑可以拥有各自的数据库密码。数据库结构由 `src/main/resources/db/migration` 中的 Flyway 脚本同步，而不是提交数据库文件。

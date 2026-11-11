@@ -24,6 +24,13 @@ function errorMessage(message: string, requestId?: string): string {
   return requestId ? `${message}（请求ID：${requestId}）` : message
 }
 
+function unreadableResponseMessage(status: number): string {
+  if ([502, 503, 504].includes(status)) {
+    return '后端服务暂不可用，请确认 Spring Boot 已启动后重试'
+  }
+  return `后端返回了无法解析的响应（HTTP ${status}）`
+}
+
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const session = getAuthSession()
   let response: Response
@@ -46,7 +53,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     body = (await response.json()) as ApiResponse<T>
   } catch {
     throw new ApiError(
-      errorMessage('后端返回了无法解析的响应', requestId),
+      errorMessage(unreadableResponseMessage(response.status), requestId),
       undefined,
       response.status,
       requestId,

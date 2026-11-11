@@ -78,6 +78,9 @@ class ModelConnectionServiceTest {
     void rejectsUnknownModelAndMissingKey() {
         loginAs(8101L, "model-user-a");
         assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest(
+                "COMPATIBLE", "unconfigured-model", "test-key"
+        ))).isInstanceOf(BusinessException.class).hasMessage("暂不支持该模型提供方");
+        assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest(
                 "DEEPSEEK", "old-model", "secret"
         ))).isInstanceOf(BusinessException.class).hasMessage("所选模型不属于当前提供方");
         assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest(

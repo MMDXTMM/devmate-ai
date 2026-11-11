@@ -1,7 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
-import { projectApi } from './services/projectApi'
+import { modelConnectionApi } from './services/modelConnectionApi'
+import { ApiError, projectApi } from './services/projectApi'
 import { setAuthSession } from './services/authSession'
 import type { Project } from './types/project'
 
@@ -99,6 +100,9 @@ describe('App project entry', () => {
     vi.spyOn(projectApi, 'list').mockResolvedValue({
       page: 1, size: 10, total: 1, pages: 1, items: [project],
     })
+    vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([{
+      provider: 'DEEPSEEK', displayName: 'DeepSeek', baseUrl: '', models: [], selectedModel: 'test', active: true, configured: true,
+    }])
     vi.spyOn(projectApi, 'createReviewWorkflow').mockResolvedValue({
       id: '30', projectId: project.id, attemptKey: '123e4567-e89b-42d3-a456-426614174000',
       status: 'SUCCEEDED', currentStage: 'COMPLETED', aiReviewTaskId: '31',
@@ -123,5 +127,73 @@ describe('App project entry', () => {
 
     expect(projectApi.createReviewWorkflow).toHaveBeenCalledWith(project.id)
     expect(wrapper.get('[data-testid="ai-review-report"]').exists()).toBe(true)
+  })
+})
+
+const project: Project = { id: '10', name: '示例项目', sourceType: 'GIT', status: 'READY',
+  sourceLocation: 'https://github.com/example/demo.git', currentRevision: 'abc', createdAt: '', updatedAt: '' }
+const stubs = ['GenerationWorkspace', 'ProjectFormModal', 'ProjectUnderstandingWorkspace', 'SourceStructureModal',
+  'DiffReportModal', 'StaticAnalysisModal', 'RetrievalModal', 'AiReviewModal', 'ReviewEvaluationModal',
+  'ModelConnectionModal', 'AgentConversationModal']
+async function openWorkspace() {
+  setAuthSession({ accessToken: 'test-session', tokenType: 'Bearer', expiresAt: '2099-01-01T00:00:00Z', user: { id: '1', username: 'test' } })
+  vi.spyOn(projectApi, 'list').mockResolvedValue({ page: 1, size: 10, total: 1, pages: 1, items: [project] })
+  vi.spyOn(projectApi, 'latestReviewWorkflow').mockRejectedValue(new ApiError('暂无审查', undefined, 404))
+  const wrapper = mount(App, { global: { stubs } })
+  await flushPromises()
+  await wrapper.get('.open-workspace').trigger('click')
+  await flushPromises()
+  return wrapper
+}
+
+describe('App beginner workflow', () => {
+  it('shows model setup and visible errors from inside the selected workspace', async () => {
+    const wrapper = await openWorkspace()
+    vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([])
+    const create = vi.spyOn(projectApi, 'createReviewWorkflow')
+    wrapper.findComponent({ name: 'ProjectUnderstandingWorkspace' }).vm.$emit('runReview')
+    await flushPromises()
+    expect(wrapper.get('main > [role="alert"]').text()).toContain('先连接一个大模型')
+    expect(wrapper.findComponent({ name: 'ModelConnectionModal' }).props('open')).toBe(true)
+    expect(create).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('opens a suggested question in the conversation without sending it automatically', async () => {
+    const wrapper = await openWorkspace()
+    vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([{
+      provider: 'DEEPSEEK', displayName: 'DeepSeek', baseUrl: '', models: [], selectedModel: 'test', active: true, configured: true,
+    }])
+    wrapper.findComponent({ name: 'ProjectUnderstandingWorkspace' }).vm.$emit('chat', '核心业务有哪些？')
+    await flushPromises()
+    const modal = wrapper.findComponent({ name: 'AgentConversationModal' })
+    expect(modal.props('open')).toBe(true)
+    expect(modal.props('initialQuestion')).toBe('核心业务有哪些？')
+    wrapper.unmount()
+  })
+
+  it('allows saved chat history without a model connection and passes a report topic into chat', async () => {
+    const wrapper = await openWorkspace()
+    const listModels = vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([])
+    wrapper.findComponent({ name: 'ProjectUnderstandingWorkspace' }).vm.$emit('structure')
+    await flushPromises()
+    wrapper.findComponent({ name: 'SourceStructureModal' }).vm.$emit('chat', '讲解创建项目业务')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'SourceStructureModal' }).props('open')).toBe(false)
+    expect(wrapper.findComponent({ name: 'AgentConversationModal' }).props('open')).toBe(true)
+    expect(wrapper.findComponent({ name: 'AgentConversationModal' }).props('initialQuestion')).toBe('讲解创建项目业务')
+    expect(listModels).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the indexing failure visible after refreshing project metadata', async () => {
+    const wrapper = await openWorkspace()
+    vi.spyOn(projectApi, 'importSource').mockResolvedValue({ status: 'SUCCEEDED', revision: 'abc' } as never)
+    vi.spyOn(projectApi, 'indexEmbeddings').mockRejectedValue(new ApiError('索引服务暂不可用'))
+    wrapper.findComponent({ name: 'ProjectUnderstandingWorkspace' }).vm.$emit('reparse')
+    await flushPromises()
+    expect(wrapper.get('main > [role="alert"]').text()).toContain('源码已解析，但检索索引未完成')
+    expect(wrapper.get('main > [role="alert"]').text()).toContain('索引服务暂不可用')
+    wrapper.unmount()
   })
 })
