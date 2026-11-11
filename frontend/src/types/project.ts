@@ -72,7 +72,7 @@ export interface SourceDocument {
   id: string
   fileName: string
   filePath: string
-  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA'
+  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA' | 'DOCUMENTATION'
   fileType: 'JAVA' | 'YAML' | 'PROPERTIES' | 'SQL'
   packageName?: string
   revision: string
@@ -82,6 +82,7 @@ export interface SourceDocument {
 }
 
 export type SourceSymbolType =
+  | 'TEXT_EXCERPT'
   | 'FILE_HEADER'
   | 'IMPORT'
   | 'CLASS'
@@ -207,7 +208,32 @@ export interface ProjectUnderstandingReading {
   evidence: ProjectUnderstandingEvidence[]
 }
 
+export type GuideConclusion = 'OBSERVED' | 'INFERRED' | 'UNKNOWN'
+export type GuideImplementation = 'IMPLEMENTED' | 'PARTIAL' | 'PLANNED' | 'UNCLEAR'
+export interface GuideClaim { text: string; conclusionStatus: GuideConclusion; evidenceIds: string[] }
+export interface GuideModule {
+  id: string; name: string; responsibility: string; capabilities: string[]; input: string; output: string
+  relatedModuleIds: string[]; conclusionStatus: GuideConclusion; implementationStatus: GuideImplementation; evidenceIds: string[]
+}
+export interface GuideFlow {
+  id: string; name: string; goal: string; actors: string[]; trigger: string; moduleIds: string[]
+  steps: { action: string; input: string; result: string; moduleIds: string[]; conclusionStatus: GuideConclusion; evidenceIds: string[] }[]
+  rules: GuideClaim[]; outcomes: GuideClaim[]; unknowns: string[]
+}
+export interface ProjectGuide {
+  schemaVersion: 'project-guide-v1'
+  snapshot: { revision: string; contentDigest: string; readPolicy: string }
+  content: {
+    project: { name: string; type: string; purpose: string; audience: string; input: string; output: string; scenario: string
+      conclusionStatus: GuideConclusion; implementationStatus: GuideImplementation; evidenceIds: string[] }
+    modules: GuideModule[]; flows: GuideFlow[]; glossary: { term: string; explanation: string }[]; openQuestions: string[]
+  }
+  coverage: { indexedFiles: number; readFiles: number; readChunks: number; readCharacters: number; maxChunks: number; maxCharacters: number; limitations: string[] }
+  evidence: { id: string; sourceKind: string; revision: string; symbolName: string; filePath: string; startLine: number; endLine: number; code: string; truncated: boolean }[]
+}
+
 export interface ProjectUnderstandingReport {
+  guide?: ProjectGuide | null
   id: string
   projectId: string
   revision: string
@@ -579,7 +605,7 @@ export interface RetrievalHit {
   chunkId: string
   documentId: string
   filePath: string
-  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA'
+  sourceKind: 'SOURCE_CODE' | 'CONFIGURATION' | 'DATABASE_SCHEMA' | 'DOCUMENTATION'
   chunkType: SourceSymbolType
   symbolName?: string
   startLine?: number

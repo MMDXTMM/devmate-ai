@@ -109,6 +109,7 @@ public class ProjectUnderstandingReportStateService {
     public ProjectUnderstandingReport latest(Long projectId) {
         return reportMapper.selectOne(Wrappers.lambdaQuery(ProjectUnderstandingReport.class)
                 .eq(ProjectUnderstandingReport::getProjectId, projectId)
+                .eq(ProjectUnderstandingReport::getUserId, currentUserService.getRequiredUser().id())
                 .orderByDesc(ProjectUnderstandingReport::getCreatedAt)
                 .orderByDesc(ProjectUnderstandingReport::getId)
                 .last("LIMIT 1"));

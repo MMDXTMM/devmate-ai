@@ -15,6 +15,7 @@ import com.devmate.knowledge.dto.BusinessFeatureResponse;
 import com.devmate.knowledge.dto.BusinessModuleResponse;
 import com.devmate.knowledge.dto.CreateProjectUnderstandingReportRequest;
 import com.devmate.knowledge.dto.ProjectBusinessMapResponse;
+import com.devmate.knowledge.dto.ProjectGuide;
 import com.devmate.knowledge.dto.ProjectUnderstandingEvidenceResponse;
 import com.devmate.knowledge.dto.ProjectUnderstandingFlowResponse;
 import com.devmate.knowledge.dto.ProjectUnderstandingReadingResponse;
@@ -68,6 +69,7 @@ public class ProjectUnderstandingReportService {
     private final KnowledgeChunkMapper chunkMapper;
     private final KnowledgeDocumentMapper documentMapper;
     private final ObjectMapper objectMapper;
+    private final ProjectGuideEvidenceService guideEvidenceService;
 
     public ProjectUnderstandingReportService(
             ProjectAccessService accessService,
@@ -77,7 +79,8 @@ public class ProjectUnderstandingReportService {
             ProjectUnderstandingReportStateService stateService,
             KnowledgeChunkMapper chunkMapper,
             KnowledgeDocumentMapper documentMapper,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ProjectGuideEvidenceService guideEvidenceService
     ) {
         this.accessService = accessService;
         this.businessMapService = businessMapService;
@@ -87,6 +90,7 @@ public class ProjectUnderstandingReportService {
         this.chunkMapper = chunkMapper;
         this.documentMapper = documentMapper;
         this.objectMapper = objectMapper;
+        this.guideEvidenceService = guideEvidenceService;
     }
 
     public ProjectUnderstandingReportResponse create(
@@ -98,7 +102,11 @@ public class ProjectUnderstandingReportService {
         if (!Objects.equals(request.revision(), businessMap.revision())) {
             throw new BusinessException(ErrorCode.CONFLICT, "项目源码版本已变化，请刷新后重新生成报告");
         }
-        LinkedHashMap<String, EvidenceInput> evidence = collectEvidence(projectId, businessMap);
+        boolean guideMode = "project-guide-v1".equals(properties.getPromptVersion());
+        ProjectGuideEvidenceService.Sample sample = guideMode ? guideEvidenceService.sample(projectId, request.revision()) : null;
+        LinkedHashMap<String, EvidenceInput> evidence = guideMode ? new LinkedHashMap<>() : collectEvidence(projectId, businessMap);
+        if (sample != null) sample.evidence().forEach(item -> evidence.put(item.id(), new EvidenceInput(item.id(),
+                item.symbolName(), item.filePath(), item.startLine(), item.endLine(), item.sourceKind(), item.code())));
         if (evidence.isEmpty()) {
             throw new BusinessException(ErrorCode.CONFLICT, "当前解析结果没有足够的业务代码证据");
         }
@@ -110,8 +118,9 @@ public class ProjectUnderstandingReportService {
         if (prepared.reused()) return response(prepared.report());
         long startedAt = System.nanoTime();
         try {
-            ProjectUnderstandingPrompt prompt = buildPrompt(businessMap, evidence.values());
-            ProjectUnderstandingModelResult normalized = validate(model.analyze(prompt), evidence.keySet());
+            ProjectUnderstandingPrompt prompt = guideMode ? guidePrompt(sample) : buildPrompt(businessMap, evidence.values());
+            ProjectUnderstandingModelResult raw = model.analyze(prompt);
+            ProjectUnderstandingModelResult normalized = guideMode ? validateGuide(raw, sample) : validate(raw, evidence.keySet());
             ProjectUnderstandingReport completed = stateService.complete(
                     prepared.report().getId(), objectMapper.writeValueAsString(normalized),
                     normalized.promptTokens(), normalized.completionTokens(), normalized.totalTokens(),
@@ -149,13 +158,69 @@ public class ProjectUnderstandingReportService {
         accessService.requireMember(projectId);
         ProjectUnderstandingReport report = stateService.latestSuccessfulForUser(projectId, revision);
         if (report == null) return List.of();
-        List<ProjectUnderstandingFlowResponse> matched = BusinessFlowQueryMatcher.match(query, response(report).businessFlows());
+        var saved = response(report);
+        List<ProjectUnderstandingFlowResponse> topics = new ArrayList<>(saved.businessFlows());
+        if (saved.guide() != null) {
+            var byId = saved.guide().evidence().stream().collect(java.util.stream.Collectors.toMap(
+                    ProjectGuide.Evidence::id, item -> item));
+            saved.guide().content().modules().forEach(module -> topics.add(new ProjectUnderstandingFlowResponse(
+                    module.name(), module.responsibility(), module.capabilities(), module.capabilities(), List.of(),
+                    module.evidenceIds().stream().map(byId::get).filter(Objects::nonNull).map(item ->
+                            new ProjectUnderstandingEvidenceResponse(item.id(), item.symbolName(), item.filePath(),
+                                    item.startLine(), item.endLine(), item.code(), item.truncated())).toList())));
+        }
+        List<ProjectUnderstandingFlowResponse> matched = BusinessFlowQueryMatcher.match(query, topics);
         LinkedHashSet<Long> ids = new LinkedHashSet<>();
         // First take one code entry per flow for overview questions, then fill supporting code.
         matched.forEach(flow -> flow.evidence().stream().findFirst()
                 .ifPresent(evidence -> ids.add(Long.valueOf(evidence.chunkId()))));
         matched.forEach(flow -> flow.evidence().forEach(evidence -> ids.add(Long.valueOf(evidence.chunkId()))));
         return ids.stream().limit(6).toList();
+    }
+
+    private ProjectUnderstandingPrompt guidePrompt(ProjectGuideEvidenceService.Sample sample) throws JsonProcessingException {
+        try {
+            String system = new org.springframework.core.io.ClassPathResource("prompts/project-guide-v1.txt")
+                    .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            return new ProjectUnderstandingPrompt(system, "宿主快照：" + objectMapper.writeValueAsString(sample.snapshot())
+                    + "\n已索引目录（不是全部已读）：" + objectMapper.writeValueAsString(sample.indexedPaths().stream().limit(150).toList())
+                    + "\n真实读取范围：" + objectMapper.writeValueAsString(sample.coverage())
+                    + "\n本轮已读取证据：" + objectMapper.writeValueAsString(sample.evidence()));
+        } catch (java.io.IOException exception) { throw new AiReviewException("项目导览提示词读取失败"); }
+    }
+
+    private ProjectUnderstandingModelResult validateGuide(ProjectUnderstandingModelResult raw,
+                                                          ProjectGuideEvidenceService.Sample sample) {
+        if (raw == null || raw.guide() == null) throw new AiReviewException("模型没有返回新版项目导览契约");
+        var guide = ProjectGuideValidator.validate(raw.guide().content(), sample);
+        var flows = guide.content().flows().stream().map(flow -> {
+            var ids = new LinkedHashSet<String>();
+            flow.steps().forEach(step -> ids.addAll(step.evidenceIds()));
+            flow.rules().forEach(rule -> ids.addAll(rule.evidenceIds()));
+            flow.outcomes().forEach(outcome -> ids.addAll(outcome.evidenceIds()));
+            return new ProjectUnderstandingModelResult.BusinessFlow(flow.name(), flow.goal(),
+                    flow.steps().stream().map(step -> step.action() + " → " + step.result()).toList(), List.of(),
+                    flow.outcomes().stream().map(ProjectGuide.Claim::text).toList(), List.copyOf(ids));
+        }).toList();
+        // Store references and host metadata, not duplicate source code in report_json.
+        var storedEvidence = guide.evidence().stream().map(item -> new ProjectGuide.Evidence(
+                item.id(), item.sourceKind(), item.revision(), item.symbolName(), item.filePath(), item.startLine(),
+                item.endLine(), null, item.truncated())).toList();
+        var stored = new ProjectGuide(guide.schemaVersion(), guide.snapshot(), guide.content(),
+                guide.coverage(), storedEvidence);
+        return new ProjectUnderstandingModelResult(guide.content().project().purpose(), guide.content().project().scenario(),
+                flows, List.of(), guide.content().openQuestions(), raw.promptTokens(), raw.completionTokens(), raw.totalTokens(), stored);
+    }
+
+    private ProjectGuide hydrateGuide(ProjectGuide guide,
+            Map<String, ProjectUnderstandingEvidenceResponse> evidence) {
+        if (guide == null) return null;
+        var items = guide.evidence().stream().filter(item -> evidence.containsKey(item.id())).map(item -> {
+            var actual = evidence.get(item.id());
+            return new ProjectGuide.Evidence(item.id(), item.sourceKind(), item.revision(),
+                    actual.symbolName(), actual.filePath(), actual.startLine(), actual.endLine(), actual.code(), actual.truncated());
+        }).toList();
+        return new ProjectGuide(guide.schemaVersion(), guide.snapshot(), guide.content(), guide.coverage(), items);
     }
 
     private void logFailure(Long projectId, Long reportId, Exception exception) {
@@ -271,7 +336,7 @@ public class ProjectUnderstandingReportService {
                 result == null ? List.of() : result.risksAndUnknowns(),
                 report.getPromptTokens(), report.getCompletionTokens(), report.getTotalTokens(),
                 report.getLatencyMs(), report.getErrorMessage(), report.getAttemptKey(),
-                report.getCreatedAt(), report.getFinishedAt()
+                report.getCreatedAt(), report.getFinishedAt(), result == null ? null : hydrateGuide(result.guide(), evidence)
         );
     }
 
@@ -317,6 +382,7 @@ public class ProjectUnderstandingReportService {
         Set<String> ids = new LinkedHashSet<>();
         result.businessFlows().forEach(flow -> ids.addAll(flow.evidenceIds()));
         result.readingGuide().forEach(item -> ids.addAll(item.evidenceIds()));
+        if (result.guide() != null) result.guide().evidence().forEach(item -> ids.add(item.id()));
         return ids;
     }
 

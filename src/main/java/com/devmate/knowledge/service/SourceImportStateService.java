@@ -493,7 +493,9 @@ public class SourceImportStateService {
             document.setCreatedAt(now);
         }
         document.setSourceKind(switch (file.fileType()) {
-            case JAVA -> "SOURCE_CODE";
+            case JAVA, TEXT -> "SOURCE_CODE";
+            case DOCUMENTATION -> "DOCUMENTATION";
+            case MANIFEST -> "CONFIGURATION";
             case YAML, PROPERTIES -> "CONFIGURATION";
             case SQL -> "DATABASE_SCHEMA";
         });

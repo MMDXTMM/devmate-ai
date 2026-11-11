@@ -108,7 +108,9 @@ V21 增加新项目生成前的需求澄清事实源，与导入已有仓库使�
 - `prompt_tokens/completion_tokens/total_tokens/latency_ms`：用于成本与性能审计。
 - `error_code/error_message`：只保存可读、脱敏失败信息，不保存 Prompt、API Key、第三方响应或完整源码。
 
-V24 不把模型输出当作源码事实：业务流程和阅读建议只能引用输入中存在的证据 ID，Java 服务负责校验并回填真实位置。历史成功报告保留用于审计；最近报告按 `project_id, created_at, id` 查询。
+V24 不把模型输出当作源码事实：业务流程和阅读建议只能引用输入中存在的证据 ID，Java 服务负责校验并回填真实位置。历史成功报告保留用于审计；最近报告按当前 `user_id + project_id` 和 `created_at, id` 查询。
+
+`project-guide-v1` 继续使用该 JSON 列：新增可选 `guide`，保存版本化 project/modules/flows、宿主快照摘要、真实读取范围和证据元数据，不重复存源码。API 回读补充真实代码预览；旧 JSON 缺少 guide 时兼容显示。文本导入在现有 document/chunk 的字符串类型列保存 TEXT、MANIFEST、DOCUMENTATION/TEXT_EXCERPT，片段元数据标记 text-excerpts-v1。Java AST 的 v2 语义与历史 Chunk 不被改写；无新表、列或 Flyway 迁移。详见 PROJECT_GUIDE_IMPLEMENTATION.md。
 
 ### 3.4 `project`
 

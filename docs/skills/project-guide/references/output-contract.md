@@ -12,7 +12,7 @@
 
 ## 接入产品时的结构化约定
 
-这是待实现的产品契约设计，不表示 DevMate 当前接口已经支持。宿主应先提供 JSON Schema/DTO，再请求结构化输出；不能让模型自定义前端期待的字段。
+这是目标契约设计。2026-11-11 已实现的首个产品契约将模型部分放入 guide.content，宿主负责 guide.snapshot/coverage/evidence；精确字段与尚未实现范围见 [产品接入记录](../../../PROJECT_GUIDE_IMPLEMENTATION.md)。宿主应先提供 JSON Schema/DTO，再请求结构化输出；不能让模型自定义前端期待的字段。
 
 | 对象 | 内容与约束 |
 |---|---|

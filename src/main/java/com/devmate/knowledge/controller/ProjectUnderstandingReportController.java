@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/projects/{projectId}/understanding-reports")
 @Validated
-@Tag(name = "AI 项目理解报告", description = "基于静态业务地图和白名单代码证据生成中文深层理解报告")
+@Tag(name = "AI 项目理解报告", description = "按固定快照抽样源码、清单、文档与测试，生成分层通俗导览；旧报告兼容回读")
 public class ProjectUnderstandingReportController {
     private final ProjectUnderstandingReportService service;
 
@@ -28,7 +28,7 @@ public class ProjectUnderstandingReportController {
     }
 
     @PostMapping
-    @Operation(summary = "生成 AI 项目理解报告", description = "attemptKey 保证一次点击幂等；调用账户当前模型并产生费用。")
+    @Operation(summary = "生成 AI 项目理解报告", description = "attemptKey 保证一次点击幂等；调用账户当前模型并产生费用。新报告返回 project-guide-v1 guide 字段，旧报告该字段为空；无权限 403、版本变化/任务并发 409、模型或契约失败 500。")
     public ApiResponse<ProjectUnderstandingReportResponse> create(
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId,
             @Valid @RequestBody CreateProjectUnderstandingReportRequest request
@@ -37,7 +37,7 @@ public class ProjectUnderstandingReportController {
     }
 
     @GetMapping("/latest")
-    @Operation(summary = "查询最近一份项目理解报告")
+    @Operation(summary = "查询当前账户最近一份项目理解报告")
     public ApiResponse<ProjectUnderstandingReportResponse> latest(
             @Positive(message = "项目ID必须大于0") @PathVariable Long projectId
     ) {

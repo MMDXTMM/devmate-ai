@@ -43,6 +43,7 @@ public class ConfigurationFileParser {
                 case PROPERTIES -> parseProperties(sourceFile.relativePath(), content);
                 case JAVA -> throw new IllegalArgumentException("Java源码应由JavaSourceParser解析");
                 case SQL -> throw new IllegalArgumentException("SQL迁移应由DatabaseSchemaParser解析");
+                default -> throw new IllegalArgumentException("通用文本应由TextSourceParser解析");
             };
             return new ParsedSourceFile(sourceFile, "", chunks, List.of());
         } catch (IOException exception) {

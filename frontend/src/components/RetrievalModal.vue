@@ -45,12 +45,14 @@ const retrievalModeLabels: Record<RetrievalSearch['executedMode'], string> = {
 }
 
 const sourceKindLabels: Record<RetrievalHit['sourceKind'], string> = {
-  SOURCE_CODE: 'Java 源码',
+  SOURCE_CODE: '源码',
+  DOCUMENTATION: '项目文档',
   CONFIGURATION: '项目配置',
   DATABASE_SCHEMA: '数据库结构',
 }
 
 const chunkTypeLabels: Record<SourceSymbolType, string> = {
+  TEXT_EXCERPT: '文本片段',
   FILE_HEADER: '文件头与导入',
   IMPORT: '导入语句',
   CLASS: '类或接口',
@@ -100,6 +102,7 @@ function reasonLabel(reason: string) {
 
 function hitExplanation(hit: RetrievalHit) {
   const explanations: Record<SourceSymbolType, string> = {
+    TEXT_EXCERPT: '通用文本片段，保留原始行号，未进行语言语法解析。',
     FILE_HEADER: '先从包声明和依赖导入判断该文件所属模块及依赖方向。',
     IMPORT: '该导入项说明当前文件依赖了对应类型或工具。',
     CLASS: '这是类或接口定义，建议先看注解、继承关系和公开方法，再进入具体实现。',

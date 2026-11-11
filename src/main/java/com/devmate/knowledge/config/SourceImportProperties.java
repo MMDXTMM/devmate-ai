@@ -13,6 +13,10 @@ public class SourceImportProperties {
     private int cloneTimeoutSeconds = 60;
     private int cloneDepth = 50;
     private int maxJavaFiles = 1000;
+    private int maxTextFiles = 1500;
+
+    public int getMaxTextFiles() { return maxTextFiles; }
+    public void setMaxTextFiles(int value) { maxTextFiles = value; }
     private int maxConfigFiles = 100;
     private int maxSchemaFiles = 100;
     private long maxFileSizeBytes = 1024 * 1024;

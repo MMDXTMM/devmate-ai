@@ -38,10 +38,10 @@ class ProjectSourceScannerTest {
                 "src/main/java/com/example/App.java",
                 "src/main/resources/application.yml",
                 "src/main/resources/review.properties",
-                "src/main/resources/db/migration/V1__init.sql"
+                "src/main/resources/db/migration/V1__init.sql", "README.md"
         );
         assertThat(files).extracting(ScannedSourceFile::fileType).containsExactlyInAnyOrder(
-                SourceFileType.JAVA, SourceFileType.YAML, SourceFileType.PROPERTIES, SourceFileType.SQL
+                SourceFileType.JAVA, SourceFileType.YAML, SourceFileType.PROPERTIES, SourceFileType.SQL, SourceFileType.DOCUMENTATION
         );
         assertThat(files).allSatisfy(file -> {
             assertThat(file.contentHash()).hasSize(64);
@@ -86,6 +86,50 @@ class ProjectSourceScannerTest {
         assertThatThrownBy(() -> new ProjectSourceScanner(properties).scan(tempDir))
                 .isInstanceOf(SourceImportException.class)
                 .hasMessageContaining("数据库迁移文件数量超过限制");
+    }
+
+    @Test
+    void readsNonJavaProjectsButSkipsSensitiveDependenciesAndBinaryDisguises() throws Exception {
+        Files.createDirectories(tempDir.resolve("node_modules/pkg"));
+        Files.writeString(tempDir.resolve("node_modules/pkg/index.ts"), "ignored");
+        Files.writeString(tempDir.resolve("main.py"), "print('hello')");
+        Files.writeString(tempDir.resolve("index.ts"), "export const demo = true");
+        Files.writeString(tempDir.resolve("package.json"), "{}");
+        Files.writeString(tempDir.resolve("README.md"), "a CLI tool");
+        Files.writeString(tempDir.resolve(".env.json"), "sensitive");
+        Files.writeString(tempDir.resolve("credentials.json"), "sensitive");
+        Files.writeString(tempDir.resolve("application-local.yml"), "sensitive");
+        Files.write(tempDir.resolve("binary.ts"), new byte[] {0, 1, 2});
+        Files.write(tempDir.resolve("invalid.py"), new byte[] {(byte)0xff});
+        var files = new ProjectSourceScanner(defaultProperties()).scan(tempDir);
+        assertThat(files).extracting(ScannedSourceFile::relativePath).containsExactlyInAnyOrder("main.py", "index.ts", "package.json", "README.md");
+        var properties = defaultProperties(); properties.setMaxTextFiles(1);
+        assertThatThrownBy(() -> new ProjectSourceScanner(properties).scan(tempDir)).hasMessageContaining("文本文件数量超过限制");
+    }
+
+    @Test
+    void textExcerptsKeepRealLinesAndRedactLiteralKeys() throws Exception {
+        String source = "# report\napi_key = 'example-sensitive-value'\nprint('ok')\n" + "line\n".repeat(65);
+        Files.writeString(tempDir.resolve("main.py"), source);
+        var file = new ProjectSourceScanner(defaultProperties()).scan(tempDir).getFirst();
+        var parsed = new TextSourceParser().parse(file);
+        assertThat(parsed.references()).isEmpty();
+        assertThat(parsed.chunks()).hasSize(2);
+        assertThat(parsed.chunks().getFirst().content()).contains("[REDACTED]", "print('ok')").doesNotContain("example-sensitive-value");
+        assertThat(parsed.chunks().getFirst().startLine()).isEqualTo(1);
+        assertThat(parsed.chunks().getFirst().endLine()).isEqualTo(60);
+        assertThat(parsed.chunks().get(1).startLine()).isEqualTo(61);
+    }
+
+    @Test
+    void rejectsSymlinkOutsideRepository() throws Exception {
+        Path outside = Files.createTempFile("guide-outside", ".py");
+        try {
+            Files.writeString(outside, "private");
+            Files.createSymbolicLink(tempDir.resolve("escape.py"), outside);
+            assertThatThrownBy(() -> new ProjectSourceScanner(defaultProperties()).scan(tempDir))
+                    .hasMessageContaining("外部文件");
+        } finally { Files.deleteIfExists(outside); }
     }
 
     private SourceImportProperties defaultProperties() {

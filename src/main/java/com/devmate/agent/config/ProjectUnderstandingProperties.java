@@ -8,9 +8,9 @@ import java.time.Duration;
 @Configuration
 @ConfigurationProperties(prefix = "devmate.project-understanding")
 public class ProjectUnderstandingProperties {
-    private String promptVersion = "project-understanding-v2";
-    private int maxEvidenceChunks = 24;
-    private int maxEvidenceCharacters = 24000;
+    private String promptVersion = "project-guide-v1";
+    private int maxEvidenceChunks = 40;
+    private int maxEvidenceCharacters = 48000;
     private Duration connectTimeout = Duration.ofSeconds(5);
     private Duration readTimeout = Duration.ofSeconds(90);
     private Duration staleTaskTimeout = Duration.ofMinutes(10);

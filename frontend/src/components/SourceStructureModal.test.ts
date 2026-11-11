@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SourceStructureModal from './SourceStructureModal.vue'
 import { ApiError, projectApi } from '../services/projectApi'
+import { guideFixture } from '../test/fixtures/projectGuide'
 import type { ProjectUnderstandingReport } from '../types/project'
 
 describe('SourceStructureModal', () => {
@@ -236,6 +237,23 @@ describe('SourceStructureModal', () => {
     id: `report-${projectId}`, projectId, revision, provider: 'DEEPSEEK', modelName: 'test', promptVersion: 'v2',
     status: 'SUCCEEDED', executiveSummary: `项目${projectId}专属报告`, architectureNarrative: '', businessFlows: [], readingGuide: [],
     risksAndUnknowns: [], attemptKey: 'test', createdAt: '2026-11-11T00:00:00Z',
+  })
+
+  it('restores the new guide as a unified beginner view and hides the competing static report', async () => {
+    vi.spyOn(projectApi, 'getBusinessMap').mockResolvedValue(emptyMap())
+    vi.spyOn(projectApi, 'latestUnderstandingReport').mockResolvedValue({ ...savedReport('1'), guide: guideFixture() })
+    const create = vi.spyOn(projectApi, 'createUnderstandingReport')
+    const wrapper = mount(SourceStructureModal, { props: { open: true, projectId: '1' } })
+    await flushPromises()
+    expect(wrapper.find('.project-guide').exists()).toBe(true)
+    expect(wrapper.find('.legacy-project-understanding').exists()).toBe(false)
+    expect(wrapper.find('.onboarding-hero').exists()).toBe(false)
+    expect(wrapper.find('pre').exists()).toBe(false)
+    expect(create).not.toHaveBeenCalled()
+    await wrapper.get('.guide-module-card').trigger('click')
+    expect(wrapper.text()).toContain('文件不存在就返回错误')
+    await wrapper.get('.guide-detail-actions .primary').trigger('click')
+    expect(wrapper.emitted('chat')?.[0]?.[0]).toContain('整理记录')
   })
 
   it('automatically reads saved reports without paid generation and rejects outdated revisions', async () => {

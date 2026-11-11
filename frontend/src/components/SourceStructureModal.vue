@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import ProjectGuideView from './ProjectGuideView.vue'
 import { ApiError, projectApi } from '../services/projectApi'
 import type {
   BusinessFeature,
@@ -45,6 +46,7 @@ const copiedSymbolId = ref('')
 const errorMessage = ref('')
 const summaryExpanded = ref(false)
 let reportGeneration = 0
+let reportAttemptKey: string | undefined
 onBeforeUnmount(() => { reportGeneration += 1 })
 
 const SUMMARY_COLLAPSE_THRESHOLD = 180
@@ -95,19 +97,24 @@ async function generateUnderstandingReport() {
   const generation = reportGeneration
   const projectId = props.projectId
   const revision = businessMap.value.revision
+  reportAttemptKey ??= crypto.randomUUID()
   generatingUnderstanding.value = true
   errorMessage.value = ''
   try {
     const report = await projectApi.createUnderstandingReport(
       projectId,
       revision,
-      crypto.randomUUID(),
+      reportAttemptKey,
     )
     if (generation === reportGeneration && report.projectId === projectId && report.revision === revision) {
       understandingReport.value = report
+      reportAttemptKey = undefined
     }
   } catch (error) {
-    if (generation === reportGeneration) errorMessage.value = error instanceof ApiError ? error.message : 'AI深度理解报告生成失败'
+    if (generation === reportGeneration) {
+      errorMessage.value = error instanceof ApiError ? error.message : '项目导览生成失败'
+      if (error instanceof ApiError && error.status) reportAttemptKey = undefined
+    }
   } finally {
     if (generation === reportGeneration) generatingUnderstanding.value = false
   }
@@ -124,6 +131,7 @@ async function loadLatestUnderstandingReport(silent = false) {
     if (generation !== reportGeneration) return
     if (report.projectId !== projectId || report.revision !== businessMap.value?.revision) {
       understandingReport.value = null
+      reportAttemptKey = undefined
       errorMessage.value = '上次报告对应其他源码版本，请为当前版本生成新的报告'
       return
     }
@@ -131,6 +139,7 @@ async function loadLatestUnderstandingReport(silent = false) {
   } catch (error) {
     if (generation !== reportGeneration) return
     understandingReport.value = null
+    reportAttemptKey = undefined
     if (!(silent && error instanceof ApiError && error.status === 404)) {
       errorMessage.value = error instanceof ApiError && error.status === 404
         ? '当前项目还没有AI深度理解报告'
@@ -237,6 +246,7 @@ function documentKindLabel(document: SourceDocument) {
     SOURCE_CODE: '源码',
     CONFIGURATION: '配置',
     DATABASE_SCHEMA: '数据库结构',
+    DOCUMENTATION: '项目文档',
   }[document.sourceKind]
 }
 
@@ -245,6 +255,7 @@ function documentItemLabel(document: SourceDocument) {
 }
 
 const symbolTypeLabels: Record<SourceSymbolType, string> = {
+  TEXT_EXCERPT: '文本片段（非语法解析）',
   FILE_HEADER: '文件头与导入',
   IMPORT: '导入语句',
   CLASS: '类或接口',
@@ -265,6 +276,7 @@ function symbolTypeLabel(type: SourceSymbolType) {
 function symbolExplanation(symbol: SourceSymbolDetail) {
   const location = `位于第 ${symbol.startLine}-${symbol.endLine} 行。`
   const explanations: Record<SourceSymbolType, string> = {
+    TEXT_EXCERPT: '这是保留原始行号的通用文本片段，未进行语言语法与调用关系解析。',
     FILE_HEADER: '这里包含包声明和依赖导入，可以先判断代码所属模块以及依赖了哪些外部能力。',
     IMPORT: '这是当前文件使用的外部类型或工具，能帮助判断代码依赖方向。',
     CLASS: '这是类或接口的整体定义，建议先看类注解、实现关系和公开方法，再进入具体方法。',
@@ -343,6 +355,7 @@ watch(
   ([open]) => {
     reportGeneration += 1
     understandingReport.value = null
+    reportAttemptKey = undefined
     generatingUnderstanding.value = false
     loadingUnderstanding.value = false
     loadingBusinessMap.value = false
@@ -395,11 +408,11 @@ watch(
           <small>先理解项目目标和核心流程</small>
         </button>
         <button type="button" :class="{ active: activeView === 'BUSINESS' }" @click="switchView('BUSINESS')">
-          业务与接口
+          Java 实现与接口
           <small>下钻功能、接口和实现链路</small>
         </button>
         <button type="button" :class="{ active: activeView === 'FILES' }" @click="switchView('FILES')">
-          文件结构
+          文件结构（高级）
           <small>按文件、类和方法查阅源码</small>
         </button>
       </nav>
@@ -407,213 +420,229 @@ watch(
       <div v-if="errorMessage" class="notice error" role="alert">{{ errorMessage }}</div>
 
       <div v-if="(activeView === 'GUIDE' || activeView === 'BUSINESS') && loadingBusinessMap" class="source-loading">
-        正在根据接口、状态和数据关系整理项目导览…
+        正在读取项目导览…
       </div>
       <main v-else-if="activeView === 'GUIDE' && businessMap" class="onboarding-view">
-        <section class="onboarding-hero">
-          <div>
-            <span class="eyebrow">先用一句话理解项目</span>
-            <h3>{{ businessMap.onboarding.purpose }}</h3>
-            <p>{{ businessMap.onboarding.architectureSummary }}</p>
-          </div>
-          <dl>
-            <div><dt>业务模块</dt><dd>{{ businessMap.moduleCount }}</dd></div>
-            <div><dt>HTTP 接口</dt><dd>{{ businessMap.endpointCount }}</dd></div>
-            <div><dt>状态模型</dt><dd>{{ businessMap.onboarding.stateModels.length }}</dd></div>
-            <div><dt>数据表</dt><dd>{{ businessMap.onboarding.dataAssets.length }}</dd></div>
-          </dl>
-        </section>
-
-        <section class="ai-understanding-panel">
-          <header>
-            <div>
-              <span class="eyebrow">SPRING AI + RAG EVIDENCE</span>
-              <h3>AI 深度理解报告</h3>
-              <p>让当前账户选择的大模型结合业务地图和真实代码证据，解释核心业务，而不是逐行翻译代码。</p>
-            </div>
+        <section class="ai-understanding-panel guide-controls">
+          <header><div><span class="eyebrow">先看懂，再深入</span><h3>项目通俗导览</h3><p>先了解用途、能力和主要流程，再选择一件事查看规则与实现依据。</p></div>
             <div class="ai-understanding-actions">
-              <button class="button secondary" type="button" :disabled="loadingUnderstanding || generatingUnderstanding" @click="loadLatestUnderstandingReport()">
-                {{ loadingUnderstanding ? '读取中…' : '查看上次报告' }}
-              </button>
-              <button class="button primary" type="button" :disabled="generatingUnderstanding || loadingUnderstanding" @click="generateUnderstandingReport">
-                {{ generatingUnderstanding ? 'AI分析中…' : '生成新的深度报告' }}
-              </button>
+              <button class="button secondary" type="button" :disabled="loadingUnderstanding || generatingUnderstanding" @click="loadLatestUnderstandingReport()">{{ loadingUnderstanding ? '读取中…' : '查看上次导览' }}</button>
+              <button class="button primary" type="button" :disabled="generatingUnderstanding || loadingUnderstanding" @click="generateUnderstandingReport">{{ generatingUnderstanding ? '正在阅读与归纳…' : '生成通俗导览' }}</button>
             </div>
           </header>
-          <div v-if="!understandingReport" class="ai-understanding-empty">
-            生成报告会调用你在“大模型连接”中启用的模型，并消耗对应 API 额度；页面不会自动调用。
-            <button class="button secondary" type="button" @click="emit('configureModel')">配置或检查大模型连接</button>
-          </div>
-          <div v-else-if="understandingReport.status === 'FAILED'" class="notice error">
-            {{ understandingReport.errorMessage || '报告生成失败，请检查模型连接后重试' }}
-          </div>
-          <div
-            v-else-if="understandingReport.status === 'SUCCEEDED'"
-            :key="understandingReport.id"
-            class="ai-understanding-report"
-          >
-            <div class="ai-report-heading">
+          <p v-if="!understandingReport?.guide">尚无当前版本的通俗导览。生成会使用当前账户已启用的模型并消耗 API 额度；不会自动调用。</p>
+          <div v-if="understandingReport?.status === 'FAILED'" class="notice error">{{ understandingReport.errorMessage || '生成失败，请检查模型后重试' }}</div>
+          <p v-if="understandingReport?.status === 'RUNNING'">上次生成仍在进行，请稍后查看上次导览。</p>
+          <button v-if="!understandingReport?.guide" class="button secondary" type="button" @click="emit('configureModel')">配置或检查大模型连接</button>
+        </section>
+        <ProjectGuideView v-if="understandingReport?.guide" :guide="understandingReport.guide" @chat="emit('chat', $event)" />
+        <details v-if="!understandingReport?.guide" class="legacy-project-understanding">
+          <summary>旧版报告与 Java 静态分析（高级）</summary>
+          <section class="onboarding-hero">
+            <div>
+              <span class="eyebrow">先用一句话理解项目</span>
+              <h3>{{ businessMap.onboarding.purpose }}</h3>
+              <p>{{ businessMap.onboarding.architectureSummary }}</p>
+            </div>
+            <dl>
+              <div><dt>业务模块</dt><dd>{{ businessMap.moduleCount }}</dd></div>
+              <div><dt>HTTP 接口</dt><dd>{{ businessMap.endpointCount }}</dd></div>
+              <div><dt>状态模型</dt><dd>{{ businessMap.onboarding.stateModels.length }}</dd></div>
+              <div><dt>数据表</dt><dd>{{ businessMap.onboarding.dataAssets.length }}</dd></div>
+            </dl>
+          </section>
+
+          <section class="ai-understanding-panel">
+            <header>
               <div>
-                <span class="eyebrow">报告概览</span>
-                <h4>先看结论，再按需展开实现证据</h4>
+                <span class="eyebrow">SPRING AI + RAG EVIDENCE</span>
+                <h3>AI 深度理解报告</h3>
+                <p>让当前账户选择的大模型结合业务地图和真实代码证据，解释核心业务，而不是逐行翻译代码。</p>
               </div>
-              <span class="ai-report-model">{{ understandingReport.provider }} / {{ understandingReport.modelName }}</span>
+              <div class="ai-understanding-actions">
+                <button class="button secondary" type="button" :disabled="loadingUnderstanding || generatingUnderstanding" @click="loadLatestUnderstandingReport()">
+                  {{ loadingUnderstanding ? '读取中…' : '查看上次报告' }}
+                </button>
+                <button class="button primary" type="button" :disabled="generatingUnderstanding || loadingUnderstanding" @click="generateUnderstandingReport">
+                  {{ generatingUnderstanding ? 'AI分析中…' : '生成新的深度报告' }}
+                </button>
+              </div>
+            </header>
+            <div v-if="!understandingReport" class="ai-understanding-empty">
+              生成报告会调用你在“大模型连接”中启用的模型，并消耗对应 API 额度；页面不会自动调用。
+              <button class="button secondary" type="button" @click="emit('configureModel')">配置或检查大模型连接</button>
             </div>
-
-            <section class="ai-report-overview">
-              <p
-                :id="understandingSummaryId"
-                class="ai-report-summary-text"
-                :class="{ collapsed: hasLongUnderstandingSummary && !summaryExpanded }"
-              >{{ displayedUnderstandingSummary }}</p>
-              <button
-                v-if="hasLongUnderstandingSummary"
-                class="ai-report-summary-toggle"
-                type="button"
-                :aria-expanded="summaryExpanded"
-                :aria-controls="understandingSummaryId"
-                @click="summaryExpanded = !summaryExpanded"
-              >{{ summaryExpanded ? '收起摘要' : '展开完整摘要' }}</button>
-              <dl class="ai-report-facts">
-                <div><dt>核心流程</dt><dd>{{ understandingReport.businessFlows.length }}</dd></div>
-                <div><dt>阅读步骤</dt><dd>{{ understandingReport.readingGuide.length }}</dd></div>
-                <div><dt>待确认项</dt><dd>{{ understandingReport.risksAndUnknowns.length }}</dd></div>
-              </dl>
-            </section>
-
-            <details v-if="understandingReport.architectureNarrative" class="ai-architecture-details">
-              <summary>
-                <span>架构与实现说明</span>
-                <small>按需展开</small>
-              </summary>
-              <p>{{ understandingReport.architectureNarrative }}</p>
-            </details>
-
-            <div class="ai-report-section-heading">
-              <div><h5>核心业务流程</h5><p>默认收起技术细节，选择一个流程查看步骤和代码证据。</p></div>
-              <span>{{ understandingReport.businessFlows.length }} 条</span>
+            <div v-else-if="understandingReport.status === 'FAILED'" class="notice error">
+              {{ understandingReport.errorMessage || '报告生成失败，请检查模型连接后重试' }}
             </div>
-            <details v-for="(flow, flowIndex) in understandingReport.businessFlows" :key="flow.name" class="ai-flow-card">
-              <summary>
-                <span class="ai-flow-index">{{ String(flowIndex + 1).padStart(2, '0') }}</span>
-                <span class="ai-flow-summary-copy"><b>{{ flow.name }}</b><small>{{ flow.goal }}</small></span>
-                <span class="ai-flow-open-label">查看实现</span>
-              </summary>
-              <div class="ai-flow-body">
-                <button class="button secondary ask-business-flow" type="button" @click="emit('chat', `请用通俗的话讲解“${flow.name}”：谁会使用、具体步骤、接口入口、数据变化和失败情况。请引用代码证据。`)">让 AI 讲解这条业务</button>
-                <ol><li v-for="step in flow.steps" :key="step">{{ step }}</li></ol>
-                <div class="ai-flow-tags">
-                  <code v-for="api in flow.apiEntries" :key="api">{{ api }}</code>
-                  <code v-for="change in flow.dataChanges" :key="change">{{ change }}</code>
+            <div
+              v-else-if="understandingReport.status === 'SUCCEEDED'"
+              :key="understandingReport.id"
+              class="ai-understanding-report"
+            >
+              <div class="ai-report-heading">
+                <div>
+                  <span class="eyebrow">报告概览</span>
+                  <h4>先看结论，再按需展开实现证据</h4>
                 </div>
-                <details v-for="evidence in flow.evidence" :key="evidence.chunkId" class="ai-evidence-details">
-                  <summary>{{ evidence.symbolName }} · {{ evidence.filePath }}:{{ evidence.startLine }}</summary>
-                  <pre><code>{{ evidence.code }}</code></pre>
-                  <small v-if="evidence.truncated">代码较长，当前仅展示受控预览。</small>
-                </details>
+                <span class="ai-report-model">{{ understandingReport.provider }} / {{ understandingReport.modelName }}</span>
               </div>
-            </details>
-            <section v-if="understandingReport.readingGuide.length" class="ai-reading-guide">
-              <h5>推荐阅读顺序</h5>
-              <ol><li v-for="item in understandingReport.readingGuide" :key="`${item.order}-${item.title}`">
-                <b>{{ item.order }}. {{ item.title }}</b><span>{{ item.reason }}</span>
-              </li></ol>
-            </section>
-            <details v-if="understandingReport.risksAndUnknowns.length" class="onboarding-unknowns">
-              <summary>模型明确标记的未知项</summary>
-              <ul><li v-for="item in understandingReport.risksAndUnknowns" :key="item">{{ item }}</li></ul>
-            </details>
-            <details class="ai-report-diagnostics">
-              <summary>生成信息</summary>
-              <div class="ai-report-meta">
-                <span>{{ understandingReport.totalTokens }} Tokens</span>
-                <span>{{ understandingReport.promptVersion }}</span>
-              </div>
-            </details>
-          </div>
-        </section>
 
-        <section v-if="businessMap.onboarding.detectedCapabilities.length" class="onboarding-section">
-          <header><span>01</span><h3>系统具备什么能力</h3></header>
-          <div class="capability-list">
-            <span v-for="capability in businessMap.onboarding.detectedCapabilities" :key="capability">
-              {{ capability }}
-            </span>
-          </div>
-        </section>
+              <section class="ai-report-overview">
+                <p
+                  :id="understandingSummaryId"
+                  class="ai-report-summary-text"
+                  :class="{ collapsed: hasLongUnderstandingSummary && !summaryExpanded }"
+                >{{ displayedUnderstandingSummary }}</p>
+                <button
+                  v-if="hasLongUnderstandingSummary"
+                  class="ai-report-summary-toggle"
+                  type="button"
+                  :aria-expanded="summaryExpanded"
+                  :aria-controls="understandingSummaryId"
+                  @click="summaryExpanded = !summaryExpanded"
+                >{{ summaryExpanded ? '收起摘要' : '展开完整摘要' }}</button>
+                <dl class="ai-report-facts">
+                  <div><dt>核心流程</dt><dd>{{ understandingReport.businessFlows.length }}</dd></div>
+                  <div><dt>阅读步骤</dt><dd>{{ understandingReport.readingGuide.length }}</dd></div>
+                  <div><dt>待确认项</dt><dd>{{ understandingReport.risksAndUnknowns.length }}</dd></div>
+                </dl>
+              </section>
 
-        <section class="onboarding-section">
-          <header><span>02</span><h3>用户能完成哪些事情</h3><p>先看业务目的，再沿真实接口和调用关系查看实现。</p></header>
-          <div class="journey-grid">
-            <article v-for="journey in businessMap.onboarding.coreJourneys" :key="journey.moduleId">
-              <div class="journey-heading">
-                <div><span>业务功能</span><h4>{{ journey.name }}</h4></div>
-                <button class="button secondary" type="button" @click="openJourney(journey.moduleId)">查看实现代码</button>
-              </div>
-              <p>{{ journey.goal }}</p>
-              <details open>
-                <summary>对外接口</summary>
-                <code v-for="api in journey.apiEntries" :key="api">{{ api }}</code>
+              <details v-if="understandingReport.architectureNarrative" class="ai-architecture-details">
+                <summary>
+                  <span>架构与实现说明</span>
+                  <small>按需展开</small>
+                </summary>
+                <p>{{ understandingReport.architectureNarrative }}</p>
               </details>
-              <details v-if="journey.implementationFlow.length">
-                <summary>代表性实现流程</summary>
-                <ol>
-                  <li v-for="step in journey.implementationFlow" :key="step">{{ step }}</li>
-                </ol>
-              </details>
-              <details v-if="journey.dataOperations.length">
-                <summary>数据变化</summary>
-                <code v-for="operation in journey.dataOperations" :key="operation">{{ operation }}</code>
-              </details>
-              <div class="journey-warning">
-                <b>失败与边界</b>
-                <span v-for="signal in journey.failureSignals" :key="signal">{{ signal }}</span>
-              </div>
-            </article>
-          </div>
-        </section>
 
-        <section class="onboarding-section onboarding-facts">
-          <header><span>03</span><h3>状态、数据与阅读顺序</h3></header>
-          <div class="onboarding-fact-grid">
-            <article>
-              <h4>业务状态</h4>
-              <div v-if="businessMap.onboarding.stateModels.length" class="fact-list">
-                <div v-for="state in businessMap.onboarding.stateModels" :key="state.chunkId">
-                  <b>{{ state.name }}</b>
-                  <span>{{ state.values.length ? state.values.join('、') : '已识别状态类型，枚举值待确认' }}</span>
-                  <small>仅识别到状态取值；允许的转换顺序需要结合实现确认。</small>
-                  <small>{{ state.filePath }} · 第 {{ state.startLine }} 行</small>
-                </div>
+              <div class="ai-report-section-heading">
+                <div><h5>核心业务流程</h5><p>默认收起技术细节，选择一个流程查看步骤和代码证据。</p></div>
+                <span>{{ understandingReport.businessFlows.length }} 条</span>
               </div>
-              <p v-else>暂未识别到以 Status、State 或 Stage 命名的状态模型。</p>
-            </article>
-            <article>
-              <h4>核心数据表</h4>
-              <div v-if="businessMap.onboarding.dataAssets.length" class="data-asset-list">
-                <code v-for="asset in businessMap.onboarding.dataAssets" :key="asset.chunkId">{{ asset.name }}</code>
-              </div>
-              <p v-else>当前版本没有解析到数据库建表迁移。</p>
-            </article>
-            <article class="reading-order-card">
-              <h4>推荐阅读顺序</h4>
-              <ol>
-                <li v-for="step in businessMap.onboarding.readingOrder" :key="`${step.order}-${step.filePath}`">
-                  <span>{{ String(step.order).padStart(2, '0') }}</span>
-                  <div>
-                    <b>{{ step.category }} · {{ step.title }}</b>
-                    <p>{{ step.reason }}</p>
-                    <small>{{ step.filePath }} · 第 {{ step.startLine }} 行</small>
+              <details v-for="(flow, flowIndex) in understandingReport.businessFlows" :key="flow.name" class="ai-flow-card">
+                <summary>
+                  <span class="ai-flow-index">{{ String(flowIndex + 1).padStart(2, '0') }}</span>
+                  <span class="ai-flow-summary-copy"><b>{{ flow.name }}</b><small>{{ flow.goal }}</small></span>
+                  <span class="ai-flow-open-label">查看实现</span>
+                </summary>
+                <div class="ai-flow-body">
+                  <button class="button secondary ask-business-flow" type="button" @click="emit('chat', `请用通俗的话讲解“${flow.name}”：谁会使用、具体步骤、接口入口、数据变化和失败情况。请引用代码证据。`)">让 AI 讲解这条业务</button>
+                  <ol><li v-for="step in flow.steps" :key="step">{{ step }}</li></ol>
+                  <div class="ai-flow-tags">
+                    <code v-for="api in flow.apiEntries" :key="api">{{ api }}</code>
+                    <code v-for="change in flow.dataChanges" :key="change">{{ change }}</code>
                   </div>
-                </li>
-              </ol>
-            </article>
-          </div>
-        </section>
+                  <details v-for="evidence in flow.evidence" :key="evidence.chunkId" class="ai-evidence-details">
+                    <summary>{{ evidence.symbolName }} · {{ evidence.filePath }}:{{ evidence.startLine }}</summary>
+                    <pre><code>{{ evidence.code }}</code></pre>
+                    <small v-if="evidence.truncated">代码较长，当前仅展示受控预览。</small>
+                  </details>
+                </div>
+              </details>
+              <section v-if="understandingReport.readingGuide.length" class="ai-reading-guide">
+                <h5>推荐阅读顺序</h5>
+                <ol><li v-for="item in understandingReport.readingGuide" :key="`${item.order}-${item.title}`">
+                  <b>{{ item.order }}. {{ item.title }}</b><span>{{ item.reason }}</span>
+                </li></ol>
+              </section>
+              <details v-if="understandingReport.risksAndUnknowns.length" class="onboarding-unknowns">
+                <summary>模型明确标记的未知项</summary>
+                <ul><li v-for="item in understandingReport.risksAndUnknowns" :key="item">{{ item }}</li></ul>
+              </details>
+              <details class="ai-report-diagnostics">
+                <summary>生成信息</summary>
+                <div class="ai-report-meta">
+                  <span>{{ understandingReport.totalTokens }} Tokens</span>
+                  <span>{{ understandingReport.promptVersion }}</span>
+                </div>
+              </details>
+            </div>
+          </section>
 
-        <details class="onboarding-unknowns">
-          <summary>哪些结论仍需要人工确认</summary>
-          <ul><li v-for="unknown in businessMap.onboarding.unknowns" :key="unknown">{{ unknown }}</li></ul>
+          <section v-if="businessMap.onboarding.detectedCapabilities.length" class="onboarding-section">
+            <header><span>01</span><h3>系统具备什么能力</h3></header>
+            <div class="capability-list">
+              <span v-for="capability in businessMap.onboarding.detectedCapabilities" :key="capability">
+                {{ capability }}
+              </span>
+            </div>
+          </section>
+
+          <section class="onboarding-section">
+            <header><span>02</span><h3>用户能完成哪些事情</h3><p>先看业务目的，再沿真实接口和调用关系查看实现。</p></header>
+            <div class="journey-grid">
+              <article v-for="journey in businessMap.onboarding.coreJourneys" :key="journey.moduleId">
+                <div class="journey-heading">
+                  <div><span>业务功能</span><h4>{{ journey.name }}</h4></div>
+                  <button class="button secondary" type="button" @click="openJourney(journey.moduleId)">查看实现代码</button>
+                </div>
+                <p>{{ journey.goal }}</p>
+                <details>
+                  <summary>对外接口</summary>
+                  <code v-for="api in journey.apiEntries" :key="api">{{ api }}</code>
+                </details>
+                <details v-if="journey.implementationFlow.length">
+                  <summary>代表性实现流程</summary>
+                  <ol>
+                    <li v-for="step in journey.implementationFlow" :key="step">{{ step }}</li>
+                  </ol>
+                </details>
+                <details v-if="journey.dataOperations.length">
+                  <summary>数据变化</summary>
+                  <code v-for="operation in journey.dataOperations" :key="operation">{{ operation }}</code>
+                </details>
+                <div class="journey-warning">
+                  <b>失败与边界</b>
+                  <span v-for="signal in journey.failureSignals" :key="signal">{{ signal }}</span>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="onboarding-section onboarding-facts">
+            <header><span>03</span><h3>状态、数据与阅读顺序</h3></header>
+            <div class="onboarding-fact-grid">
+              <article>
+                <h4>业务状态</h4>
+                <div v-if="businessMap.onboarding.stateModels.length" class="fact-list">
+                  <div v-for="state in businessMap.onboarding.stateModels" :key="state.chunkId">
+                    <b>{{ state.name }}</b>
+                    <span>{{ state.values.length ? state.values.join('、') : '已识别状态类型，枚举值待确认' }}</span>
+                    <small>仅识别到状态取值；允许的转换顺序需要结合实现确认。</small>
+                    <small>{{ state.filePath }} · 第 {{ state.startLine }} 行</small>
+                  </div>
+                </div>
+                <p v-else>暂未识别到以 Status、State 或 Stage 命名的状态模型。</p>
+              </article>
+              <article>
+                <h4>核心数据表</h4>
+                <div v-if="businessMap.onboarding.dataAssets.length" class="data-asset-list">
+                  <code v-for="asset in businessMap.onboarding.dataAssets" :key="asset.chunkId">{{ asset.name }}</code>
+                </div>
+                <p v-else>当前版本没有解析到数据库建表迁移。</p>
+              </article>
+              <article class="reading-order-card">
+                <h4>推荐阅读顺序</h4>
+                <ol>
+                  <li v-for="step in businessMap.onboarding.readingOrder" :key="`${step.order}-${step.filePath}`">
+                    <span>{{ String(step.order).padStart(2, '0') }}</span>
+                    <div>
+                      <b>{{ step.category }} · {{ step.title }}</b>
+                      <p>{{ step.reason }}</p>
+                      <small>{{ step.filePath }} · 第 {{ step.startLine }} 行</small>
+                    </div>
+                  </li>
+                </ol>
+              </article>
+            </div>
+          </section>
+
+          <details class="onboarding-unknowns">
+            <summary>哪些结论仍需要人工确认</summary>
+            <ul><li v-for="unknown in businessMap.onboarding.unknowns" :key="unknown">{{ unknown }}</li></ul>
+          </details>
         </details>
       </main>
       <div v-else-if="activeView === 'BUSINESS' && businessMap?.modules.length === 0" class="source-empty">

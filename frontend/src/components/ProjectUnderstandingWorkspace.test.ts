@@ -61,8 +61,21 @@ describe('ProjectUnderstandingWorkspace', () => {
     expect(wrapper.text()).toContain('已解析调用关系')
     expect(wrapper.get('.workspace-primary-actions').text()).toContain('理解项目业务')
     expect(wrapper.get('.workspace-primary-actions').text()).toContain('向项目提问')
-    expect(wrapper.get('.workspace-primary-actions').text()).toContain('开始代码审查')
+    expect(wrapper.get('.advanced-analysis').text()).toContain('开始代码审查')
+    expect(wrapper.get('.workspace-primary-actions').text()).not.toContain('开始代码审查')
     expect(wrapper.get('details.advanced-analysis').attributes('open')).toBeUndefined()
+  })
+
+  it('does not offer Java review for a known text-only project', async () => {
+    vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([{
+      id: '1', fileName: 'main.py', filePath: 'main.py', sourceKind: 'SOURCE_CODE', fileType: 'TEXT',
+      revision: project.currentRevision!, structureVersion: 'source-structure-v2', status: 'PARSED', chunkCount: 1,
+    }])
+    vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
+    const wrapper = mount(ProjectUnderstandingWorkspace, { props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false } })
+    await flushPromises()
+    expect(wrapper.find('.review-primary-action').exists()).toBe(false)
+    expect(wrapper.get('.workspace-primary-actions').text()).toContain('理解项目业务')
   })
 
   it('passes a suggested business question to the AI conversation', async () => {

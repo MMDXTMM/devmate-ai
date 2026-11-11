@@ -53,7 +53,7 @@ class SourceImportServiceTest {
                 sourceScanner,
                 sourceParser,
                 configurationFileParser,
-                databaseSchemaParser
+                databaseSchemaParser, new com.devmate.knowledge.source.TextSourceParser()
         );
         SourceImportContext context = new SourceImportContext(
                 1L, 2L, "https://github.com/example/demo.git", "main",

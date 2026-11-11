@@ -1,6 +1,6 @@
 # 跨语言项目通俗拆解提示词
 
-版本：`project-guide-v1`。这是可复制到具备文件读取能力的 AI 中使用的独立版本；完整可携带 skill 位于 [SKILL.md](skills/project-guide/SKILL.md)。当前文件包未自动安装到全局，也未接入 DevMate 的运行接口。
+版本：`project-guide-v1`。这是可复制到具备文件读取能力的 AI 中使用的独立版本；完整可携带 skill 位于 [SKILL.md](skills/project-guide/SKILL.md)。没有自动安装到全局。DevMate 已将其解释原则适配为固定 JSON 运行契约与三层页面，具体范围见 [产品接入记录](PROJECT_GUIDE_IMPLEMENTATION.md)；下文仍是给具备读取能力的 AI 的独立版本。
 
 将下面整段复制给 AI，然后补上项目路径或提供允许读取的文件：
 

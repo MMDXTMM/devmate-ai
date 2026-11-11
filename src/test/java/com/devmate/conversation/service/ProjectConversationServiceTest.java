@@ -66,6 +66,7 @@ class ProjectConversationServiceTest {
     @Autowired private KnowledgeDocumentMapper documentMapper;
     @Autowired private KnowledgeChunkMapper chunkMapper;
     @Autowired private ConversationMessageMapper messageMapper;
+    @Autowired private com.devmate.conversation.mapper.ConversationMapper conversationMapper;
     @MockitoBean private ProjectAccessService accessService;
     @MockitoBean private CurrentUserService currentUserService;
     @MockitoBean private ProjectService projectService;
@@ -154,6 +155,19 @@ class ProjectConversationServiceTest {
     }
 
     @Test
+    void keepsSavedV2ConversationGuidanceWhenNewDefaultIsV3() {
+        when(model.stream(any())).thenReturn(Flux.just("旧会话回答"));
+        var created = service.create(project.getId(), new CreateConversationRequest("旧会话"));
+        var saved = conversationMapper.selectById(created.id());
+        saved.setPromptVersion("project-conversation-v2"); conversationMapper.updateById(saved);
+        service.stream(project.getId(), created.id(), new CreateConversationMessageRequest(
+                "说明这个功能", "923e4567-e89b-42d3-a456-426614174000"));
+        var captured = ArgumentCaptor.forClass(ProjectConversationPrompt.class); verify(model).stream(captured.capture());
+        assertThat(captured.getValue().systemPrompt()).contains("先用两三句话").doesNotContain("第一层");
+        assertThat(service.list(project.getId()).getFirst().promptVersion()).isEqualTo("project-conversation-v2");
+    }
+
+    @Test
     void persistsTwoStreamingTurnsAndPassesHistoryToTheSecondPrompt() {
         when(model.stream(any())).thenReturn(
                 Flux.just("订单", "由服务层创建。"),
@@ -205,12 +219,12 @@ class ProjectConversationServiceTest {
         });
         assertThat(service.list(project.getId())).singleElement().satisfies(item -> {
             assertThat(item.title()).isEqualTo("订单怎么创建？");
-            assertThat(item.promptVersion()).isEqualTo("project-conversation-v2");
+            assertThat(item.promptVersion()).isEqualTo("project-conversation-v3");
         });
         assertThat(service.messages(project.getId(), conversation.id())).hasSize(4);
         var prompts = ArgumentCaptor.forClass(ProjectConversationPrompt.class);
         verify(model, times(2)).stream(prompts.capture());
-        assertThat(prompts.getValue().systemPrompt()).contains("先用两三句话", "不声称执行过代码", "不可信数据");
+        assertThat(prompts.getValue().systemPrompt()).contains("第一层", "不能声称运行验证", "不可信数据");
     }
 
     @Test

@@ -47,7 +47,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest
+@SpringBootTest(properties = "devmate.project-understanding.prompt-version=project-understanding-v2")
 @ActiveProfiles("test")
 @Transactional
 class ProjectUnderstandingReportServiceTest {
@@ -55,6 +55,8 @@ class ProjectUnderstandingReportServiceTest {
     private static final String REVISION = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     @Autowired private ProjectUnderstandingReportService service;
+    @Autowired private com.devmate.agent.config.ProjectUnderstandingProperties properties;
+    @Autowired private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     @Autowired private ProjectMapper projectMapper;
     @Autowired private AppUserMapper userMapper;
     @Autowired private KnowledgeDocumentMapper documentMapper;
@@ -70,6 +72,7 @@ class ProjectUnderstandingReportServiceTest {
 
     @BeforeEach
     void setUp() {
+        properties.setPromptVersion("project-understanding-v2");
         AppUser user = new AppUser();
         user.setId(USER_ID);
         user.setUsername("understanding-user");
@@ -147,6 +150,54 @@ class ProjectUnderstandingReportServiceTest {
                                 evidenceChunk.getContent().length()
                         )))
         );
+    }
+
+    @Test
+    void savesVersionedGuideWithHostEvidenceAndRestoresItWithoutSourceDuplication() throws Exception {
+        properties.setPromptVersion("project-guide-v1");
+        String fixture = new String(getClass().getResourceAsStream("/guide/cli-guide.json").readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8).replace("\"42\"", "\"" + evidenceChunk.getId() + "\"");
+        var content = objectMapper.readValue(fixture, com.devmate.knowledge.dto.ProjectGuide.Content.class);
+        ProjectUnderstandingModel model = mock(ProjectUnderstandingModel.class);
+        when(model.providerName()).thenReturn("MOCK"); when(model.modelName()).thenReturn("guide-test");
+        when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(),
+                10, 20, 30, new com.devmate.knowledge.dto.ProjectGuide("forged-version", null, content, null, List.of())));
+        when(modelRegistry.current()).thenReturn(model);
+        var request = new CreateProjectUnderstandingReportRequest(REVISION, "c23e4567-e89b-42d3-a456-426614174000");
+        var report = service.create(project.getId(), request);
+        assertThat(report.guide().schemaVersion()).isEqualTo("project-guide-v1");
+        assertThat(report.guide().snapshot().revision()).isEqualTo(REVISION);
+        assertThat(report.guide().snapshot().contentDigest()).hasSize(64);
+        assertThat(report.guide().coverage().readFiles()).isEqualTo(1);
+        assertThat(report.guide().evidence()).singleElement().satisfies(item -> {
+            assertThat(item.filePath()).endsWith("OrderController.java");
+            assertThat(item.code()).contains("orderService.create");
+        });
+        assertThat(reportMapper.selectById(report.id()).getReportJson()).doesNotContain("orderService.create");
+        assertThat(service.latest(project.getId()).guide()).isEqualTo(report.guide());
+        assertThat(service.create(project.getId(), request).id()).isEqualTo(report.id());
+        verify(model, times(1)).analyze(any());
+        var prompt = ArgumentCaptor.forClass(ProjectUnderstandingPrompt.class); verify(model).analyze(prompt.capture());
+        assertThat(prompt.getValue().systemPrompt()).contains("不预设语言", "Mock", "不可信证据");
+        assertThat(prompt.getValue().userPrompt()).contains("已索引目录", "真实读取范围");
+        when(currentUserService.getRequiredUser()).thenReturn(new AuthenticatedUser(USER_ID + 1, "other"));
+        assertThatThrownBy(() -> service.latest(project.getId())).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void rejectsInvalidGuideEvidenceAndPersistsReadableFailure() throws Exception {
+        properties.setPromptVersion("project-guide-v1");
+        var content = objectMapper.readValue(getClass().getResourceAsStream("/guide/cli-guide.json"),
+                com.devmate.knowledge.dto.ProjectGuide.Content.class);
+        ProjectUnderstandingModel model = mock(ProjectUnderstandingModel.class);
+        when(model.providerName()).thenReturn("MOCK"); when(model.modelName()).thenReturn("guide-test");
+        when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(),
+                0, 0, 0, new com.devmate.knowledge.dto.ProjectGuide("project-guide-v1", null, content, null, List.of())));
+        when(modelRegistry.current()).thenReturn(model);
+        assertThatThrownBy(() -> service.create(project.getId(), new CreateProjectUnderstandingReportRequest(
+                REVISION, "d23e4567-e89b-42d3-a456-426614174000"))).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("证据引用不符合契约");
+        assertThat(service.latest(project.getId()).status()).isEqualTo("FAILED");
     }
 
     @Test

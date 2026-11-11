@@ -26,5 +26,6 @@ public record ProjectUnderstandingReportResponse(
         String errorMessage,
         String attemptKey,
         LocalDateTime createdAt,
-        LocalDateTime finishedAt
+        LocalDateTime finishedAt,
+        ProjectGuide guide
 ) { }

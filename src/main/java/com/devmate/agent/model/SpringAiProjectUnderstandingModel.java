@@ -1,6 +1,7 @@
 package com.devmate.agent.model;
 
 import com.devmate.agent.config.ProjectUnderstandingProperties;
+import com.devmate.knowledge.dto.ProjectGuide;
 import com.devmate.agent.service.SpringAiChatClientFactory;
 import org.springframework.ai.chat.client.ResponseEntity;
 import org.springframework.ai.chat.metadata.Usage;
@@ -37,6 +38,19 @@ final class SpringAiProjectUnderstandingModel implements ProjectUnderstandingMod
             OpenAiChatOptions.Builder options = OpenAiChatOptions.builder().model(connection.model());
             if ("DASHSCOPE".equals(connection.provider())) {
                 options.extraBody(Map.of("enable_thinking", false));
+            }
+            if ("project-guide-v1".equals(properties.getPromptVersion())) {
+                ResponseEntity<ChatResponse, ProjectGuide.Content> response =
+                        clientFactory.createChatClient(connection, options.build(), properties.getConnectTimeout(),
+                                properties.getReadTimeout()).prompt().system(prompt.systemPrompt()).user(prompt.userPrompt())
+                                .call().responseEntity(ProjectGuide.Content.class);
+                if (response.entity() == null) throw new AiReviewException("项目导览模型未返回符合契约的结果");
+                Usage usage = response.response() == null ? null : response.response().getMetadata().getUsage();
+                return new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(),
+                        token(usage == null ? null : usage.getPromptTokens()),
+                        token(usage == null ? null : usage.getCompletionTokens()),
+                        token(usage == null ? null : usage.getTotalTokens()),
+                        new ProjectGuide("project-guide-v1", null, response.entity(), null, List.of()));
             }
             ResponseEntity<ChatResponse, StructuredReport> response = clientFactory.createChatClient(
                             connection, options.build(),

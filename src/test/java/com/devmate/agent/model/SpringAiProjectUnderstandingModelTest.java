@@ -18,6 +18,30 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class SpringAiProjectUnderstandingModelTest {
 
     @Test
+    void mapsVersionedGuideContentThroughSpringAiWithoutAcceptingModelSourceLocations() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String contentJson = new String(getClass().getResourceAsStream("/guide/cli-guide.json").readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        var envelope = mapper.createObjectNode(); envelope.put("id", "guide-1"); envelope.put("object", "chat.completion");
+        envelope.put("created", 1); envelope.put("model", "example-model");
+        var choice = envelope.putArray("choices").addObject(); choice.put("index", 0); choice.put("finish_reason", "stop");
+        choice.putObject("message").put("role", "assistant").put("content", contentJson);
+        envelope.putObject("usage").put("prompt_tokens", 40).put("completion_tokens", 80).put("total_tokens", 120);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://model.example/v1/chat/completions"))
+                .andRespond(withSuccess(mapper.writeValueAsString(envelope), MediaType.APPLICATION_JSON));
+        var model = new SpringAiProjectUnderstandingModel(new ModelConnectionSnapshot("COMPATIBLE", "example-model",
+                "https://model.example/v1", "test-key"), new ProjectUnderstandingProperties(), new SpringAiChatClientFactory(builder, false));
+        var result = model.analyze(new ProjectUnderstandingPrompt("请按 Content 契约输出", "evidenceId=42"));
+        assertThat(result.guide().schemaVersion()).isEqualTo("project-guide-v1");
+        assertThat(result.guide().content().project().type()).isEqualTo("Python CLI");
+        assertThat(result.guide().snapshot()).isNull();
+        assertThat(result.guide().evidence()).isEmpty();
+        assertThat(result.totalTokens()).isEqualTo(120); server.verify();
+    }
+
+    @Test
     void mapsStructuredChineseReportAndUsageThroughSpringAi() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -41,9 +65,11 @@ class SpringAiProjectUnderstandingModelTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
+        ProjectUnderstandingProperties properties = new ProjectUnderstandingProperties();
+        properties.setPromptVersion("project-understanding-v2");
         SpringAiProjectUnderstandingModel model = new SpringAiProjectUnderstandingModel(
                 new ModelConnectionSnapshot("DASHSCOPE", "qwen-plus", "https://model.example/v1", "test-key"),
-                new ProjectUnderstandingProperties(), new SpringAiChatClientFactory(builder, false)
+                properties, new SpringAiChatClientFactory(builder, false)
         );
         ProjectUnderstandingModelResult result = model.analyze(new ProjectUnderstandingPrompt(
                 "只基于证据", "evidenceId=42"

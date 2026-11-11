@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "创建待理解或审查的 Java 项目")
+@Schema(description = "创建待理解的项目；代码审查目前针对 Java")
 public record CreateProjectRequest(
         @Schema(description = "项目名称", example = "demo-service", maxLength = 100)
         @NotBlank(message = "项目名称不能为空")
