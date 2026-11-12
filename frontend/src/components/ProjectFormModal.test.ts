@@ -29,7 +29,7 @@ describe('ProjectFormModal', () => {
       name: 'demo',
       sourceType: 'GIT',
       sourceLocation: 'https://github.com/example/demo.git',
-      defaultBranch: 'main',
+      defaultBranch: '',
     }))
   })
 })

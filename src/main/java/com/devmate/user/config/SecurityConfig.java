@@ -16,6 +16,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 
 @Configuration
 @EnableConfigurationProperties(SecurityProperties.class)
@@ -44,12 +45,14 @@ public class SecurityConfig {
             return http.build();
         }
 
-        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtService, objectMapper);
+        var contextRepository = new RequestAttributeSecurityContextRepository();
+        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtService, objectMapper, contextRepository);
         ProjectAuthorizationFilter projectFilter = new ProjectAuthorizationFilter(
                 projectAccessService,
                 objectMapper
         );
-        http.exceptionHandling(exceptions -> exceptions
+        http.securityContext(context -> context.securityContextRepository(contextRepository))
+                .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(new ApiAuthenticationEntryPoint(objectMapper))
                         .accessDeniedHandler(new ApiAccessDeniedHandler(objectMapper)))
                 .authorizeHttpRequests(requests -> requests

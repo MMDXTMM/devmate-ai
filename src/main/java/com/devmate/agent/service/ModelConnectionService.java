@@ -2,6 +2,7 @@ package com.devmate.agent.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.devmate.agent.dto.ModelConnectionTestResponse;
+import com.devmate.agent.config.CompatibleModelProperties;
 import com.devmate.agent.dto.ModelConnectionUpdateRequest;
 import com.devmate.agent.dto.ModelProviderResponse;
 import com.devmate.agent.entity.UserModelConnection;
@@ -28,7 +29,8 @@ import java.util.Map;
 public class ModelConnectionService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ModelConnectionService.class);
-    private static final Map<String, ProviderDefinition> PROVIDERS = providers();
+    private final Map<String, ProviderDefinition> providers;
+    private final List<String> compatibleUrls;
 
     private final CurrentUserService currentUserService;
     private final SpringAiChatClientFactory chatClientFactory;
@@ -36,11 +38,16 @@ public class ModelConnectionService {
     private final ModelApiKeyCipher apiKeyCipher;
 
     public ModelConnectionService(CurrentUserService currentUserService, SpringAiChatClientFactory chatClientFactory,
-                                  UserModelConnectionMapper connectionMapper, ModelApiKeyCipher apiKeyCipher) {
+                                  UserModelConnectionMapper connectionMapper, ModelApiKeyCipher apiKeyCipher,
+                                  CompatibleModelProperties compatible) {
         this.currentUserService = currentUserService;
         this.chatClientFactory = chatClientFactory;
         this.connectionMapper = connectionMapper;
         this.apiKeyCipher = apiKeyCipher;
+        this.providers = providers(compatible);
+        this.compatibleUrls = compatible.isEnabled() ? java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(compatible.getBaseUrl()), compatible.getAllowedBaseUrls().stream())
+                .map(ModelEndpointFormat::normalize).distinct().toList() : List.of();
     }
 
     public List<ModelProviderResponse> list() {
@@ -48,20 +55,25 @@ public class ModelConnectionService {
         Map<String, UserModelConnection> connections = connectionMapper.selectList(
                 Wrappers.lambdaQuery(UserModelConnection.class).eq(UserModelConnection::getUserId, userId)
         ).stream().collect(java.util.stream.Collectors.toMap(UserModelConnection::getProvider, item -> item));
-        return PROVIDERS.values().stream().map(provider -> new ModelProviderResponse(
-                provider.id(), provider.displayName(), provider.baseUrl(), provider.models(),
+        return providers.values().stream().map(provider -> new ModelProviderResponse(
+                provider.id(), provider.displayName(), connectionUrl(provider, connections.get(provider.id())),
+                models(provider, connections.get(provider.id())),
                 connections.containsKey(provider.id()),
                 connections.containsKey(provider.id()) && Integer.valueOf(1).equals(connections.get(provider.id()).getIsActive()),
                 connections.containsKey(provider.id())
-                        ? connections.get(provider.id()).getModelName() : provider.models().getFirst()
+                        ? connections.get(provider.id()).getModelName() : provider.models().getFirst(),
+                "CHAT_COMPLETIONS", provider.id().equals("COMPATIBLE") ? compatibleUrls : List.of()
         )).toList();
     }
 
     @Transactional
     public List<ModelProviderResponse> update(ModelConnectionUpdateRequest request) {
         ProviderDefinition provider = provider(request.provider());
-        if (!provider.models().contains(request.model())) {
+        if (!validModel(provider, request.model())) {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "所选模型不属于当前提供方");
+        }
+        if (request.protocol() != null && !"CHAT_COMPLETIONS".equals(request.protocol())) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "当前仅支持 Chat Completions 协议，请确认中转站支持该接口");
         }
         Long userId = currentUserService.getRequiredUser().id();
         UserModelConnection existing = connectionMapper.selectOne(Wrappers.lambdaQuery(UserModelConnection.class)
@@ -70,6 +82,17 @@ public class ModelConnectionService {
         if (!StringUtils.hasText(request.apiKey()) && existing == null) {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "请先填写该提供方的API Key");
         }
+        String baseUrl = StringUtils.hasText(request.baseUrl()) ? ModelEndpointFormat.normalize(request.baseUrl())
+                : connectionUrl(provider, existing);
+        if ("COMPATIBLE".equals(provider.id())) {
+            if (!compatibleUrls.contains(baseUrl)) throw new BusinessException(ErrorCode.INVALID_ARGUMENT,
+                    "此 API 地址尚未获准，请选择受信任地址或由管理员添加到中转站地址名单");
+        } else if (!ModelEndpointFormat.normalize(provider.baseUrl()).equals(baseUrl)) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "官方提供方不支持更改 API 地址，请选择中转站入口");
+        }
+        if (existing != null && !connectionUrl(provider, existing).equals(baseUrl) && !StringUtils.hasText(request.apiKey())) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "更换 API 地址时请重新填写对应的 API Key");
+        }
         connectionMapper.update(null, Wrappers.lambdaUpdate(UserModelConnection.class)
                 .eq(UserModelConnection::getUserId, userId)
                 .set(UserModelConnection::getIsActive, 0)
@@ -77,7 +100,8 @@ public class ModelConnectionService {
         UserModelConnection connection = existing == null ? new UserModelConnection() : existing;
         connection.setUserId(userId);
         connection.setProvider(provider.id());
-        connection.setModelName(request.model());
+        connection.setModelName(request.model().trim());
+        connection.setBaseUrl(baseUrl);
         connection.setIsActive(1);
         connection.setActiveUserId(userId);
         connection.setUpdatedAt(java.time.LocalDateTime.now());
@@ -134,8 +158,9 @@ public class ModelConnectionService {
             throw new BusinessException(ErrorCode.CONFLICT, "请先在大模型连接中保存并启用一个模型");
         }
         ProviderDefinition provider = provider(state.getProvider());
+        requireTrusted(provider, state);
         String apiKey = apiKeyCipher.decrypt(userId, state.getProvider(), state.getEncryptedApiKey());
-        return new ModelConnectionSnapshot(provider.id(), state.getModelName(), provider.baseUrl(), apiKey);
+        return new ModelConnectionSnapshot(provider.id(), state.getModelName(), connectionUrl(provider, state), apiKey);
     }
 
     public ModelConnectionSnapshot requireActiveConnection(String expectedProvider, String expectedModel) {
@@ -146,6 +171,41 @@ public class ModelConnectionService {
                             + "，请切回该模型或新建对话");
         }
         return connection;
+    }
+
+    public ModelConnectionSnapshot requireSavedConnection(String providerId, String model) {
+        ProviderDefinition definition = provider(providerId);
+        if (!validModel(definition, model)) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "所选模型不属于当前提供方");
+        }
+        Long userId = currentUserService.getRequiredUser().id();
+        UserModelConnection connection = connectionMapper.selectOne(Wrappers.lambdaQuery(UserModelConnection.class)
+                .eq(UserModelConnection::getUserId, userId).eq(UserModelConnection::getProvider, providerId));
+        if (connection == null) throw new BusinessException(ErrorCode.CONFLICT, "请先保存该提供方的模型连接");
+        requireTrusted(definition, connection);
+        return new ModelConnectionSnapshot(providerId, model, connectionUrl(definition, connection),
+                apiKeyCipher.decrypt(userId, providerId, connection.getEncryptedApiKey()));
+    }
+
+    private String connectionUrl(ProviderDefinition provider, UserModelConnection connection) {
+        return connection != null && StringUtils.hasText(connection.getBaseUrl())
+                ? connection.getBaseUrl() : ModelEndpointFormat.normalize(provider.baseUrl());
+    }
+
+    private boolean validModel(ProviderDefinition provider, String model) {
+        return "COMPATIBLE".equals(provider.id())
+                ? model != null && model.matches("[A-Za-z0-9._:/-]{1,100}") : provider.models().contains(model);
+    }
+
+    private List<String> models(ProviderDefinition provider, UserModelConnection connection) {
+        return connection == null ? provider.models() : java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(connection.getModelName()), provider.models().stream()).distinct().toList();
+    }
+
+    private void requireTrusted(ProviderDefinition provider, UserModelConnection connection) {
+        if ("COMPATIBLE".equals(provider.id()) && !compatibleUrls.contains(connectionUrl(provider, connection))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "已保存的 API 地址不再受信任，请重新配置中转站连接");
+        }
     }
 
     private Integer responseStatus(Throwable throwable) {
@@ -175,14 +235,14 @@ public class ModelConnectionService {
     }
 
     private ProviderDefinition provider(String id) {
-        ProviderDefinition provider = PROVIDERS.get(id == null ? "" : id.trim().toUpperCase());
+        ProviderDefinition provider = providers.get(id == null ? "" : id.trim().toUpperCase(java.util.Locale.ROOT));
         if (provider == null) throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "暂不支持该模型提供方");
         return provider;
     }
 
     private long elapsedMs(long started) { return (System.nanoTime() - started) / 1_000_000; }
 
-    private static Map<String, ProviderDefinition> providers() {
+    private static Map<String, ProviderDefinition> providers(CompatibleModelProperties compatible) {
         Map<String, ProviderDefinition> providers = new LinkedHashMap<>();
         providers.put("DEEPSEEK", new ProviderDefinition("DEEPSEEK", "DeepSeek",
                 "https://api.deepseek.com", List.of("deepseek-v4-flash", "deepseek-v4-pro")));
@@ -191,6 +251,11 @@ public class ModelConnectionService {
                 List.of("qwen-plus", "qwen3.7-plus", "qwen3-coder-plus", "qwen-flash")));
         providers.put("OPENAI", new ProviderDefinition("OPENAI", "OpenAI",
                 "https://api.openai.com/v1", List.of("gpt-5.1", "gpt-5-mini", "gpt-4.1")));
+        compatible.validate();
+        if (compatible.isEnabled()) {
+            providers.put("COMPATIBLE", new ProviderDefinition("COMPATIBLE", compatible.getDisplayName(),
+                    compatible.getBaseUrl(), List.copyOf(compatible.getModels())));
+        }
         return Collections.unmodifiableMap(providers);
     }
 

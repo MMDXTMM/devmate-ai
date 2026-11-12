@@ -1,0 +1,4 @@
+interface:
+  display_name: "项目通俗导览"
+  short_description: "跨语言阅读项目证据，生成面向新人的用途、模块与业务流程导览"
+  default_prompt: "使用 $project-guide 拆解当前项目，先讲清用途、模块与业务流程，需要时再展开代码证据。"

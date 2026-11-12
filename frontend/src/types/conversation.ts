@@ -26,7 +26,7 @@ export interface ConversationMessage {
   sequenceNo: number
   role: 'USER' | 'ASSISTANT' | 'SYSTEM' | 'TOOL'
   content: string
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
   modelName?: string
   evidence: ConversationEvidence[]
   errorMessage?: string

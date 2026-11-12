@@ -15,7 +15,9 @@ describe('runProjectUnderstanding', () => {
       }),
     }
 
-    const result = await runProjectUnderstanding('project-1', api as never)
+    const stages: string[] = []
+    const result = await runProjectUnderstanding('project-1', api as never, stage => stages.push(stage))
+    expect(stages).toEqual(['SOURCE_IMPORT', 'EMBEDDING', 'COMPLETED'])
 
     expect(calls).toEqual(['import', 'embedding'])
     expect(result.embeddingIndex.processedChunks).toBe(3)

@@ -2,6 +2,8 @@ package com.devmate.conversation.controller;
 
 import com.devmate.common.api.ApiResponse;
 import com.devmate.conversation.dto.ConversationMessageResponse;
+import com.devmate.conversation.dto.ConversationCancellationResponse;
+import com.devmate.conversation.dto.RenameConversationRequest;
 import com.devmate.conversation.dto.ConversationResponse;
 import com.devmate.conversation.dto.CreateConversationMessageRequest;
 import com.devmate.conversation.dto.CreateConversationRequest;
@@ -14,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -49,6 +53,29 @@ public class ProjectConversationController {
     @Operation(summary = "查询项目对话列表")
     public ApiResponse<List<ConversationResponse>> list(@Positive @PathVariable Long projectId) {
         return ApiResponse.success(service.list(projectId));
+    }
+
+    @PutMapping("/{conversationId}")
+    @Operation(summary = "重命名自己的项目会话", description = "生成中返回 409；无权访问返回 403，已删除返回 404。")
+    public ApiResponse<ConversationResponse> rename(@Positive @PathVariable Long projectId,
+            @Positive @PathVariable Long conversationId, @Valid @RequestBody RenameConversationRequest request) {
+        return ApiResponse.success(service.rename(projectId, conversationId, request.title()));
+    }
+
+    @DeleteMapping("/{conversationId}")
+    @Operation(summary = "逻辑删除自己的项目会话", description = "生成中返回 409；不物理删除消息。")
+    public ApiResponse<Void> delete(@Positive @PathVariable Long projectId,
+            @Positive @PathVariable Long conversationId) {
+        service.delete(projectId, conversationId);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{conversationId}/messages/{messageId}/cancellations")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(summary = "停止生成并保存已有回答", description = "幂等受理；202 不代表保存完成，最终通过 SSE done 或历史返回 CANCELLED。已结束不会重新执行。")
+    public ApiResponse<ConversationCancellationResponse> cancel(@Positive @PathVariable Long projectId,
+            @Positive @PathVariable Long conversationId, @Positive @PathVariable Long messageId) {
+        return ApiResponse.success(service.cancel(projectId, conversationId, messageId));
     }
 
     @GetMapping("/{conversationId}/messages")

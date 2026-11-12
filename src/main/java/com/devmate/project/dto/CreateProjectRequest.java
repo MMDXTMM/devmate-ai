@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "创建待理解或审查的 Java 项目")
+@Schema(description = "创建待理解的项目；代码审查目前针对 Java")
 public record CreateProjectRequest(
         @Schema(description = "项目名称", example = "demo-service", maxLength = 100)
         @NotBlank(message = "项目名称不能为空")
@@ -26,7 +26,7 @@ public record CreateProjectRequest(
         @Size(max = 1000, message = "源码位置不能超过1000个字符")
         String sourceLocation,
 
-        @Schema(description = "默认分支", example = "main", maxLength = 100)
+        @Schema(description = "要导入的分支；留空时跟随远程仓库默认分支", example = "main", maxLength = 100)
         @Size(max = 100, message = "默认分支不能超过100个字符")
         String defaultBranch
 ) {

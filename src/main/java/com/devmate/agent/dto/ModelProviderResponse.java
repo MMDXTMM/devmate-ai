@@ -9,6 +9,8 @@ public record ModelProviderResponse(
         List<String> models,
         boolean configured,
         boolean active,
-        String selectedModel
+        String selectedModel,
+        String protocol,
+        List<String> allowedBaseUrls
 ) {
 }

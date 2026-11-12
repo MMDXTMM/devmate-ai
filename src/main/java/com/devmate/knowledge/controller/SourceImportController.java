@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/projects/{projectId}/imports")
 @Validated
-@Tag(name = "源码导入", description = "安全克隆、扫描和解析 Java 项目，保存可恢复的索引任务状态")
+@Tag(name = "源码导入", description = "安全克隆、扫描 Java 及白名单文本项目，保存可恢复的索引任务状态；Java 使用 AST，其他源码保留文本与行号")
 public class SourceImportController {
 
     private final SourceImportService sourceImportService;

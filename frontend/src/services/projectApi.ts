@@ -125,7 +125,7 @@ export const projectApi = {
     revision: string,
     attemptKey: string,
   ): Promise<ProjectUnderstandingReport> {
-    return request(`/api/projects/${encodeURIComponent(id)}/understanding-reports`, {
+    return request(`/api/projects/${encodeURIComponent(id)}/understanding-reports?background=true`, {
       method: 'POST',
       body: JSON.stringify({ revision, attemptKey }),
     })

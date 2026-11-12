@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import WorkspaceProjectGuide from './WorkspaceProjectGuide.vue'
 import { ApiError, projectApi } from '../services/projectApi'
 import type { Project, ReviewWorkflow, SourceDocument, SourceReference } from '../types/project'
 
@@ -15,7 +16,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   back: []
   structure: []
-  chat: []
+  configureModel: []
+  chat: [question?: string]
   search: [query: string]
   reparse: []
   rebuild: []
@@ -33,7 +35,10 @@ const documents = ref<SourceDocument[]>([])
 const references = ref<SourceReference[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+let overviewEpoch = 0
+onBeforeUnmount(() => { overviewEpoch += 1 })
 
+const supportsJavaReview = computed(() => loading.value || !documents.value.length || documents.value.length >= 200 || documents.value.some(item => item.fileType === 'JAVA'))
 const sourceFiles = computed(() => documents.value.filter((item) => item.sourceKind === 'SOURCE_CODE'))
 const configurationFiles = computed(() => documents.value.filter((item) => item.sourceKind === 'CONFIGURATION'))
 const databaseFiles = computed(() => documents.value.filter((item) => item.sourceKind === 'DATABASE_SCHEMA'))
@@ -55,7 +60,7 @@ const reviewStages = computed(() => [
 ])
 
 const persistedReviewRunning = computed(() => props.reviewWorkflow?.status === 'RUNNING')
-const reviewActionDisabled = computed(() => props.reviewing || persistedReviewRunning.value)
+const reviewActionDisabled = computed(() => props.reviewing || props.parsing || props.rebuilding || persistedReviewRunning.value)
 const reviewActionLabel = computed(() => {
   if (props.reviewing || persistedReviewRunning.value) return '审查进行中'
   if (props.reviewWorkflow?.status === 'SUCCEEDED') return '重新审查'
@@ -80,7 +85,8 @@ function reviewStageState(stage: { key: string; completed: boolean }) {
 
 function sourceKindLabel(kind: SourceDocument['sourceKind']) {
   return {
-    SOURCE_CODE: 'Java 源码',
+    SOURCE_CODE: '源码',
+    DOCUMENTATION: '项目文档',
     CONFIGURATION: '配置',
     DATABASE_SCHEMA: '数据库结构',
   }[kind]
@@ -98,6 +104,11 @@ function formatDate(value?: string) {
 }
 
 async function loadOverview() {
+  const epoch = ++overviewEpoch
+  documents.value = []
+  references.value = []
+  loading.value = false
+  errorMessage.value = ''
   if (props.project.status !== 'READY') return
   loading.value = true
   errorMessage.value = ''
@@ -106,12 +117,13 @@ async function loadOverview() {
       projectApi.listSourceDocuments(props.project.id),
       projectApi.listSourceReferences(props.project.id),
     ])
+    if (epoch !== overviewEpoch) return
     documents.value = loadedDocuments
     references.value = loadedReferences
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '项目概览加载失败'
+    if (epoch === overviewEpoch) errorMessage.value = error instanceof ApiError ? error.message : '项目概览加载失败'
   } finally {
-    loading.value = false
+    if (epoch === overviewEpoch) loading.value = false
   }
 }
 
@@ -129,13 +141,15 @@ watch(
         <button class="back-button" type="button" @click="emit('back')">← 返回项目</button>
         <p class="eyebrow">PROJECT UNDERSTANDING</p>
         <h1 id="workspace-title">{{ project.name }}</h1>
-        <p>{{ project.description || '已解析的 Java 项目' }}</p>
+        <p>{{ project.description || '已导入的项目' }}</p>
       </div>
       <div class="workspace-status">
         <span class="status ready"><i></i>已可理解</span>
         <small>最近解析 {{ formatDate(project.lastIndexedAt) }}</small>
       </div>
     </header>
+
+    <WorkspaceProjectGuide :project="project" @chat="emit('chat', $event)" @configure-model="emit('configureModel')" />
 
     <div v-if="errorMessage" class="notice error" role="alert">
       {{ errorMessage }}
@@ -144,40 +158,25 @@ watch(
 
     <div v-if="loading" class="workspace-loading"><span class="loader"></span>正在整理项目结构…</div>
     <template v-else>
-      <section class="understanding-summary" aria-label="解析结果">
-        <div><strong>{{ sourceFiles.length }}</strong><span>Java 文件</span></div>
-        <div><strong>{{ totalSymbols }}</strong><span>类与方法等结构</span></div>
-        <div><strong>{{ packages }}</strong><span>源码包</span></div>
-        <div><strong>{{ resolvedReferences }}</strong><span>已解析调用关系</span></div>
-      </section>
-
       <section class="workspace-start">
         <div class="workspace-section-heading">
           <div>
             <p class="eyebrow">START HERE</p>
             <h2>从这里理解项目</h2>
           </div>
-          <p>先看全局结构，再带着具体问题检索代码证据。</p>
+          <p>先了解项目能做什么，再选择流程查看实现，最后追问或审查。</p>
         </div>
 
         <div class="workspace-primary-actions">
-          <button class="review-primary-action" type="button" :disabled="reviewActionDisabled" @click="emit('runReview')">
-            <span class="action-index">01</span>
-            <b>{{ reviewActionLabel }}</b>
-            <small>{{ reviewActionDescription }}</small>
-            <i>→</i>
-          </button>
           <button type="button" @click="emit('structure')">
-            <span class="action-index">02</span>
-            <b>浏览代码结构</b>
-            <small>查看文件、类、方法、注解和调用关系</small>
-            <i>→</i>
+            <span class="action-index" aria-hidden="true">🧩</span>
+            <b>理解项目业务</b>
+            <small>查看业务模块、接口入口与调用链，沿实现代码深入理解</small><i>→</i>
           </button>
           <button type="button" @click="emit('chat')">
-            <span class="action-index">03</span>
+            <span class="action-index" aria-hidden="true">💬</span>
             <b>向项目提问</b>
-            <small>多轮追问业务入口、调用链、配置和数据库关系</small>
-            <i>→</i>
+            <small>让 AI 结合真实代码解释业务，并支持连续追问</small><i>→</i>
           </button>
         </div>
 
@@ -214,6 +213,23 @@ watch(
         </div>
       </section>
 
+      <details class="advanced-analysis">
+        <summary>
+          <span><b>高级分析</b><small>代码审查、变更分析和评测按需使用</small></span>
+          <i>⌄</i>
+        </summary>
+      <section class="understanding-summary" aria-label="解析结果">
+        <div><strong>{{ sourceFiles.length }}</strong><span>源码文件</span></div>
+        <div><strong>{{ totalSymbols }}</strong><span>类与方法等结构</span></div>
+        <div><strong>{{ packages }}</strong><span>源码包</span></div>
+        <div><strong>{{ resolvedReferences }}</strong><span>已解析调用关系</span></div>
+      </section>
+
+        <div v-if="supportsJavaReview" class="advanced-review">          <button class="review-primary-action" type="button" :disabled="reviewActionDisabled" @click="emit('runReview')">
+            <span class="action-index" aria-hidden="true">🛡️</span><b>{{ reviewActionLabel }}</b>
+            <small>{{ reviewActionDescription }}；检查导入分支最新一次提交的变更，并消耗模型 API 额度</small><i>→</i>
+          </button>
+        </div>
       <section class="workspace-content-grid">
         <div class="workspace-files">
           <div class="workspace-section-heading compact-heading">
@@ -240,31 +256,26 @@ watch(
             <div><p class="eyebrow">LEARNING PATH</p><h2>推荐理解顺序</h2></div>
           </div>
           <ol>
-            <li><span>1</span><div><b>找到请求入口</b><small>先定位 Controller、接口路径和请求对象。</small></div></li>
-            <li><span>2</span><div><b>跟进核心业务</b><small>沿 Service 方法和调用关系理解状态变化。</small></div></li>
-            <li><span>3</span><div><b>核对数据与配置</b><small>查看 Mapper、数据库迁移和配置项如何支撑业务。</small></div></li>
+            <li><span>1</span><div><b>了解项目用途</b><small>先看谁使用、输入什么、得到什么。</small></div></li>
+            <li><span>2</span><div><b>选择一个能力</b><small>了解参与者、步骤与关键判断。</small></div></li>
+            <li><span>3</span><div><b>查看实现依据</b><small>需要深入时再阅读源码、测试与配置。</small></div></li>
             <li><span>4</span><div><b>再开始修改</b><small>检索相关测试和影响范围，形成最小开发方案。</small></div></li>
           </ol>
           <div class="question-examples">
             <span>可以先问</span>
-            <button type="button" @click="emit('search', 'Controller Service 项目的主要请求入口和核心业务流程在哪里？')">主要业务流程在哪里？</button>
-            <button type="button" @click="emit('search', 'Mapper Repository DATABASE_TABLE 数据访问和数据库表关系在哪里？')">数据如何持久化？</button>
-            <button type="button" @click="emit('search', 'test 测试 修改功能应该从哪些文件开始？')">修改功能从哪里开始？</button>
+            <button type="button" @click="emit('chat', '请先用通俗中文介绍这个项目的用途和主要业务流程，先不展开技术细节，区分观察与未知。')">主要业务流程在哪里？</button>
+            <button type="button" @click="emit('chat', '请解释这个项目接收什么输入、怎样处理、输出什么，区分观察与未知。')">输入输出是什么？</button>
+            <button type="button" @click="emit('chat', '我第一次接触这个项目，修改一个功能前应该按什么顺序阅读代码和测试？请给出证据。')">修改功能从哪里开始？</button>
           </div>
         </div>
       </section>
 
-      <details class="advanced-analysis">
-        <summary>
-          <span><b>高级分析</b><small>代码审查、变更分析和评测按需使用</small></span>
-          <i>⌄</i>
-        </summary>
         <div class="advanced-actions">
           <button type="button" @click="emit('search', '')"><b>搜索代码证据</b><small>直接使用 Hybrid RAG 检索</small></button>
           <button type="button" @click="emit('diff')"><b>变更范围</b><small>查看最新 Git Diff 覆盖</small></button>
-          <button type="button" @click="emit('staticAnalysis')"><b>静态检查</b><small>检查确定性代码问题</small></button>
-          <button type="button" @click="emit('review')"><b>最近审查报告</b><small>读取已保存的结构化结果</small></button>
-          <button type="button" @click="emit('evaluation')"><b>审查评测</b><small>查看命中、误报和漏报</small></button>
+          <button v-if="supportsJavaReview" type="button" @click="emit('staticAnalysis')"><b>静态检查</b><small>检查确定性代码问题</small></button>
+          <button v-if="supportsJavaReview" type="button" @click="emit('review')"><b>最近审查报告</b><small>读取已保存的结构化结果</small></button>
+          <button v-if="supportsJavaReview" type="button" @click="emit('evaluation')"><b>审查评测</b><small>查看命中、误报和漏报</small></button>
         </div>
         <div class="workspace-management">
           <button type="button" :disabled="parsing" @click="emit('reparse')">{{ parsing ? '解析中…' : '重新解析源码' }}</button>

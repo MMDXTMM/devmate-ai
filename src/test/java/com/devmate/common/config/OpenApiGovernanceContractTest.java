@@ -101,6 +101,10 @@ class OpenApiGovernanceContractTest {
                 })
         );
 
+        assertThat(root.at("/components/schemas/ProjectUnderstandingReportResponse/properties/guide/$ref").asText())
+                .endsWith("/ProjectGuide");
+        assertThat(root.at("/components/schemas/ProjectGuide/properties/schemaVersion/type").asText()).isEqualTo("string");
+        assertThat(root.at("/components/schemas/Evidence/properties/id/type").asText()).isEqualTo("string");
         assertThat(root.at("/components/schemas/ModelConnectionUpdateRequest/properties/apiKey/writeOnly")
                 .asBoolean()).isTrue();
         assertThat(root.at("/components/schemas/CreateAiReviewRequest/properties/attemptKey/pattern")

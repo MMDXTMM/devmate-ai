@@ -78,6 +78,9 @@ class ModelConnectionServiceTest {
     void rejectsUnknownModelAndMissingKey() {
         loginAs(8101L, "model-user-a");
         assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest(
+                "COMPATIBLE", "unconfigured-model", "test-key"
+        ))).isInstanceOf(BusinessException.class).hasMessage("暂不支持该模型提供方");
+        assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest(
                 "DEEPSEEK", "old-model", "secret"
         ))).isInstanceOf(BusinessException.class).hasMessage("所选模型不属于当前提供方");
         assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest(
@@ -169,6 +172,23 @@ class ModelConnectionServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("模型服务在90秒内未响应，请稍后重试或切换更快的模型")
                 .hasMessageNotContaining("timeout-secret");
+    }
+
+    @Test
+    void selectsSavedModelsWithoutChangingActiveConnectionAndRejectsOtherAccounts() {
+        loginAs(8101L, "model-user-a");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "test-secret-a"));
+        service.update(new ModelConnectionUpdateRequest("DASHSCOPE", "qwen-plus", "test-secret-b"));
+        var selected = service.requireSavedConnection("DEEPSEEK", "deepseek-v4-pro");
+        assertThat(selected.provider()).isEqualTo("DEEPSEEK");
+        assertThat(selected.model()).isEqualTo("deepseek-v4-pro");
+        assertThat(selected.apiKey()).isEqualTo("test-secret-a");
+        assertThat(service.requireActiveConnection().provider()).isEqualTo("DASHSCOPE");
+        assertThatThrownBy(() -> service.requireSavedConnection("DEEPSEEK", "not-allowed"))
+                .hasMessageContaining("不属于");
+        loginAs(8102L, "model-user-b");
+        assertThatThrownBy(() -> service.requireSavedConnection("DEEPSEEK", "deepseek-v4-pro"))
+                .hasMessageContaining("先保存");
     }
 
     private void loginAs(long id, String username) {

@@ -24,7 +24,7 @@ public class ProjectConversationModelRegistry {
     }
 
     public ProjectConversationModel current(String provider, String model) {
-        return create(connectionService.requireActiveConnection(provider, model));
+        return create(connectionService.requireSavedConnection(provider, model));
     }
 
     private ProjectConversationModel create(ModelConnectionSnapshot connection) {

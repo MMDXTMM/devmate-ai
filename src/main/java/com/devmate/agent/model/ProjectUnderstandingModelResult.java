@@ -1,6 +1,7 @@
 package com.devmate.agent.model;
 
 import java.util.List;
+import com.devmate.knowledge.dto.ProjectGuide;
 
 public record ProjectUnderstandingModelResult(
         String executiveSummary,
@@ -10,8 +11,16 @@ public record ProjectUnderstandingModelResult(
         List<String> risksAndUnknowns,
         int promptTokens,
         int completionTokens,
-        int totalTokens
+        int totalTokens,
+        ProjectGuide guide
 ) {
+    public ProjectUnderstandingModelResult(String executiveSummary, String architectureNarrative,
+            List<BusinessFlow> businessFlows, List<ReadingGuide> readingGuide, List<String> risksAndUnknowns,
+            int promptTokens, int completionTokens, int totalTokens) {
+        this(executiveSummary, architectureNarrative, businessFlows, readingGuide, risksAndUnknowns,
+                promptTokens, completionTokens, totalTokens, null);
+    }
+
     public record BusinessFlow(
             String name,
             String goal,

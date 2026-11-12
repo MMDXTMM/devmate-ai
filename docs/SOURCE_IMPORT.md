@@ -14,7 +14,7 @@ Vue 点击“导入源码”
 project.status = INDEXING
 index_task = RUNNING
         ↓
-JGit 浅克隆指定分支到独立任务目录
+JGit 浅克隆指定分支（留空时跟随远程 HEAD）到独立任务目录
         ↓
 递归扫描普通 Spring Boot 或 Maven 多模块仓库中的 Java、YAML、Properties 和迁移目录 SQL，并应用分类数量、单文件和总容量限制
         ↓
@@ -129,3 +129,9 @@ Vue 项目列表已接入导入接口。项目就绪后可点击“结构”，�
 2026-08-03 使用本机 MySQL 和私有 GitHub 仓库 `MMDXTMM/devmate-ai` 完成验收：指定 `main` 分支克隆成功，识别 revision，扫描并保存 31 个 Java 文件元数据，`index_task` 状态为 `SUCCEEDED`，`project` 状态为 `READY`。
 
 2026-08-04 完成 AST 解析闭环，Flyway V3 已在 H2 与本机 MySQL 26.7 执行成功。后端 33 个测试、前端 8 个测试和生产构建通过。
+
+## 新人导入与分支选择（2026-11-11）
+
+`defaultBranch` 保持可选字符串；空字符串或不传时按远程仓库默认分支获取源码，不再假定为 `main`。显式传入 `main`、`master` 或其他分支时仍严格按该分支导入，不静默切换。原有错误分支可通过编辑项目、清空分支后重新导入恢复。数据库继续保存导入的 commit revision，不新增自动分支字段。
+
+页面分别展示“读取仓库并解析源码”和“建立检索索引”。第一阶段成功、第二阶段失败时保留源码结果，提示检查独立的 Embedding 配置或重试；同一 revision 的源码复用规则保持不变。这些阶段不是伪造的百分比，也不代表已经接入服务端细粒度进度推送。

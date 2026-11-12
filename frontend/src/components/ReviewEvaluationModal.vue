@@ -196,6 +196,7 @@ watch(
   <div v-if="open" class="modal-backdrop" @click.self="emit('close')">
     <section class="modal evaluation-modal" role="dialog" aria-modal="true" aria-labelledby="evaluation-title">
       <header class="modal-header">
+        <span class="surface-icon" aria-hidden="true">🧪</span>
         <div>
           <p class="eyebrow">REPRODUCIBLE EVALUATION</p>
           <h2 id="evaluation-title">{{ projectName }} · 效果评测</h2>

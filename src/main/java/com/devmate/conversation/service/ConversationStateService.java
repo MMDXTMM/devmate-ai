@@ -88,6 +88,17 @@ public class ConversationStateService {
         return message;
     }
 
+    @Transactional(readOnly = true)
+    public String previousQuestion(Long conversationId, Long projectId) {
+        requireOwned(conversationId, projectId);
+        ConversationMessage previous = messageMapper.selectOne(Wrappers.lambdaQuery(ConversationMessage.class)
+                .eq(ConversationMessage::getConversationId, conversationId)
+                .eq(ConversationMessage::getMessageRole, "USER")
+                .eq(ConversationMessage::getStatus, "COMPLETED")
+                .orderByDesc(ConversationMessage::getSequenceNo).last("LIMIT 1"));
+        return previous == null ? "" : previous.getContent();
+    }
+
     @Transactional
     public PreparedTurn prepareTurn(Long conversationId, Long projectId, String question,
                                     String attemptKey, String requestHash, String evidenceJson,
@@ -174,6 +185,63 @@ public class ConversationStateService {
                 .set(ConversationMessage::getErrorMessage, limited(errorMessage, 500))
                 .set(ConversationMessage::getLatencyMs, latencyMs)
                 .set(ConversationMessage::getRunningKey, null));
+    }
+
+    @Transactional
+    public Conversation rename(Long conversationId, Long projectId, String title) {
+        Conversation conversation = manageable(conversationId, projectId);
+        if (title == null || title.isBlank() || title.length() > 100) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "对话标题需要 1–100 字");
+        }
+        conversation.setTitle(title.trim());
+        conversation.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conversation);
+        return conversation;
+    }
+
+    @Transactional
+    public void delete(Long conversationId, Long projectId) {
+        Conversation conversation = manageable(conversationId, projectId);
+        conversationMapper.update(null, Wrappers.lambdaUpdate(Conversation.class)
+                .eq(Conversation::getId, conversation.getId())
+                .set(Conversation::getUpdatedAt, LocalDateTime.now()));
+        conversationMapper.deleteById(conversation.getId());
+    }
+
+    private Conversation manageable(Long conversationId, Long projectId) {
+        Conversation conversation = conversationMapper.selectByIdForUpdate(conversationId);
+        validateOwned(conversation, projectId);
+        Long running = messageMapper.selectCount(Wrappers.lambdaQuery(ConversationMessage.class)
+                .eq(ConversationMessage::getConversationId, conversationId)
+                .eq(ConversationMessage::getStatus, "RUNNING"));
+        if (running > 0) throw new BusinessException(ErrorCode.CONFLICT, "请先停止回答，再管理该对话");
+        return conversation;
+    }
+
+    @Transactional(readOnly = true)
+    public ConversationMessage requireMessage(Long conversationId, Long projectId, Long messageId) {
+        requireOwned(conversationId, projectId);
+        ConversationMessage message = messageMapper.selectById(messageId);
+        if (message == null || !Objects.equals(message.getConversationId(), conversationId)) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "消息不存在");
+        }
+        return message;
+    }
+
+    @Transactional
+    public ConversationMessage cancel(Long messageId, String content, long latencyMs) {
+        messageMapper.update(null, Wrappers.lambdaUpdate(ConversationMessage.class)
+                .eq(ConversationMessage::getId, messageId)
+                .eq(ConversationMessage::getStatus, "RUNNING")
+                .set(ConversationMessage::getStatus, "CANCELLED")
+                .set(ConversationMessage::getContent, content)
+                .set(ConversationMessage::getLatencyMs, latencyMs)
+                .set(ConversationMessage::getRunningKey, null));
+        ConversationMessage cancelled = messageMapper.selectById(messageId);
+        conversationMapper.update(null, Wrappers.lambdaUpdate(Conversation.class)
+                .eq(Conversation::getId, cancelled.getConversationId())
+                .set(Conversation::getUpdatedAt, LocalDateTime.now()));
+        return cancelled;
     }
 
     private List<ConversationMessage> recentCompleted(Long conversationId, int limit) {

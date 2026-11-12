@@ -157,3 +157,12 @@ curl -i -H 'X-Request-Id: local-check-1' http://localhost:8080/api/health
 - 破坏性数据库变化：使用事先验证的数据恢复或反向迁移方案。
 
 每次发布记录 Git revision、数据库版本、配置项名称变化和验证结果，不记录配置值。
+
+
+## 新人导览生成较慢或超时
+
+工作台使用后台生成：POST understanding-reports?background=true 返回 RUNNING，GET latest 查询最终 SUCCEEDED/FAILED。不要因页面仍显示分析中连续重新提交；离开页面不会取消已排队的任务。旧调用方不传 background 时仍同步等待。
+
+报告专用配置 `devmate.project-understanding.read-timeout` 默认为 180s，connect-timeout 为 5s。超过上限会标记失败；401/403 检查模型权限，429 检查限额，连接失败检查网络，带字段位置的校验失败是输出契约问题，不能通过更换 API Key 解释所有错误。不要把上限无止境调大，也不要打印模型 Key、原始报告或完整 Prompt 排查。
+
+本机最多 2 个运行任务和 2 个排队任务；队列满返回 409 并释放任务占位。重启会失去内存队列，轮询/准备任务时将超过 10 分钟的 RUNNING 标为中断超时，之后可手动重试。页面自动查询最多 11 分钟，网络读取失败时提供“刷新状态”；不会自动再次付费调用模型。

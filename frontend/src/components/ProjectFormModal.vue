@@ -18,12 +18,12 @@ const emptyForm = (): ProjectForm => ({
   description: '',
   sourceType: 'GIT',
   sourceLocation: '',
-  defaultBranch: 'main',
+  defaultBranch: '',
 })
 
 const form = reactive<ProjectForm>(emptyForm())
 const error = reactive({ message: '' })
-const title = computed(() => (props.project ? '编辑项目' : '导入 Java 项目'))
+const title = computed(() => (props.project ? '编辑项目' : '导入项目'))
 
 watch(
   () => [props.open, props.project] as const,
@@ -72,6 +72,7 @@ function submit() {
   <div v-if="open" class="modal-backdrop" role="presentation" @click.self="emit('close')">
     <section class="modal" role="dialog" aria-modal="true" :aria-label="title">
       <header class="modal-header">
+        <span class="surface-icon" aria-hidden="true">📦</span>
         <div>
           <p class="eyebrow">PROJECT CONFIGURATION</p>
           <h2>{{ title }}</h2>
@@ -90,7 +91,7 @@ function submit() {
           <textarea v-model="form.description" maxlength="500" rows="3" placeholder="简要描述项目用途" />
         </label>
 
-        <p v-if="!project" class="form-context">当前版本支持 HTTPS Git 仓库。保存后会自动解析 Java 源码并建立项目检索索引。</p>
+        <p v-if="!project" class="form-context">粘贴仓库主页的 HTTPS 地址即可。支持 Java、Python、JavaScript/TypeScript、Go 等常见文本项目，优先阅读 README，再结合源码生成导览。Java 提供额外的 AST 与代码审查能力。公开仓库可直接导入；私有仓库需要服务端配置只读 Git Token，模型 API Key 不能用于读取仓库。</p>
 
         <label>
           <span>{{ form.sourceType === 'GIT' ? 'Git 仓库地址 *' : '源码位置' }}</span>
@@ -102,8 +103,8 @@ function submit() {
         </label>
 
         <label>
-          <span>默认分支</span>
-          <input v-model="form.defaultBranch" maxlength="100" placeholder="main" />
+          <span>导入分支（选填）</span>
+          <input v-model="form.defaultBranch" maxlength="100" placeholder="留空自动使用仓库默认分支" />
         </label>
 
         <p v-if="error.message" class="form-error" role="alert">{{ error.message }}</p>

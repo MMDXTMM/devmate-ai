@@ -15,6 +15,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,4 +56,25 @@ class ProjectConversationControllerTest {
 
         verifyNoInteractions(service);
     }
+    @Test
+    void validatesRenameBeforeCallingService() throws Exception {
+        for (String title : new String[] {"", "   ", "x".repeat(101)}) {
+            mockMvc.perform(put("/api/projects/1/agent-conversations/2")
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"" + title + "\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void servesManagementAndCancellationContracts() throws Exception {
+        when(service.cancel(1L, 2L, 9007199254740993L)).thenReturn(
+                new com.devmate.conversation.dto.ConversationCancellationResponse(9007199254740993L, true));
+        mockMvc.perform(post("/api/projects/1/agent-conversations/2/messages/9007199254740993/cancellations"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.messageId").value("9007199254740993"))
+                .andExpect(jsonPath("$.data.cancellationRequested").value(true));
+        mockMvc.perform(delete("/api/projects/1/agent-conversations/2")).andExpect(status().isOk());
+    }
+
 }

@@ -89,6 +89,48 @@ class SourceImportControllerTest {
     Path tempDir;
 
     @Test
+    void importsPythonAndFrontendWithoutJavaAndKeepsDocumentEvidence() throws Exception {
+        ProjectResponse project = createGitProject("text-project");
+        given(gitSourceClient.cloneRepository(anyString(), anyString(), any(Path.class))).willAnswer(invocation -> {
+            Path target = invocation.getArgument(2); Files.createDirectories(target);
+            Files.writeString(target.resolve("main.py"), "def main():\n    print('hello')\n");
+            Files.writeString(target.resolve("index.ts"), "export const run = () => 'hello';\n");
+            Files.writeString(target.resolve("README.md"), "# 工具\n一个 Python CLI 与 TS 库。\n");
+            Files.writeString(target.resolve("package.json"), "{\"name\":\"demo\"}");
+            return new GitCloneResult(target, REVISION);
+        });
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.totalFiles").value(4)).andExpect(jsonPath("$.data.id").isString());
+        assertThat(projectMapper.selectById(project.id()).getStatus()).isEqualTo("READY");
+        var docs = documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class).eq(KnowledgeDocument::getProjectId, project.id()));
+        assertThat(docs).extracting(KnowledgeDocument::getFileType).containsExactlyInAnyOrder("TEXT", "TEXT", "DOCUMENTATION", "MANIFEST");
+        assertThat(chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class).eq(KnowledgeChunk::getProjectId, project.id())))
+                .allSatisfy(chunk -> assertThat(chunk.getChunkType()).isEqualTo("TEXT_EXCERPT"));
+        mockMvc.perform(get("/api/projects/{projectId}/business-map", project.id()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.moduleCount").value(0));
+    }
+
+    @Test
+    void leavesUnspecifiedBranchToRemoteDefaultAndPersistsImportedRevision() throws Exception {
+        ProjectResponse project = projectService.createProject(new CreateProjectRequest(
+                "remote-default", null, "GIT", "https://github.com/example/demo.git", null
+        ));
+        given(gitSourceClient.cloneRepository(anyString(), org.mockito.ArgumentMatchers.isNull(), any(Path.class)))
+                .willAnswer(invocation -> {
+                    Path target = invocation.getArgument(2);
+                    Files.createDirectories(target);
+                    Files.writeString(target.resolve("Demo.java"), "public class Demo {}");
+                    return new GitCloneResult(target, REVISION);
+                });
+        mockMvc.perform(post("/api/projects/{projectId}/imports", project.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.revision").value(REVISION));
+        assertThat(projectMapper.selectById(project.id()).getCurrentRevision()).isEqualTo(REVISION);
+    }
+
+    @Test
     void importsGitRepositoryAndPersistsJavaMetadata() throws Exception {
         ProjectResponse project = createGitProject("import-success");
         mockSuccessfulClone();

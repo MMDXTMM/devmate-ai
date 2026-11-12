@@ -10,6 +10,15 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('projectApi', () => {
+  it('submits a background understanding task with the original idempotency key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      code: 0, data: { id: '123', status: 'RUNNING' },
+    }))
+    const result = await projectApi.createUnderstandingReport('42', 'revision', 'attempt')
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/42/understanding-reports?background=true',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ revision: 'revision', attemptKey: 'attempt' }) }))
+    expect(result.status).toBe('RUNNING')
+  })
   it('builds pagination and filter query parameters', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       code: 0,

@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ModelConnectionModal from './ModelConnectionModal.vue'
+import { ApiError } from '../services/apiClient'
 import { modelConnectionApi } from '../services/modelConnectionApi'
 
 const providers = [{
@@ -38,4 +39,57 @@ describe('ModelConnectionModal', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('DEEPSEEK / deepseek-v4-flash · 88ms')
   })
+  it('discards an unsaved key on close and reloads the saved model on reopen', async () => {
+    vi.spyOn(modelConnectionApi, 'list').mockResolvedValue(providers)
+    const wrapper = mount(ModelConnectionModal, { props: { open: true } })
+    await flushPromises()
+    await wrapper.get('input[type="password"]').setValue('unsaved-test-key')
+    await wrapper.get('select').setValue('deepseek-v4-pro')
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    expect(wrapper.get('input[type="password"]').element).toHaveProperty('value', '')
+    expect(wrapper.get('select').element).toHaveProperty('value', 'deepseek-v4-flash')
+    wrapper.unmount()
+  })
+
+  it('shows a useful connection failure without leaving an old success result', async () => {
+    vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([{ ...providers[0], configured: true, active: true }])
+    vi.spyOn(modelConnectionApi, 'test')
+      .mockResolvedValueOnce({ provider: 'DEEPSEEK', model: 'test', latencyMs: 10, message: '连接成功' })
+      .mockRejectedValueOnce(new ApiError('API Key无效或没有模型权限'))
+    const wrapper = mount(ModelConnectionModal, { props: { open: true } })
+    await flushPromises()
+    await wrapper.get('.model-modal-footer button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toContain('返回项目')
+    await wrapper.get('.model-modal-footer button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('API Key无效')
+    wrapper.unmount()
+  })
+
+  it('edits a trusted compatible API root, model ID and explicit protocol', async () => {
+    vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([{
+      provider: 'COMPATIBLE', displayName: 'OpenAI 兼容／中转站', baseUrl: 'https://compatible.example/v1',
+      models: ['test-model'], selectedModel: 'test-model', configured: false, active: false,
+    }])
+    const update = vi.spyOn(modelConnectionApi, 'update').mockResolvedValue([])
+    const wrapper = mount(ModelConnectionModal, { props: { open: true } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('OpenAI 兼容／中转站')
+    expect(wrapper.text()).toContain('https://compatible.example/v1')
+    expect(wrapper.get('input[type="url"]').element).toHaveProperty('value', 'https://compatible.example/v1')
+    expect(wrapper.text()).toContain('Responses 是另一种协议')
+    await wrapper.get('input[type="url"]').setValue('https://compatible.example/v1/chat/completions')
+    await wrapper.get('input[type="text"]').setValue('vendor/custom-model')
+    expect(wrapper.get('.relay-request-preview').text()).toContain('POST https://compatible.example/v1/chat/completions')
+    await wrapper.get('input[type="password"]').setValue('test-only-key')
+    await wrapper.get('.model-provider-grid button').trigger('click')
+    await flushPromises()
+    expect(update).toHaveBeenCalledWith('COMPATIBLE', 'vendor/custom-model', 'test-only-key', { baseUrl: 'https://compatible.example/v1/chat/completions', protocol: 'CHAT_COMPLETIONS' })
+    wrapper.unmount()
+  })
+
 })

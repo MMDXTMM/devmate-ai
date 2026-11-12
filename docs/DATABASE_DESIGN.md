@@ -108,7 +108,11 @@ V21 增加新项目生成前的需求澄清事实源，与导入已有仓库使�
 - `prompt_tokens/completion_tokens/total_tokens/latency_ms`：用于成本与性能审计。
 - `error_code/error_message`：只保存可读、脱敏失败信息，不保存 Prompt、API Key、第三方响应或完整源码。
 
-V24 不把模型输出当作源码事实：业务流程和阅读建议只能引用输入中存在的证据 ID，Java 服务负责校验并回填真实位置。历史成功报告保留用于审计；最近报告按 `project_id, created_at, id` 查询。
+V24 不把模型输出当作源码事实：业务流程和阅读建议只能引用输入中存在的证据 ID，Java 服务负责校验并回填真实位置。历史成功报告保留用于审计；最近报告按当前 `user_id + project_id` 和 `created_at, id` 查询。
+
+`project-guide-v1` 继续使用该 JSON 列：新增可选 `guide`，保存版本化 project/modules/flows、宿主快照摘要、真实读取范围和证据元数据，不重复存源码。API 回读补充真实代码预览；旧 JSON 缺少 guide 时兼容显示。文本导入在现有 document/chunk 的字符串类型列保存 TEXT、MANIFEST、DOCUMENTATION/TEXT_EXCERPT，片段元数据标记 text-excerpts-v1。Java AST 的 v2 语义与历史 Chunk 不被改写；无新表、列或 Flyway 迁移。详见 PROJECT_GUIDE_IMPLEMENTATION.md。
+
+`project-guide-v2` Prompt 生成学习概要，沿用上述兼容 JSON 外层，新增可空 `content.overview.highlights` 及宿主 `languages` 字段。旧报告缺失字段时不修改原 JSON，回读后可升级生成新报告。亮点关联模块与真实证据，学习建议不作为运行验证。首次进入工作台读取缓存，无当前版本/学习概要才自动生成；权限、并发与幂等规则保持不变。
 
 ### 3.4 `project`
 
@@ -198,7 +202,9 @@ V22 增加一键代码审查的编排运行记录。该表不复制各子任务�
 - `(conversation_id, sequence_no)` 保证消息顺序唯一。
 - Token 字段记录在 AI 回复消息上，便于按会话统计。
 - V25 为对话增加固定的 `revision/provider/model_name/prompt_version`，防止项目或模型变化后把不同上下文混进同一历史。
-- 回复消息以 `RUNNING/COMPLETED/FAILED` 记录生命周期，`attempt_key + request_hash` 实现安全幂等。
+- 2026-11-11 的历史搜索、逐字显示与业务报告辅助检索沿用该结构；聊天正文仍由服务器持久化，前端标题搜索针对当前账号、当前项目最近 50 段对话，新会话记录 `project-conversation-v2`，无新增迁移。
+- 回复消息以 `RUNNING/COMPLETED/FAILED/CANCELLED` 记录生命周期，`attempt_key + request_hash` 实现安全幂等。
+- 停止后保存部分正文/证据/耗时，释放 `running_key`；取消的回答不进入后续模型历史。会话重命名与逻辑删除复用原列及行锁，生成中返回 409，无新增迁移。
 - `running_key` 只在生成中等于会话 ID，唯一约束保证同一会话只有一个回答任务；完成或失败时必须显式置空。
 - `evidence_json` 只保存 Chunk ID 数组，不复制完整源码；回读时由服务端重新校验文件与代码位置。
 - `error_code/error_message/latency_ms` 保存脱敏失败和耗时，不保存完整 Prompt、Key 或模型原始响应。
@@ -406,3 +412,17 @@ V23 保存登录账户的大模型连接配置：
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。
+
+### 项目导览 AI 图标（2026-11-11）
+
+V24 的 report_json.guide.content 兼容追加可空 appearance（projectIcon、modules[] 的 moduleId/icon；实验版 moduleIcons 对象兼容回读），属于导览的版本快照，不是项目业务字段，不新增表/列/迁移。旧 JSON 缺失时回退中性图标。项目列表/详情的 icon 是按当前用户、成员关系、当前 revision、SUCCEEDED、created_at/id 选最新报告后提取的展示投影；批量读取最多一页 100 个项目，不跨用户复用，不把报告或代码正文返回项目列表。新生成导览仍沿用原 attemptKey、状态、超时和短事务规则。
+
+
+### 项目导览后台任务兼容（2026-11-12）
+
+继续使用既有 project_understanding_report 的 RUNNING/SUCCEEDED/FAILED、attempt_key、running_key 和错误字段，不新增表列或修改迁移。background=true 先提交短事务，再运行模型；后台失败/队列拒绝均条件更新并释放 running_key。latest 查询会恢复超过 stale-task-timeout 的中断任务。v6 的 E1/E2 等引用只存在于本轮模型输入输出，严格映射回真实字符串 Chunk ID 后才保存 report_json，历史报告与聊天证据保持兼容。
+
+
+### V26：账户中转站请求地址（2026-11-12）
+
+user_model_connection 新增可空 base_url VARCHAR(500)，不修改 V23 或历史数据。新保存配置写入规范化且在服务端信任名单内的地址；旧记录为空时回退提供方默认地址。原有用户/提供方唯一键、单活动连接约束和 Key 加密策略不变；API 不返回加密密文。仅支持 Chat Completions，协议为固定契约，不增加虚假的 Responses 配置列。本地 MySQL 已验证迁移、原账号保存回读及 Key 密文未变。

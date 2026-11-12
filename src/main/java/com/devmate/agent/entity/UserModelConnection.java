@@ -12,6 +12,7 @@ public class UserModelConnection {
     private Long userId;
     private String provider;
     private String modelName;
+    private String baseUrl;
     private String encryptedApiKey;
     private Integer isActive;
     private Long activeUserId;
@@ -24,6 +25,8 @@ public class UserModelConnection {
     public void setUserId(Long userId) { this.userId = userId; }
     public String getProvider() { return provider; }
     public void setProvider(String provider) { this.provider = provider; }
+    public String getBaseUrl() { return baseUrl; }
+    public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
     public String getModelName() { return modelName; }
     public void setModelName(String modelName) { this.modelName = modelName; }
     public String getEncryptedApiKey() { return encryptedApiKey; }

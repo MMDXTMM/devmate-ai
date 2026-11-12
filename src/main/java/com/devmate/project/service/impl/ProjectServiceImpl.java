@@ -21,6 +21,7 @@ import com.devmate.user.entity.ProjectMember;
 import com.devmate.user.mapper.ProjectMemberMapper;
 import com.devmate.user.service.CurrentUserService;
 import com.devmate.user.service.ProjectAccessService;
+import com.devmate.knowledge.service.ProjectGuideIconService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -40,19 +41,22 @@ public class ProjectServiceImpl implements ProjectService {
     private final CurrentUserService currentUserService;
     private final ProjectAccessService projectAccessService;
     private final SecurityProperties securityProperties;
+    private final ProjectGuideIconService guideIconService;
 
     public ProjectServiceImpl(
             ProjectMapper projectMapper,
             ProjectMemberMapper projectMemberMapper,
             CurrentUserService currentUserService,
             ProjectAccessService projectAccessService,
-            SecurityProperties securityProperties
+            SecurityProperties securityProperties,
+            ProjectGuideIconService guideIconService
     ) {
         this.projectMapper = projectMapper;
         this.projectMemberMapper = projectMemberMapper;
         this.currentUserService = currentUserService;
         this.projectAccessService = projectAccessService;
         this.securityProperties = securityProperties;
+        this.guideIconService = guideIconService;
     }
 
     @Override
@@ -104,7 +108,7 @@ public class ProjectServiceImpl implements ProjectService {
         if (project == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "项目不存在");
         }
-        return ProjectResponse.from(project);
+        return ProjectResponse.from(project).withIcon(guideIconService.forProjects(List.of(projectId)).get(projectId));
     }
 
     @Override
@@ -123,9 +127,11 @@ public class ProjectServiceImpl implements ProjectService {
                 Page.of(request.page(), request.size()),
                 query
         );
+        var icons = guideIconService.forProjects(result.getRecords().stream().map(Project::getId).toList());
         List<ProjectResponse> items = result.getRecords()
                 .stream()
                 .map(ProjectResponse::from)
+                .map(item -> item.withIcon(icons.get(item.id())))
                 .toList();
 
         return new PageResponse<>(

@@ -23,7 +23,8 @@ import java.util.Set;
 public class ProjectSourceScanner {
 
     private static final Set<String> IGNORED_DIRECTORIES = Set.of(
-            ".git", ".idea", "target", "build", "out", "node_modules"
+            ".git", ".idea", "target", "build", "out", "node_modules", "dist", "vendor",
+            ".aws", ".ssh", ".kube", "secrets", "credentials", ".venv", "venv", "__pycache__", ".next", ".nuxt", ".gradle", "coverage", ".terraform"
     );
 
     private final SourceImportProperties properties;
@@ -77,6 +78,10 @@ public class ProjectSourceScanner {
             Map<SourceFileType, Integer> counts,
             long[] totalSize
     ) throws IOException {
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.startsWith(".env") || name.matches(".*(?:secret|credential|private[-_]?key|id_rsa|id_ed25519).*")
+                || name.matches(".*(?:-local|\\.local)\\.(yml|yaml|properties|json)$")
+                || name.endsWith("lock.json") || name.endsWith(".lock") || name.endsWith(".min.js")) return;
         if (type == SourceFileType.SQL && !isMigrationSql(realRoot, path)) {
             return;
         }
@@ -104,7 +109,17 @@ public class ProjectSourceScanner {
             throw new SourceImportException("数据库迁移文件数量超过限制");
         }
 
+        int textCount = counts.getOrDefault(SourceFileType.TEXT, 0)
+                + counts.getOrDefault(SourceFileType.MANIFEST, 0) + counts.getOrDefault(SourceFileType.DOCUMENTATION, 0);
+        if (textCount > properties.getMaxTextFiles()) throw new SourceImportException("通用文本文件数量超过限制");
         byte[] content = Files.readAllBytes(realFile);
+        // A suffix is not proof that a file is text. Never persist binary/invalid UTF-8 content.
+        for (byte value : content) if (value == 0) return;
+        try {
+            java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(content));
+        } catch (java.nio.charset.CharacterCodingException exception) { return; }
         String relativePath = realRoot.relativize(realFile)
                 .toString()
                 .replace(realRoot.getFileSystem().getSeparator(), "/");

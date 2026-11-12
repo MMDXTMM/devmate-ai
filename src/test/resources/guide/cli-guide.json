@@ -1,0 +1,6 @@
+{
+ "project":{"name":"表格整理工具","type":"Python CLI","purpose":"帮助财务人员把表格整理为按月汇总的文件。","audience":"需要整理记录的人员","input":"一份表格","output":"按月汇总的文件","scenario":"帮助理解的示例：把一周记录整理成汇总结果。","conclusionStatus":"OBSERVED","implementationStatus":"IMPLEMENTED","evidenceIds":["42"]},
+ "modules":[{"id":"convert","name":"整理记录","responsibility":"读取并汇总表格","capabilities":["读取记录","按月合并"],"input":"表格文件","output":"汇总文件","relatedModuleIds":[],"conclusionStatus":"OBSERVED","implementationStatus":"IMPLEMENTED","evidenceIds":["42"]}],
+ "flows":[{"id":"convert-flow","name":"整理一次表格","goal":"把明细变成汇总","actors":["使用者"],"trigger":"使用者提供表格","moduleIds":["convert"],"steps":[{"action":"读取记录并汇总","input":"表格","result":"输出汇总文件","moduleIds":["convert"],"conclusionStatus":"OBSERVED","evidenceIds":["42"]}],"rules":[{"text":"缺少文件时返回错误","conclusionStatus":"OBSERVED","evidenceIds":["42"]}],"outcomes":[{"text":"得到汇总文件或文件错误","conclusionStatus":"OBSERVED","evidenceIds":["42"]}],"unknowns":["大文件性能未验证"]}],
+ "glossary":[],"openQuestions":["未运行目标项目，实际输出需验证"]
+}

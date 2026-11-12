@@ -1,12 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SourceStructureModal from './SourceStructureModal.vue'
-import { projectApi } from '../services/projectApi'
+import { ApiError, projectApi } from '../services/projectApi'
 
 describe('SourceStructureModal', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('opens with an evidence-backed onboarding guide and can drill into implementation code', async () => {
+  it('opens directly with business interfaces and code without repeating the home guide', async () => {
     vi.spyOn(projectApi, 'getBusinessMap').mockResolvedValue({
       revision: 'abcdef',
       analysisMode: 'STATIC_CODE_EVIDENCE_V2',
@@ -83,49 +83,21 @@ describe('SourceStructureModal', () => {
         truncated: false, originalCharacters: 30,
       }],
     })
-    vi.spyOn(projectApi, 'createUnderstandingReport').mockResolvedValue({
-      id: '30', projectId: '1', revision: 'abcdef', provider: 'DEEPSEEK',
-      modelName: 'deepseek-v4-flash', promptVersion: 'project-understanding-v1',
-      status: 'SUCCEEDED', executiveSummary: '项目围绕代码审查任务形成完整业务闭环。',
-      architectureNarrative: '请求经过 Controller、Service 与 Mapper 完成状态持久化。',
-      businessFlows: [{
-        name: '创建项目', goal: '为后续代码导入建立项目容器。',
-        steps: ['接收项目资料', '保存项目'], apiEntries: ['POST /api/projects'],
-        dataChanges: ['新增 project 记录'], evidence: [{
-          chunkId: '11', symbolName: 'com.example.ProjectController#create()',
-          filePath: 'src/ProjectController.java', startLine: 15, endLine: 18,
-          code: '@PostMapping\nvoid create() {}', truncated: false,
-        }],
-      }],
-      readingGuide: [{ order: 1, title: '项目入口', reason: '先理解项目创建流程。', evidence: [] }],
-      risksAndUnknowns: ['动态调用需要运行确认。'], promptTokens: 100,
-      completionTokens: 50, totalTokens: 150, latencyMs: 900,
-      attemptKey: '123e4567-e89b-42d3-a456-426614174000', createdAt: '2026-08-16T12:00:00',
-      finishedAt: '2026-08-16T12:00:01',
-    })
+    const latest = vi.spyOn(projectApi, 'latestUnderstandingReport')
+    const create = vi.spyOn(projectApi, 'createUnderstandingReport')
 
     const wrapper = mount(SourceStructureModal, {
       props: { open: true, projectId: '1', projectName: 'demo' },
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('新人导览')
-    expect(wrapper.text()).toContain('帮助团队管理项目和代码审查任务')
-    expect(wrapper.text()).toContain('用户能完成哪些事情')
-    expect(wrapper.text()).toContain('项目管理')
-    expect(wrapper.text()).toContain('POST /api/projects')
-    expect(wrapper.text()).toContain('CREATED → READY → FAILED')
-    expect(wrapper.text()).toContain('推荐阅读顺序')
-
-    await wrapper.get('.ai-understanding-actions .primary').trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('项目围绕代码审查任务形成完整业务闭环')
-    expect(wrapper.text()).toContain('DEEPSEEK / deepseek-v4-flash')
-    expect(wrapper.get('.ai-flow-card pre code').text()).toContain('@PostMapping')
-    expect(projectApi.createUnderstandingReport).toHaveBeenCalledWith('1', 'abcdef', expect.any(String))
-
-    await wrapper.get('.source-view-tabs button:nth-child(2)').trigger('click')
-    await flushPromises()
+    expect(wrapper.text()).not.toContain('新人导览')
+    expect(wrapper.find('.project-guide').exists()).toBe(false)
+    expect(wrapper.find('.onboarding-view').exists()).toBe(false)
+    expect(wrapper.findAll('.source-view-tabs button')).toHaveLength(2)
+    expect(wrapper.get('.source-view-tabs button.active').text()).toContain('Java 实现与接口')
+    expect(latest).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('总体调用逻辑')
     expect(wrapper.text()).toContain('create() → save()')
     expect(wrapper.get('.business-evidence-list pre code').text()).toContain('@PostMapping')
@@ -183,7 +155,7 @@ describe('SourceStructureModal', () => {
       props: { open: true, projectId: '1', projectName: 'demo' },
     })
     await flushPromises()
-    await wrapper.get('.source-view-tabs button:nth-child(3)').trigger('click')
+    await wrapper.get('.source-view-tabs button:nth-child(2)').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('方法实现')
@@ -191,4 +163,23 @@ describe('SourceStructureModal', () => {
     expect(wrapper.get('pre code').text()).toContain('repository.save(order)')
     expect(projectApi.getSourceSymbolDetail).toHaveBeenCalledWith('1', '10', '11')
   })
+  const emptyMap = (revision = 'abc') => ({
+    revision, analysisMode: 'STATIC_CODE_EVIDENCE_V2', summary: '', moduleCount: 0, endpointCount: 0, modules: [], limitations: [],
+    onboarding: { purpose: '业务线索', architectureSummary: '', detectedCapabilities: [], coreJourneys: [], stateModels: [], dataAssets: [], readingOrder: [], unknowns: [] },
+  })
+  it('ignores a late business map from the previous project', async () => {
+    let finish!: (map: ReturnType<typeof emptyMap>) => void
+    vi.spyOn(projectApi, 'getBusinessMap')
+      .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      .mockRejectedValueOnce(new ApiError('新项目业务加载失败', undefined, 500))
+    const wrapper = mount(SourceStructureModal, { props: { open: true, projectId: '1' } })
+    await wrapper.setProps({ projectId: '2' })
+    await flushPromises()
+    finish({ ...emptyMap('old'), summary: '旧项目业务' })
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('新项目业务加载失败')
+    expect(wrapper.text()).not.toContain('旧项目业务')
+    wrapper.unmount()
+  })
+
 })

@@ -11,7 +11,7 @@ import com.devmate.knowledge.source.JavaSourceParser;
 import com.devmate.knowledge.source.ParsedSourceFile;
 import com.devmate.knowledge.source.ProjectSourceScanner;
 import com.devmate.knowledge.source.ScannedSourceFile;
-import com.devmate.knowledge.source.SourceFileType;
+import com.devmate.knowledge.source.TextSourceParser;
 import com.devmate.knowledge.source.SourceImportException;
 import com.devmate.knowledge.source.WorkspaceManager;
 import org.springframework.stereotype.Service;
@@ -36,6 +36,7 @@ public class SourceImportService {
     private final JavaSourceParser sourceParser;
     private final ConfigurationFileParser configurationFileParser;
     private final DatabaseSchemaParser databaseSchemaParser;
+    private final TextSourceParser textSourceParser;
 
     public SourceImportService(
             SourceImportStateService stateService,
@@ -44,7 +45,8 @@ public class SourceImportService {
             ProjectSourceScanner sourceScanner,
             JavaSourceParser sourceParser,
             ConfigurationFileParser configurationFileParser,
-            DatabaseSchemaParser databaseSchemaParser
+            DatabaseSchemaParser databaseSchemaParser,
+            TextSourceParser textSourceParser
     ) {
         this.stateService = stateService;
         this.workspaceManager = workspaceManager;
@@ -53,6 +55,7 @@ public class SourceImportService {
         this.sourceParser = sourceParser;
         this.configurationFileParser = configurationFileParser;
         this.databaseSchemaParser = databaseSchemaParser;
+        this.textSourceParser = textSourceParser;
     }
 
     public IndexTaskResponse importSource(Long projectId) {
@@ -108,8 +111,8 @@ public class SourceImportService {
                 throw exception;
             }
             metrics = metrics.withScanDuration(SourceImportMetrics.elapsedMillis(scanStartedNanos));
-            if (files.stream().noneMatch(file -> file.fileType() == SourceFileType.JAVA)) {
-                throw new SourceImportException("仓库中没有找到Java源码文件");
+            if (files.isEmpty()) {
+                throw new SourceImportException("仓库中没有找到可安全读取的源码、清单或文档");
             }
             long planStartedNanos = System.nanoTime();
             SourceImportPlan plan;
@@ -170,6 +173,7 @@ public class SourceImportService {
             case JAVA -> sourceParser.parse(file);
             case YAML, PROPERTIES -> configurationFileParser.parse(file);
             case SQL -> databaseSchemaParser.parse(file);
+            case TEXT, DOCUMENTATION, MANIFEST -> textSourceParser.parse(file);
         };
     }
 

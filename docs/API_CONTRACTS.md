@@ -74,3 +74,10 @@ export DEVMATE_OPENAPI_ENABLED=false
 ```
 
 Swagger UI 只用于查看和调试契约，不证明接口已经通过授权、并发、事务或真实数据库验收。API Key、JWT、私有仓库地址和真实源码不得写入示例、测试快照或提交记录。
+
+
+## 账户模型配置兼容扩展（2026-11-12）
+
+PUT /api/model-connections 保留 provider/model/apiKey，新增可选 baseUrl（最多 500 字符）和 protocol（仅 CHAT_COMPLETIONS）。COMPATIBLE 可提交服务端信任名单中的规范化 API 根地址和符合名称规则的自定义模型 ID；官方地址及官方模型选择仍受原限制。省略新字段保持账户已保存地址，旧数据回退默认地址；更换地址必须重填 Key。错误地址、协议或缺 Key 返回 400，不更改原活动连接。成功仍返回 200 ApiResponse<ModelProviderResponse[]>。
+
+GET /api/model-connections 新增 protocol、allowedBaseUrls；baseUrl 为账户保存地址，models 包含当前自定义模型及建议值。API Key 为只写入字段，不出现在任何响应。页面入口提醒只读此接口，不会以“已配置”冒充真实连通性；测试接口仍由用户显式触发。
