@@ -18,6 +18,13 @@ public record ModelConnectionUpdateRequest(
         String model,
         @Schema(description = "模型 API Key；只允许写入，不会通过任何响应回显", writeOnly = true)
         @Size(max = 500, message = "API Key过长")
-        String apiKey
+        String apiKey,
+        @Schema(description = "COMPATIBLE 的 HTTPS 基础地址，可粘贴完整操作地址自动规范化；必须属于服务端受信任地址名单，省略保持原地址")
+        @Size(max = 500, message = "API 请求地址过长") String baseUrl,
+        @Schema(description = "接口协议；目前只支持 CHAT_COMPLETIONS，不能把 Responses 当作相同协议", allowableValues = {"CHAT_COMPLETIONS"})
+        @Pattern(regexp = "CHAT_COMPLETIONS", message = "当前仅支持 Chat Completions 协议，请确认中转站支持该接口") String protocol
 ) {
+    public ModelConnectionUpdateRequest(String provider, String model, String apiKey) {
+        this(provider, model, apiKey, null, null);
+    }
 }

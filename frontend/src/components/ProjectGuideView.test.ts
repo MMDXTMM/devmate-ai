@@ -36,6 +36,23 @@ describe('ProjectGuideView', () => {
     await wrapper.get('.guide-detail > button').trigger('click')
     expect(wrapper.find('.guide-detail').exists()).toBe(false)
   })
+  it('decorates modules and opens business details from the interactive map', async () => {
+    const guide = guideFixture()
+    guide.content.appearance = { projectIcon: '🔭', modules: [{ moduleId: 'convert', icon: '🧮' }, { moduleId: 'user', icon: '👤' }] }
+    guide.content.modules.push({ ...guide.content.modules[0]!, id: 'user', name: '用户身份', relatedModuleIds: [] })
+    guide.content.modules[0]!.relatedModuleIds = ['user']
+    const wrapper = mount(ProjectGuideView, { props: { guide } })
+    expect(wrapper.get('.guide-mascot').text()).toBe('🔭')
+    expect(wrapper.get('.diagram-module-picker button span').text()).toBe('🧮')
+    expect(wrapper.findAll('.guide-module-emoji').map(item => item.text())).toEqual(['🧮', '👤'])
+    await wrapper.get('.relation-neighbor').trigger('click')
+    expect(wrapper.get('.guide-detail').text()).toContain('用户身份')
+    await wrapper.get('.guide-detail > button').trigger('click')
+    await wrapper.get('.diagram-tabs button:nth-child(2)').trigger('click')
+    await wrapper.get('.journey-heading button').trigger('click')
+    expect(wrapper.get('.guide-detail').text()).toContain('整理一次表格')
+    expect(wrapper.find('pre').exists()).toBe(false)
+  })
   it('handles document-only planned guides without fake workflows and resets selection after refresh', async () => {
     const guide = guideFixture()
     guide.content.flows = []

@@ -70,7 +70,7 @@ describe('ModelConnectionModal', () => {
     wrapper.unmount()
   })
 
-  it('renders an administrator-defined compatible endpoint and submits its approved model', async () => {
+  it('edits a trusted compatible API root, model ID and explicit protocol', async () => {
     vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([{
       provider: 'COMPATIBLE', displayName: 'OpenAI 兼容／中转站', baseUrl: 'https://compatible.example/v1',
       models: ['test-model'], selectedModel: 'test-model', configured: false, active: false,
@@ -80,11 +80,15 @@ describe('ModelConnectionModal', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('OpenAI 兼容／中转站')
     expect(wrapper.text()).toContain('https://compatible.example/v1')
-    expect(wrapper.find('input[type="url"]').exists()).toBe(false)
+    expect(wrapper.get('input[type="url"]').element).toHaveProperty('value', 'https://compatible.example/v1')
+    expect(wrapper.text()).toContain('Responses 是另一种协议')
+    await wrapper.get('input[type="url"]').setValue('https://compatible.example/v1/chat/completions')
+    await wrapper.get('input[type="text"]').setValue('vendor/custom-model')
+    expect(wrapper.get('.relay-request-preview').text()).toContain('POST https://compatible.example/v1/chat/completions')
     await wrapper.get('input[type="password"]').setValue('test-only-key')
     await wrapper.get('.model-provider-grid button').trigger('click')
     await flushPromises()
-    expect(update).toHaveBeenCalledWith('COMPATIBLE', 'test-model', 'test-only-key')
+    expect(update).toHaveBeenCalledWith('COMPATIBLE', 'vendor/custom-model', 'test-only-key', { baseUrl: 'https://compatible.example/v1/chat/completions', protocol: 'CHAT_COMPLETIONS' })
     wrapper.unmount()
   })
 

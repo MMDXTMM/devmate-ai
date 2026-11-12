@@ -173,6 +173,7 @@ watch(
   <div v-if="open" class="modal-backdrop" @click.self="emit('close')">
     <section class="modal retrieval-modal" role="dialog" aria-modal="true" aria-labelledby="retrieval-title">
       <header class="modal-header">
+        <span class="surface-icon" aria-hidden="true">📚</span>
         <div>
           <p class="eyebrow">向项目代码提问</p>
           <h2 id="retrieval-title">向 {{ projectName }} 提问</h2>

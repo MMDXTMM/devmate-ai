@@ -105,8 +105,10 @@ public class ProjectUnderstandingReportStateService {
                 .set(ProjectUnderstandingReport::getFinishedAt, LocalDateTime.now()));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ProjectUnderstandingReport latest(Long projectId) {
+        Project project = projectMapper.selectById(projectId);
+        if (project != null) recoverStale(projectId, project.getCurrentRevision());
         return reportMapper.selectOne(Wrappers.lambdaQuery(ProjectUnderstandingReport.class)
                 .eq(ProjectUnderstandingReport::getProjectId, projectId)
                 .eq(ProjectUnderstandingReport::getUserId, currentUserService.getRequiredUser().id())

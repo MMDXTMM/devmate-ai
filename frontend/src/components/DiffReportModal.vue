@@ -50,6 +50,7 @@ watch(
   <div v-if="open" class="modal-backdrop" @click.self="emit('close')">
     <section class="modal diff-modal" role="dialog" aria-modal="true" aria-labelledby="diff-title">
       <header class="modal-header">
+        <span class="surface-icon" aria-hidden="true">🌿</span>
         <div>
           <p class="eyebrow">DIFF COVERAGE</p>
           <h2 id="diff-title">{{ projectName }} · 变更覆盖</h2>

@@ -20,6 +20,29 @@ class ProjectOpenApiContractTest {
     private MockMvc mockMvc;
 
     @Test
+    void publishesOptionalBackgroundQueryWhileKeepingSynchronousCompatibility() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/projects/{projectId}/understanding-reports'].post.parameters[?(@.name == 'background')].schema.type")
+                        .value(org.hamcrest.Matchers.hasItem("boolean")))
+                .andExpect(jsonPath("$.paths['/api/projects/{projectId}/understanding-reports'].post.parameters[?(@.name == 'background')].schema.default")
+                        .value(org.hamcrest.Matchers.hasItem(false)));
+    }
+
+    @Test
+    void publishesAccountEndpointAndProtocolWithoutExposingKeysOrMakingNewFieldsRequired() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.schemas.ModelConnectionUpdateRequest.properties.baseUrl.maxLength").value(500))
+                .andExpect(jsonPath("$.components.schemas.ModelConnectionUpdateRequest.properties.apiKey.writeOnly").value(true))
+                .andExpect(jsonPath("$.components.schemas.ModelConnectionUpdateRequest.properties.protocol.enum[0]").value("CHAT_COMPLETIONS"))
+                .andExpect(jsonPath("$.components.schemas.ModelConnectionUpdateRequest.required")
+                        .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("baseUrl"))))
+                .andExpect(jsonPath("$.components.schemas.ModelProviderResponse.properties.protocol.type").value("string"))
+                .andExpect(jsonPath("$.components.schemas.ModelProviderResponse.properties.allowedBaseUrls.type").value("array"));
+    }
+
+    @Test
     void publishesProjectCrudContractWithBearerAuthAndStringIds() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
@@ -36,6 +59,8 @@ class ProjectOpenApiContractTest {
                         .value("string"))
                 .andExpect(jsonPath("$.components.schemas.ProjectResponse.properties.id.type")
                         .value("string"))
+                .andExpect(jsonPath("$.components.schemas.ProjectResponse.properties.icon.type").value("string"))
+                .andExpect(jsonPath("$.components.schemas.Appearance.properties.projectIcon.type").value("string"))
                 .andExpect(jsonPath("$.components.schemas.CreateProjectRequest.properties.sourceType.enum[0]")
                         .value("LOCAL"))
                 .andExpect(jsonPath("$.components.schemas.CreateProjectRequest.required")

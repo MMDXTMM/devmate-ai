@@ -14,6 +14,7 @@ public class CompatibleModelProperties {
     private String displayName = "OpenAI 兼容／中转站";
     private String baseUrl;
     private List<String> models = List.of();
+    private List<String> allowedBaseUrls = List.of();
 
     public void validate() {
         if (!enabled) return;
@@ -25,13 +26,18 @@ public class CompatibleModelProperties {
                 || displayName == null || displayName.isBlank() || displayName.length() > 100
                 || models == null || models.isEmpty() || models.size() > 20
                 || models.stream().anyMatch(model -> model == null || !model.matches("[A-Za-z0-9._:/-]{1,100}"))
-                || models.stream().distinct().count() != models.size()) throw invalid();
+                || models.stream().distinct().count() != models.size()
+                || allowedBaseUrls == null || allowedBaseUrls.size() > 20) throw invalid();
+        com.devmate.agent.service.ModelEndpointFormat.normalize(baseUrl);
+        allowedBaseUrls.forEach(com.devmate.agent.service.ModelEndpointFormat::normalize);
     }
 
     private IllegalArgumentException invalid() {
         return new IllegalArgumentException("兼容模型服务需配置无凭证的 HTTPS 地址、显示名称与不重复的模型白名单");
     }
 
+    public List<String> getAllowedBaseUrls() { return allowedBaseUrls; }
+    public void setAllowedBaseUrls(List<String> values) { this.allowedBaseUrls = values; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public String getDisplayName() { return displayName; }

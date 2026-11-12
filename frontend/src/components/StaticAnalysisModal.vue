@@ -48,6 +48,7 @@ watch(
   <div v-if="open" class="modal-backdrop" @click.self="emit('close')">
     <section class="modal analysis-modal" role="dialog" aria-modal="true" aria-labelledby="analysis-title">
       <header class="modal-header">
+        <span class="surface-icon" aria-hidden="true">🔎</span>
         <div>
           <p class="eyebrow">DETERMINISTIC ANALYSIS</p>
           <h2 id="analysis-title">{{ projectName }} · 静态分析</h2>

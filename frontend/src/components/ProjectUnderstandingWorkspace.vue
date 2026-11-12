@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import WorkspaceProjectGuide from './WorkspaceProjectGuide.vue'
 import { ApiError, projectApi } from '../services/projectApi'
 import type { Project, ReviewWorkflow, SourceDocument, SourceReference } from '../types/project'
 
@@ -15,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   back: []
   structure: []
+  configureModel: []
   chat: [question?: string]
   search: [query: string]
   reparse: []
@@ -147,6 +149,8 @@ watch(
       </div>
     </header>
 
+    <WorkspaceProjectGuide :project="project" @chat="emit('chat', $event)" @configure-model="emit('configureModel')" />
+
     <div v-if="errorMessage" class="notice error" role="alert">
       {{ errorMessage }}
       <button type="button" @click="loadOverview">重试</button>
@@ -165,12 +169,12 @@ watch(
 
         <div class="workspace-primary-actions">
           <button type="button" @click="emit('structure')">
-            <span class="action-index">01</span>
+            <span class="action-index" aria-hidden="true">🧩</span>
             <b>理解项目业务</b>
-            <small>先看用途、能力模块与主流程；选择后再展开规则和实现依据</small><i>→</i>
+            <small>查看业务模块、接口入口与调用链，沿实现代码深入理解</small><i>→</i>
           </button>
           <button type="button" @click="emit('chat')">
-            <span class="action-index">02</span>
+            <span class="action-index" aria-hidden="true">💬</span>
             <b>向项目提问</b>
             <small>让 AI 结合真实代码解释业务，并支持连续追问</small><i>→</i>
           </button>
@@ -222,7 +226,7 @@ watch(
       </section>
 
         <div v-if="supportsJavaReview" class="advanced-review">          <button class="review-primary-action" type="button" :disabled="reviewActionDisabled" @click="emit('runReview')">
-            <span class="action-index">03</span><b>{{ reviewActionLabel }}</b>
+            <span class="action-index" aria-hidden="true">🛡️</span><b>{{ reviewActionLabel }}</b>
             <small>{{ reviewActionDescription }}；检查导入分支最新一次提交的变更，并消耗模型 API 额度</small><i>→</i>
           </button>
         </div>

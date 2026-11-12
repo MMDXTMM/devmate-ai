@@ -2,6 +2,7 @@ export type SourceType = 'LOCAL' | 'GIT' | 'UPLOAD'
 export type ProjectStatus = 'CREATED' | 'INDEXING' | 'READY' | 'FAILED'
 
 export interface Project {
+  icon?: string | null
   id: string
   name: string
   description?: string
@@ -220,12 +221,26 @@ export interface GuideFlow {
   steps: { action: string; input: string; result: string; moduleIds: string[]; conclusionStatus: GuideConclusion; evidenceIds: string[] }[]
   rules: GuideClaim[]; outcomes: GuideClaim[]; unknowns: string[]
 }
+export interface GuideHighlight {
+  title: string; moduleIds: string[]; problem: string; solution: string; learningValue: string
+  suggestedExercise: string; limitation: string; conclusionStatus: GuideConclusion
+  implementationStatus: GuideImplementation; evidenceIds: string[]
+}
+export interface GuideAppearance {
+  projectIcon?: string | null
+  modules?: { moduleId: string; icon?: string | null }[] | null
+  /** Compatibility with the first experimental representation. */
+  moduleIcons?: Record<string, string | null> | null
+}
 export interface ProjectGuide {
   schemaVersion: 'project-guide-v1'
+  languages?: string[] | null
   snapshot: { revision: string; contentDigest: string; readPolicy: string }
   content: {
+    appearance?: GuideAppearance | null
     project: { name: string; type: string; purpose: string; audience: string; input: string; output: string; scenario: string
       conclusionStatus: GuideConclusion; implementationStatus: GuideImplementation; evidenceIds: string[] }
+    overview?: { highlights: GuideHighlight[] } | null
     modules: GuideModule[]; flows: GuideFlow[]; glossary: { term: string; explanation: string }[]; openQuestions: string[]
   }
   coverage: { indexedFiles: number; readFiles: number; readChunks: number; readCharacters: number; maxChunks: number; maxCharacters: number; limitations: string[] }

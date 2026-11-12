@@ -3,6 +3,7 @@ import type { ProjectGuide } from '../../types/project'
 export function guideFixture(): ProjectGuide {
   return {
     schemaVersion: 'project-guide-v1',
+    languages: ['Python'],
     snapshot: {
       revision: 'abc',
       contentDigest: 'digest',
@@ -18,6 +19,22 @@ export function guideFixture(): ProjectGuide {
       limitations: ['尚未运行'],
     },
     content: {
+      overview: {
+        highlights: [
+          {
+            title: '先检查，再汇总',
+            moduleIds: ['convert'],
+            problem: '输入文件缺失时无法继续汇总',
+            solution: '读取前检查文件，失败时给出错误',
+            learningValue: '学习如何在处理前验证输入',
+            suggestedExercise: '阅读输入校验实现，再设计一个缺少文件的测试案例',
+            limitation: '尚未运行目标项目',
+            conclusionStatus: 'OBSERVED',
+            implementationStatus: 'PARTIAL',
+            evidenceIds: ['42'],
+          },
+        ],
+      },
       project: {
         name: '表格助手',
         type: 'CLI',

@@ -39,7 +39,7 @@ final class SpringAiProjectUnderstandingModel implements ProjectUnderstandingMod
             if ("DASHSCOPE".equals(connection.provider())) {
                 options.extraBody(Map.of("enable_thinking", false));
             }
-            if ("project-guide-v1".equals(properties.getPromptVersion())) {
+            if (java.util.Set.of("project-guide-v1", "project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6").contains(properties.getPromptVersion())) {
                 ResponseEntity<ChatResponse, ProjectGuide.Content> response =
                         clientFactory.createChatClient(connection, options.build(), properties.getConnectTimeout(),
                                 properties.getReadTimeout()).prompt().system(prompt.systemPrompt()).user(prompt.userPrompt())

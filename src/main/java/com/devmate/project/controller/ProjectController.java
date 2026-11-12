@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/projects")
 @Validated
-@Tag(name = "项目管理", description = "管理待解析、理解和审查的 Java 项目")
+@Tag(name = "项目管理", description = "管理待理解的源码项目；代码审查针对 Java")
 @SecurityRequirement(name = "bearerAuth")
 public class ProjectController {
 

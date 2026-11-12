@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useModelAccess } from '../composables/useModelAccess'
 import { ref, watch } from 'vue'
 import { ApiError, projectApi } from '../services/projectApi'
 import type {
@@ -9,6 +10,7 @@ import type {
   ReviewFeedbackType,
 } from '../types/project'
 
+const requireModel = useModelAccess()
 const props = defineProps<{
   open: boolean
   projectId?: string
@@ -96,6 +98,7 @@ async function runReview(mode: 'fixed' | 'agent') {
   errorMessage.value = ''
   feedbackErrorMessage.value = ''
   try {
+    if (!await requireModel('执行 AI 代码审查') || !isCurrentRun(generation, projectId, runToken)) return
     const reviewDiff = await projectApi.latestReviewDiff(projectId)
     if (!isCurrentRun(generation, projectId, runToken)) return
     if (reviewDiff.status !== 'SUCCEEDED') {
@@ -182,6 +185,7 @@ watch(
   <div v-if="open" class="modal-backdrop" @click.self="emit('close')">
     <section class="modal ai-review-modal" role="dialog" aria-modal="true" aria-labelledby="ai-review-title">
       <header class="modal-header">
+        <span class="surface-icon" aria-hidden="true">🛡️</span>
         <div>
           <p class="eyebrow">EVIDENCE-GROUNDED REVIEW</p>
           <h2 id="ai-review-title">{{ projectName }} · AI 代码审查</h2>

@@ -30,7 +30,7 @@ public class ModelConnectionController {
     public ApiResponse<List<ModelProviderResponse>> list() { return ApiResponse.success(service.list()); }
 
     @PutMapping
-    @Operation(summary = "保存当前账户的模型连接", description = "API Key 只写入服务端加密存储，不在响应中返回。")
+    @Operation(summary = "保存当前账户的模型连接", description = "API Key 只写入服务端加密存储，不在响应中返回。COMPATIBLE 可填写 model、受信任 baseUrl 和 CHAT_COMPLETIONS 协议；省略新增字段保持历史配置。地址规范化，更换地址必须重填 Key；不支持协议/地址返回 400。")
     public ApiResponse<List<ModelProviderResponse>> update(
             @Valid @RequestBody ModelConnectionUpdateRequest request
     ) { return ApiResponse.success(service.update(request)); }

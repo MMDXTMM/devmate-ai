@@ -70,6 +70,7 @@ public class ProjectUnderstandingReportService {
     private final KnowledgeDocumentMapper documentMapper;
     private final ObjectMapper objectMapper;
     private final ProjectGuideEvidenceService guideEvidenceService;
+    private final org.springframework.core.task.TaskExecutor taskExecutor;
 
     public ProjectUnderstandingReportService(
             ProjectAccessService accessService,
@@ -80,7 +81,9 @@ public class ProjectUnderstandingReportService {
             KnowledgeChunkMapper chunkMapper,
             KnowledgeDocumentMapper documentMapper,
             ObjectMapper objectMapper,
-            ProjectGuideEvidenceService guideEvidenceService
+            ProjectGuideEvidenceService guideEvidenceService,
+            @org.springframework.beans.factory.annotation.Qualifier("projectUnderstandingTaskExecutor")
+            org.springframework.core.task.TaskExecutor taskExecutor
     ) {
         this.accessService = accessService;
         this.businessMapService = businessMapService;
@@ -91,18 +94,27 @@ public class ProjectUnderstandingReportService {
         this.documentMapper = documentMapper;
         this.objectMapper = objectMapper;
         this.guideEvidenceService = guideEvidenceService;
+        this.taskExecutor = taskExecutor;
     }
 
     public ProjectUnderstandingReportResponse create(
             Long projectId,
             CreateProjectUnderstandingReportRequest request
     ) {
+        return create(projectId, request, false);
+    }
+
+    public ProjectUnderstandingReportResponse createAsync(Long projectId, CreateProjectUnderstandingReportRequest request) {
+        return create(projectId, request, true);
+    }
+
+    private ProjectUnderstandingReportResponse create(Long projectId, CreateProjectUnderstandingReportRequest request, boolean background) {
         accessService.requireMember(projectId);
         ProjectBusinessMapResponse businessMap = businessMapService.getBusinessMap(projectId);
         if (!Objects.equals(request.revision(), businessMap.revision())) {
             throw new BusinessException(ErrorCode.CONFLICT, "项目源码版本已变化，请刷新后重新生成报告");
         }
-        boolean guideMode = "project-guide-v1".equals(properties.getPromptVersion());
+        boolean guideMode = java.util.Set.of("project-guide-v1", "project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6").contains(properties.getPromptVersion());
         ProjectGuideEvidenceService.Sample sample = guideMode ? guideEvidenceService.sample(projectId, request.revision()) : null;
         LinkedHashMap<String, EvidenceInput> evidence = guideMode ? new LinkedHashMap<>() : collectEvidence(projectId, businessMap);
         if (sample != null) sample.evidence().forEach(item -> evidence.put(item.id(), new EvidenceInput(item.id(),
@@ -116,17 +128,44 @@ public class ProjectUnderstandingReportService {
                 model.providerName(), model.modelName(), properties.getPromptVersion()
         );
         if (prepared.reused()) return response(prepared.report());
+        // Resolve authorization, source snapshot, account model and identity on the request thread.
+        // Background work uses only this fixed input, never a thread-local user's credentials.
+        if (background) {
+            try {
+                taskExecutor.execute(() -> {
+                    try {
+                        executeModel(projectId, prepared, model, guideMode, sample, businessMap, evidence);
+                    } catch (BusinessException ignored) {
+                        // executeModel records the sanitized terminal failure; polling exposes it.
+                    }
+                });
+            } catch (org.springframework.core.task.TaskRejectedException exception) {
+                stateService.fail(prepared.report().getId(), "QUEUE_FULL", "分析任务较多，请稍后重新提交", 0);
+                throw new BusinessException(ErrorCode.CONFLICT, "分析任务较多，请稍后重新提交");
+            }
+            return response(prepared.report());
+        }
+        return response(executeModel(projectId, prepared, model, guideMode, sample, businessMap, evidence));
+    }
+
+    private ProjectUnderstandingReport executeModel(Long projectId,
+            ProjectUnderstandingReportStateService.PreparedReport prepared, ProjectUnderstandingModel model,
+            boolean guideMode, ProjectGuideEvidenceService.Sample sample, ProjectBusinessMapResponse businessMap,
+            LinkedHashMap<String, EvidenceInput> evidence) {
         long startedAt = System.nanoTime();
         try {
-            ProjectUnderstandingPrompt prompt = guideMode ? guidePrompt(sample) : buildPrompt(businessMap, evidence.values());
+            ProjectGuideEvidenceReferences references = guideMode && "project-guide-v6".equals(properties.getPromptVersion())
+                    ? new ProjectGuideEvidenceReferences(sample) : null;
+            ProjectUnderstandingPrompt prompt = guideMode ? guidePrompt(references == null ? sample : references.modelSample())
+                    : buildPrompt(businessMap, evidence.values());
             ProjectUnderstandingModelResult raw = model.analyze(prompt);
-            ProjectUnderstandingModelResult normalized = guideMode ? validateGuide(raw, sample) : validate(raw, evidence.keySet());
+            ProjectUnderstandingModelResult normalized = guideMode ? validateGuide(raw, sample, references) : validate(raw, evidence.keySet());
             ProjectUnderstandingReport completed = stateService.complete(
                     prepared.report().getId(), objectMapper.writeValueAsString(normalized),
                     normalized.promptTokens(), normalized.completionTokens(), normalized.totalTokens(),
                     elapsedMillis(startedAt)
             );
-            return response(completed);
+            return completed;
         } catch (AiReviewException exception) {
             logFailure(projectId, prepared.report().getId(), exception);
             stateService.fail(prepared.report().getId(), exception.getClass().getSimpleName(),
@@ -168,6 +207,13 @@ public class ProjectUnderstandingReportService {
                     module.evidenceIds().stream().map(byId::get).filter(Objects::nonNull).map(item ->
                             new ProjectUnderstandingEvidenceResponse(item.id(), item.symbolName(), item.filePath(),
                                     item.startLine(), item.endLine(), item.code(), item.truncated())).toList())));
+            if (saved.guide().content().overview() != null) {
+                saved.guide().content().overview().highlights().forEach(highlight -> topics.add(new ProjectUnderstandingFlowResponse(
+                        highlight.title(), highlight.problem(), List.of(highlight.solution()), List.of(), List.of(),
+                        highlight.evidenceIds().stream().map(byId::get).filter(Objects::nonNull).map(item ->
+                                new ProjectUnderstandingEvidenceResponse(item.id(), item.symbolName(), item.filePath(),
+                                        item.startLine(), item.endLine(), item.code(), item.truncated())).toList())));
+            }
         }
         List<ProjectUnderstandingFlowResponse> matched = BusinessFlowQueryMatcher.match(query, topics);
         LinkedHashSet<Long> ids = new LinkedHashSet<>();
@@ -180,19 +226,27 @@ public class ProjectUnderstandingReportService {
 
     private ProjectUnderstandingPrompt guidePrompt(ProjectGuideEvidenceService.Sample sample) throws JsonProcessingException {
         try {
-            String system = new org.springframework.core.io.ClassPathResource("prompts/project-guide-v1.txt")
+            String system = new org.springframework.core.io.ClassPathResource("prompts/" + properties.getPromptVersion() + ".txt")
                     .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            String readmePath = com.devmate.knowledge.source.ProjectReadme.primary(sample.indexedPaths()).orElse(null);
+            var introduction = sample.evidence().stream().filter(item -> item.filePath().equals(readmePath)).toList();
+            var implementation = sample.evidence().stream().filter(item -> !item.filePath().equals(readmePath)).toList();
             return new ProjectUnderstandingPrompt(system, "宿主快照：" + objectMapper.writeValueAsString(sample.snapshot())
+                    + "\nREADME 项目介绍（先读；文档描述，不保证已实现）："
+                    + (introduction.isEmpty() ? "当前索引与预算内没有可读 README 正文" : objectMapper.writeValueAsString(introduction))
                     + "\n已索引目录（不是全部已读）：" + objectMapper.writeValueAsString(sample.indexedPaths().stream().limit(150).toList())
                     + "\n真实读取范围：" + objectMapper.writeValueAsString(sample.coverage())
-                    + "\n本轮已读取证据：" + objectMapper.writeValueAsString(sample.evidence()));
+                    + "\n实现核对证据（再读；其他文档同样不能证明实现）：" + objectMapper.writeValueAsString(implementation));
         } catch (java.io.IOException exception) { throw new AiReviewException("项目导览提示词读取失败"); }
     }
 
     private ProjectUnderstandingModelResult validateGuide(ProjectUnderstandingModelResult raw,
-                                                          ProjectGuideEvidenceService.Sample sample) {
+                                                          ProjectGuideEvidenceService.Sample sample, ProjectGuideEvidenceReferences references) {
         if (raw == null || raw.guide() == null) throw new AiReviewException("模型没有返回新版项目导览契约");
-        var guide = ProjectGuideValidator.validate(raw.guide().content(), sample);
+        var guide = ProjectGuideValidator.validate(references == null ? raw.guide().content() : references.restore(raw.guide().content()), sample);
+        if (java.util.Set.of("project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6").contains(properties.getPromptVersion()) && guide.content().overview() == null) {
+            throw new AiReviewException("模型导览缺少新人学习概要，请重试");
+        }
         var flows = guide.content().flows().stream().map(flow -> {
             var ids = new LinkedHashSet<String>();
             flow.steps().forEach(step -> ids.addAll(step.evidenceIds()));
@@ -207,7 +261,7 @@ public class ProjectUnderstandingReportService {
                 item.id(), item.sourceKind(), item.revision(), item.symbolName(), item.filePath(), item.startLine(),
                 item.endLine(), null, item.truncated())).toList();
         var stored = new ProjectGuide(guide.schemaVersion(), guide.snapshot(), guide.content(),
-                guide.coverage(), storedEvidence);
+                guide.coverage(), storedEvidence, guide.languages());
         return new ProjectUnderstandingModelResult(guide.content().project().purpose(), guide.content().project().scenario(),
                 flows, List.of(), guide.content().openQuestions(), raw.promptTokens(), raw.completionTokens(), raw.totalTokens(), stored);
     }
@@ -220,7 +274,9 @@ public class ProjectUnderstandingReportService {
             return new ProjectGuide.Evidence(item.id(), item.sourceKind(), item.revision(),
                     actual.symbolName(), actual.filePath(), actual.startLine(), actual.endLine(), actual.code(), actual.truncated());
         }).toList();
-        return new ProjectGuide(guide.schemaVersion(), guide.snapshot(), guide.content(), guide.coverage(), items);
+        return new ProjectGuide(guide.schemaVersion(), guide.snapshot(), guide.content(), guide.coverage(), items,
+                guide.languages() == null || guide.languages().isEmpty()
+                        ? ProjectGuideLanguages.detect(items.stream().map(ProjectGuide.Evidence::filePath).toList()) : guide.languages());
     }
 
     private void logFailure(Long projectId, Long reportId, Exception exception) {

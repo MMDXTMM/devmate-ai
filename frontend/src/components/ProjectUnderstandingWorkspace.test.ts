@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ProjectUnderstandingWorkspace from './ProjectUnderstandingWorkspace.vue'
 import { projectApi } from '../services/projectApi'
+import { guideFixture } from '../test/fixtures/projectGuide'
 import type { Project, ReviewWorkflow } from '../types/project'
 
 const project: Project = {
@@ -51,6 +52,7 @@ describe('ProjectUnderstandingWorkspace', () => {
     ])
 
     const wrapper = mount(ProjectUnderstandingWorkspace, {
+      global: { stubs: { WorkspaceProjectGuide: true } },
       props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false },
     })
     await flushPromises()
@@ -66,13 +68,33 @@ describe('ProjectUnderstandingWorkspace', () => {
     expect(wrapper.get('details.advanced-analysis').attributes('open')).toBeUndefined()
   })
 
+  it('shows the project guide directly inside the workspace without opening a modal', async () => {
+    vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
+    vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
+    vi.spyOn(projectApi, 'latestUnderstandingReport').mockResolvedValue({
+      id: '10', projectId: project.id, revision: project.currentRevision!, provider: 'COMPATIBLE', modelName: 'example',
+      promptVersion: 'project-guide-v2', status: 'SUCCEEDED', guide: guideFixture(), businessFlows: [], readingGuide: [],
+      risksAndUnknowns: [], promptTokens: 1, completionTokens: 1, totalTokens: 2, attemptKey: 'test', createdAt: project.createdAt,
+    })
+    const create = vi.spyOn(projectApi, 'createUnderstandingReport')
+    const wrapper = mount(ProjectUnderstandingWorkspace, { props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false } })
+    await flushPromises()
+    expect(wrapper.find('.workspace-project-guide .project-guide').exists()).toBe(true)
+    expect(wrapper.text()).toContain('帮助财务人员')
+    expect(wrapper.text()).toContain('先检查，再汇总')
+    expect(wrapper.emitted('structure')).toBeUndefined()
+    expect(create).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('does not offer Java review for a known text-only project', async () => {
     vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([{
       id: '1', fileName: 'main.py', filePath: 'main.py', sourceKind: 'SOURCE_CODE', fileType: 'TEXT',
       revision: project.currentRevision!, structureVersion: 'source-structure-v2', status: 'PARSED', chunkCount: 1,
     }])
     vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
-    const wrapper = mount(ProjectUnderstandingWorkspace, { props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false } })
+    const wrapper = mount(ProjectUnderstandingWorkspace, { global: { stubs: { WorkspaceProjectGuide: true } },
+      props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false } })
     await flushPromises()
     expect(wrapper.find('.review-primary-action').exists()).toBe(false)
     expect(wrapper.get('.workspace-primary-actions').text()).toContain('理解项目业务')
@@ -82,6 +104,7 @@ describe('ProjectUnderstandingWorkspace', () => {
     vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
     vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
     const wrapper = mount(ProjectUnderstandingWorkspace, {
+      global: { stubs: { WorkspaceProjectGuide: true } },
       props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false },
     })
     await flushPromises()
@@ -95,6 +118,7 @@ describe('ProjectUnderstandingWorkspace', () => {
     vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
     vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
     const wrapper = mount(ProjectUnderstandingWorkspace, {
+      global: { stubs: { WorkspaceProjectGuide: true } },
       props: {
         project,
         parsing: false,
@@ -124,6 +148,7 @@ describe('ProjectUnderstandingWorkspace', () => {
     vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
     vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
     const wrapper = mount(ProjectUnderstandingWorkspace, {
+      global: { stubs: { WorkspaceProjectGuide: true } },
       props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false, reviewWorkflow: workflow('RUNNING') },
     })
     await flushPromises()
@@ -138,6 +163,7 @@ describe('ProjectUnderstandingWorkspace', () => {
     vi.spyOn(projectApi, 'listSourceDocuments').mockResolvedValue([])
     vi.spyOn(projectApi, 'listSourceReferences').mockResolvedValue([])
     const wrapper = mount(ProjectUnderstandingWorkspace, {
+      global: { stubs: { WorkspaceProjectGuide: true } },
       props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false, reviewWorkflow: workflow('SUCCEEDED') },
     })
     await flushPromises()

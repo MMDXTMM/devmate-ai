@@ -34,8 +34,15 @@ public record ProjectResponse(
         @Schema(description = "最后更新时间")
         LocalDateTime updatedAt,
         @Schema(description = "最近完成源码解析的时间")
-        LocalDateTime lastIndexedAt
+        LocalDateTime lastIndexedAt,
+        @Schema(description = "当前用户、当前源码版本最新成功导览的 AI 项目图标；无导览时为空，不触发模型调用")
+        String icon
 ) {
+
+    public ProjectResponse withIcon(String icon) {
+        return new ProjectResponse(id, name, description, sourceType, sourceLocation, defaultBranch,
+                currentRevision, currentStructureVersion, status, createdAt, updatedAt, lastIndexedAt, icon);
+    }
 
     public static ProjectResponse from(Project project) {
         return new ProjectResponse(
@@ -50,7 +57,8 @@ public record ProjectResponse(
                 project.getStatus(),
                 project.getCreatedAt(),
                 project.getUpdatedAt(),
-                project.getLastIndexedAt()
+                project.getLastIndexedAt(),
+                null
         );
     }
 }

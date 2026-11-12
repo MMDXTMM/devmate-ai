@@ -38,16 +38,23 @@ async function submit() {
 
 <template>
   <main class="auth-page">
+    <aside class="auth-welcome" aria-label="欢迎使用 DevMate">
+      <span class="auth-flower" aria-hidden="true">🌼</span>
+      <p class="eyebrow">HELLO, EXPLORER</p>
+      <h2>和你的项目，<br />慢慢熟悉起来。</h2>
+      <p>从项目概要找到方向，沿着业务和代码探索，<br />把没看懂的地方留给一次对话。</p>
+      <div class="auth-explore-notes"><span>📚 读懂项目</span><span>💬 随时追问</span><span>🔎 寻找依据</span></div>
+    </aside>
     <section class="auth-panel">
       <div class="auth-brand">
-        <span class="brand-mark">D</span>
-        <span><b>DevMate</b><small>UNDERSTAND & BUILD</small></span>
+        <span class="brand-mark" aria-hidden="true">🌱</span>
+        <span><b>DevMate</b><small>你的项目探索搭子</small></span>
       </div>
 
       <div class="auth-heading">
         <p class="eyebrow">PROJECT UNDERSTANDING</p>
         <h1>{{ mode === 'login' ? '继续理解项目' : '创建账号' }}</h1>
-        <p>{{ mode === 'login' ? '登录后进入你的 Java 项目工作台。' : '导入项目，快速找到业务入口和开发起点。' }}</p>
+        <p>{{ mode === 'login' ? '登录后，回到你的项目书架。' : '导入项目，快速找到业务入口和开发起点。' }}</p>
       </div>
 
       <div class="auth-tabs" role="tablist" aria-label="认证方式">

@@ -6,6 +6,8 @@ import org.springframework.web.client.ResourceAccessException;
 
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
+import java.net.http.HttpTimeoutException;
+import java.util.concurrent.TimeoutException;
 
 final class SpringAiErrorTranslator {
 
@@ -19,9 +21,13 @@ final class SpringAiErrorTranslator {
         if (Integer.valueOf(429).equals(status)) {
             return new AiReviewException(operation + "请求过于频繁或额度不足，请稍后重试并检查额度", exception);
         }
+        if (hasCause(exception, SocketTimeoutException.class)
+                || hasCause(exception, HttpTimeoutException.class)
+                || hasCause(exception, TimeoutException.class)) {
+            return new AiReviewException(operation + "超时：模型未在等待上限内完成响应，请稍后重试或切换响应更快的模型", exception);
+        }
         if (hasCause(exception, ResourceAccessException.class)
-                || hasCause(exception, ConnectException.class)
-                || hasCause(exception, SocketTimeoutException.class)) {
+                || hasCause(exception, ConnectException.class)) {
             return new AiReviewException(operation + "失败：无法连接模型服务", exception);
         }
         return new AiReviewException(operation + "失败", exception);

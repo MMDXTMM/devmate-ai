@@ -6,6 +6,8 @@ export interface ModelProvider {
   configured: boolean
   active: boolean
   selectedModel: string
+  protocol?: 'CHAT_COMPLETIONS'
+  allowedBaseUrls?: string[]
 }
 
 export interface ModelConnectionTest {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useModelAccess } from '../composables/useModelAccess'
 import { useStreamingText } from '../composables/useStreamingText'
 import { ApiError } from '../services/apiClient'
 import { conversationApi } from '../services/conversationApi'
@@ -10,6 +11,8 @@ import ConversationHistory from './ConversationHistory.vue'
 import ChatEvidencePanel from './ChatEvidencePanel.vue'
 import type { AgentConversation, ConversationEvidence, ConversationMessage } from '../types/conversation'
 
+const requireModel = useModelAccess()
+const checkingModel = ref(false)
 const props = defineProps<{
   open: boolean
   projectId?: string
@@ -232,9 +235,13 @@ async function selectConversation(conversation: AgentConversation) {
 }
 
 async function sendQuestion() {
-  if (!props.projectId || !question.value.trim() || busy.value || loading.value) return
+  if (!props.projectId || !question.value.trim() || busy.value || loading.value || checkingModel.value) return
   const epoch = dialogEpoch
   const projectId = props.projectId
+  checkingModel.value = true
+  try {
+    if (!await requireModel('向项目 AI 发送问题') || !current(epoch)) return
+  } finally { checkingModel.value = false }
   if (!selected.value) {
     await createConversation()
     if (!current(epoch) || !selected.value) return
@@ -385,7 +392,7 @@ watch(() => [props.open, props.projectId] as const, ([open]) => {
     <section class="modal agent-chat-modal" role="dialog" aria-modal="true" aria-labelledby="agent-chat-title">
       <header class="chat-workspace-header" :inert="!!management">
         <button class="icon-button history-toggle" type="button" aria-label="展开或收起历史对话" :aria-expanded="sidebarOpen" @click="sidebarOpen = !sidebarOpen">☰</button>
-        <div class="chat-wordmark"><span class="chat-brand-mark">D</span><div><b>DEVMATE <span>项目助手</span></b><h2 id="agent-chat-title">{{ projectName || '项目对话' }}</h2></div></div>
+        <div class="chat-wordmark"><span class="chat-brand-mark" aria-hidden="true">🌱</span><div><b>DEVMATE <span>项目助手</span></b><h2 id="agent-chat-title">{{ projectName || '项目对话' }}</h2></div></div>
         <span class="chat-framework"><i></i> Spring AI</span>
         <label v-if="modelOptions.length" class="chat-model-picker"><span class="sr-only">对话模型，切换后新建对话</span><select :value="selected ? `${selected.provider}/${selected.modelName}` : chosenModel" aria-label="对话模型，切换后新建对话" :disabled="busy || loading" @change="chooseModel"><option v-if="selected && !modelOptions.some(item => item.value === `${selected!.provider}/${selected!.modelName}`)" :value="`${selected.provider}/${selected.modelName}`">{{ selected.modelName }}（历史模型）</option><option v-for="item in modelOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label><button class="chat-model-button" type="button" :disabled="busy" @click="emit('configureModel')">{{ modelOptions.length ? '模型设置' : selected?.modelName || '选择 / 配置模型' }} ⚙</button>
         <button type="button" class="button secondary chat-return" aria-label="关闭" @click="close">返回项目 ↗</button>
@@ -397,15 +404,15 @@ watch(() => [props.open, props.projectId] as const, ([open]) => {
           <div class="conversation-toolbar"><div><b>{{ selected?.title || '新对话' }}</b><small v-if="selected">代码版本 {{ selected.revision.slice(0, 8) }} · 仅检索当前项目</small><small v-else>从业务问题出发，沿代码证据深入理解</small></div><button v-if="selected" class="button secondary refresh-chat" type="button" :disabled="loading || streaming" @click="selectConversation(selected)">刷新历史</button></div>
           <div ref="messageList" class="agent-message-list" :aria-busy="streaming || loading" @scroll="onScroll">
             <p v-if="loading" class="chat-loading" role="status">正在读取聊天记录…</p>
-            <div v-if="!messages.length && !streaming && !loading" class="agent-chat-empty"><span class="chat-empty-icon" aria-hidden="true">✳</span><small>读懂代码，从一个问题开始</small><b>一起把 {{ projectName || '这个项目' }} 讲明白</b><p>不用先读完整个仓库。告诉我你想了解什么，<br />我会结合项目源码，解释业务逻辑并给出依据。</p><div class="chat-suggestions"><button v-for="(item, index) in suggestions" :key="item" type="button" @click="fillQuestion(item)"><span>0{{ index + 1 }}</span>{{ item }}<span>↗</span></button></div><small>点选只填入问题，发送后才调用模型。</small></div>
+            <div v-if="!messages.length && !streaming && !loading" class="agent-chat-empty"><span class="chat-empty-icon" aria-hidden="true">🌼</span><small>读懂代码，从一个问题开始</small><b>一起把 {{ projectName || '这个项目' }} 讲明白</b><p>不用先读完整个仓库。告诉我你想了解什么，<br />我会结合项目源码，解释业务逻辑并给出依据。</p><div class="chat-suggestions"><button v-for="(item, index) in suggestions" :key="item" type="button" @click="fillQuestion(item)"><span>0{{ index + 1 }}</span>{{ item }}<span>↗</span></button></div><small>点选只填入问题，发送后才调用模型。</small></div>
             <article v-for="(message, index) in messages" :key="message.id" :class="message.role.toLowerCase()">
-              <header><b><span class="chat-avatar">{{ message.role === 'USER' ? '你' : '✳' }}</span>{{ message.role === 'USER' ? '你' : 'DevMate Agent' }}</b><span>{{ message.role === 'USER' ? `第 ${turnNumber(index)} 轮` : statusLabels[message.status] }}<time v-if="message.createdAt"> · {{ formatTime(message.createdAt) }}</time></span></header>
+              <header><b><span class="chat-avatar">{{ message.role === 'USER' ? '你' : '🌱' }}</span>{{ message.role === 'USER' ? '你' : 'DevMate Agent' }}</b><span>{{ message.role === 'USER' ? `第 ${turnNumber(index)} 轮` : statusLabels[message.status] }}<time v-if="message.createdAt"> · {{ formatTime(message.createdAt) }}</time></span></header>
               <p v-if="message.role === 'USER'" class="chat-user-text">{{ message.content }}</p>
               <ModelAnswer v-else :content="message.content || message.errorMessage || (message.status === 'RUNNING' ? '回答仍在后台生成，可刷新历史或停止生成。' : message.status === 'CANCELLED' ? '已停止，本次尚未生成内容。' : '')" />
               <footer v-if="message.role === 'ASSISTANT'" class="chat-message-actions"><button v-if="message.content" type="button" @click="copyAnswer(message)">{{ copiedMessage === message.id ? '已复制' : '复制回答' }}</button><button v-if="message.evidence.length" type="button" class="evidence-toggle" @click="evidencePanel = { evidence: message.evidence, title: messages[index - 1]?.content || '本轮回答' }">查看 {{ message.evidence.length }} 条代码证据 ↗</button><span v-if="message.latencyMs">{{ (message.latencyMs / 1000).toFixed(1) }} 秒 · {{ message.modelName }}</span><button v-if="message.status === 'RUNNING' && !streaming" type="button" :disabled="stopping" @click="stopAnswer">{{ stopping ? '正在停止…' : '停止生成' }}</button></footer>
               <p v-if="message.status === 'CANCELLED' && message.content" class="chat-stopped-note">已停止生成，以上内容尚未完整回答。</p>
             </article>
-            <article v-if="streaming" class="assistant streaming" aria-label="正在生成的回答"><header><b><span class="chat-avatar">✳</span>DevMate Agent</b><span role="status">{{ stopping ? '正在停止并保存…' : streamedText ? '正在逐字输出' : streamedEvidence.length ? '已找到代码，正在组织回答…' : '正在查找项目代码…' }}</span></header><ModelAnswer v-if="streamedText" :content="streamedText" /><p v-else class="chat-thinking">回答将逐步显示<span class="stream-cursor" aria-hidden="true"></span></p><div class="chat-message-actions"><button v-if="streamedEvidence.length" type="button" @click="evidencePanel = { evidence: streamedEvidence, title: '当前回答的代码依据' }">已找到 {{ streamedEvidence.length }} 条代码证据 ↗</button></div></article>
+            <article v-if="streaming" class="assistant streaming" aria-label="正在生成的回答"><header><b><span class="chat-avatar" aria-hidden="true">🌱</span>DevMate Agent</b><span role="status">{{ stopping ? '正在停止并保存…' : streamedText ? '正在逐字输出' : streamedEvidence.length ? '已找到代码，正在组织回答…' : '正在查找项目代码…' }}</span></header><ModelAnswer v-if="streamedText" :content="streamedText" /><p v-else class="chat-thinking">回答将逐步显示<span class="stream-cursor" aria-hidden="true"></span></p><div class="chat-message-actions"><button v-if="streamedEvidence.length" type="button" @click="evidencePanel = { evidence: streamedEvidence, title: '当前回答的代码依据' }">已找到 {{ streamedEvidence.length }} 条代码证据 ↗</button></div></article>
           </div>
           <button v-if="!followLatest" type="button" class="button secondary chat-latest" @click="scrollLatest(true)">↓ 回到最新消息</button>
           <form class="agent-chat-input" @submit.prevent="sendQuestion"><div class="chat-composer-box"><label class="sr-only" for="project-chat-question">向当前项目提问</label><textarea ref="composer" id="project-chat-question" v-model="question" rows="1" maxlength="4000" placeholder="给 DevMate 发送消息，聊聊这个项目…" :disabled="busy" @compositionstart="isComposing = true" @compositionend="isComposing = false" @keydown="onComposerKey"></textarea><button v-if="streaming" type="button" class="chat-send stop-answer" :disabled="stopping || !activeMessageId" :aria-label="stopping ? '正在停止' : '停止生成'" @click="stopAnswer">■</button><button v-else class="chat-send" aria-label="发送问题" :disabled="busy || loading || !question.trim()">↑</button></div><div class="chat-composer-note"><small>{{ streaming ? '停止会保存已有内容；返回项目后后台仍会完成回答。' : 'Enter 发送 · Shift + Enter 换行' }}</small><small>{{ question.length }}/4000 · 自动保存</small></div><p class="chat-disclaimer">AI 回答仅供参考，请结合代码证据核对。<span class="sr-only" role="status">{{ copyNotice }}</span></p></form>

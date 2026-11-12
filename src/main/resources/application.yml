@@ -104,11 +104,11 @@ devmate:
     read-timeout: 90s
     stale-task-timeout: 10m
   project-understanding:
-    prompt-version: project-guide-v1
+    prompt-version: project-guide-v6
     max-evidence-chunks: 40
     max-evidence-characters: 48000
     connect-timeout: 5s
-    read-timeout: 90s
+    read-timeout: 180s
     stale-task-timeout: 10m
   project-conversation:
     prompt-version: project-conversation-v3

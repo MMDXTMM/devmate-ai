@@ -23,7 +23,8 @@ import static org.mockito.Mockito.when;
         "devmate.model-connections.compatible.enabled=true",
         "devmate.model-connections.compatible.display-name=测试兼容服务",
         "devmate.model-connections.compatible.base-url=https://compatible.example/v1",
-        "devmate.model-connections.compatible.models=test-model"
+        "devmate.model-connections.compatible.models=test-model",
+        "devmate.model-connections.compatible.allowed-base-urls=https://second.example/v1"
 })
 @ActiveProfiles("test")
 @Transactional
@@ -33,6 +34,55 @@ class CompatibleModelConnectionTest {
     @Autowired private UserModelConnectionMapper connections;
     @MockitoBean private CurrentUserService currentUser;
     @MockitoBean private SpringAiChatClientFactory client;
+
+    private void login(String username) {
+        var user = new AppUser();
+        user.setUsername(username); user.setPasswordHash("not-used"); user.setStatus("ACTIVE"); user.setDeleted(0);
+        users.insert(user);
+        when(currentUser.getRequiredUser()).thenReturn(new AuthenticatedUser(user.getId(), user.getUsername()));
+    }
+
+    @Test
+    void savesNormalizedAccountEndpointAndCustomModelWithLegacyFallback() {
+        login("relay-format");
+        service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "vendor/model-2", "test-only-key",
+                " HTTPS://COMPATIBLE.EXAMPLE:443/v1/chat/completions/ ", "CHAT_COMPLETIONS"));
+        var selected = service.requireActiveConnection();
+        assertThat(selected.baseUrl()).isEqualTo("https://compatible.example/v1");
+        assertThat(selected.model()).isEqualTo("vendor/model-2");
+        assertThat(service.list()).filteredOn(p -> p.provider().equals("COMPATIBLE")).singleElement().satisfies(p -> {
+            assertThat(p.protocol()).isEqualTo("CHAT_COMPLETIONS");
+            assertThat(p.models()).contains("vendor/model-2", "test-model");
+            assertThat(p.allowedBaseUrls()).containsExactly("https://compatible.example/v1", "https://second.example/v1");
+        });
+        // Old requests omit new fields and must preserve the account endpoint and encrypted key.
+        service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "vendor/model-3", ""));
+        assertThat(service.requireSavedConnection("COMPATIBLE", "vendor/model-3").baseUrl()).isEqualTo(selected.baseUrl());
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("test-only-key");
+        service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "vendor/model-3", "new-test-key",
+                "https://second.example/v1/", "CHAT_COMPLETIONS"));
+        assertThat(service.requireActiveConnection().baseUrl()).isEqualTo("https://second.example/v1");
+        service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "vendor/model-4", ""));
+        assertThat(service.requireActiveConnection().baseUrl()).isEqualTo("https://second.example/v1");
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("new-test-key");
+    }
+
+    @Test
+    void rejectsUnsafeUnapprovedAddressProtocolMismatchAndKeyReuseAcrossEndpointsAtomically() {
+        login("relay-invalid");
+        service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "test-model", "test-only-key"));
+        for (String url : java.util.List.of("http://127.0.0.1/v1", "https://user:password@compatible.example/v1",
+                "https://compatible.example/v1?key=private", "https://compatible.example/v1#secret", "https://unapproved.example/v1")) {
+            assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "test-model", "x", url, "CHAT_COMPLETIONS")))
+                    .isInstanceOf(BusinessException.class).hasMessageNotContaining("password").hasMessageNotContaining("private").hasMessageNotContaining("secret").hasMessageNotContaining("unapproved.example");
+        }
+        assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "test-model", "",
+                "https://second.example/v1", "CHAT_COMPLETIONS"))).hasMessageContaining("重新填写");
+        assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest("COMPATIBLE", "test-model", "",
+                null, "RESPONSES"))).hasMessageContaining("仅支持 Chat Completions");
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("test-only-key");
+        assertThat(service.requireActiveConnection().baseUrl()).isEqualTo("https://compatible.example/v1");
+    }
 
     @Test
     void persistsAccountKeyAndUsesOnlyAdministratorEndpointAndModel() {
@@ -54,7 +104,7 @@ class CompatibleModelConnectionTest {
                 .singleElement().extracting(UserModelConnection::getEncryptedApiKey)
                 .asString().startsWith("v1:").doesNotContain("test-only-key");
         assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest(
-                "COMPATIBLE", "not-approved", "test-only-key")))
+                "COMPATIBLE", "invalid model with spaces", "test-only-key")))
                 .isInstanceOf(BusinessException.class).hasMessage("所选模型不属于当前提供方");
         when(client.chat("https://compatible.example/v1", "test-only-key", "test-model",
                 "你是连接检查器。", "只回复 OK", null)).thenReturn("OK");

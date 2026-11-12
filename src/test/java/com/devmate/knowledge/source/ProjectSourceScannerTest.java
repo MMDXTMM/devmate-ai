@@ -122,6 +122,42 @@ class ProjectSourceScannerTest {
     }
 
     @Test
+    void importsCommonNonJavaSourcesAndReadmeFormatsAsLinePreservingText() throws Exception {
+        var examples = java.util.Map.ofEntries(
+                java.util.Map.entry("main.py", "def hello():\n    return 'hello'\n"),
+                java.util.Map.entry("index.js", "export const hello = () => 'hello';\n"),
+                java.util.Map.entry("main.ts", "export const message: string = 'hello';\n"),
+                java.util.Map.entry("App.vue", "<template><h1>Hello</h1></template>\n"),
+                java.util.Map.entry("main.go", "package main\nfunc main() {}\n"),
+                java.util.Map.entry("lib.rs", "pub fn hello() {}\n"),
+                java.util.Map.entry("main.cpp", "int main() { return 0; }\n"),
+                java.util.Map.entry("Program.cs", "class Program {}\n"),
+                java.util.Map.entry("index.html", "<h1>Hello</h1>\n"),
+                java.util.Map.entry("style.css", "h1 { color: blue; }\n"),
+                java.util.Map.entry("README", "Project introduction\n"),
+                java.util.Map.entry("README.zh-CN.md", "项目介绍\n"),
+                java.util.Map.entry("README.markdown", "# Introduction\n"),
+                java.util.Map.entry("README.rst", "Introduction\n============\n"),
+                java.util.Map.entry("package.json", "{\"name\":\"example\"}\n"),
+                java.util.Map.entry("pyproject.toml", "[project]\nname='example'\n"),
+                java.util.Map.entry("go.mod", "module example\n")
+        );
+        for (var example : examples.entrySet()) Files.writeString(tempDir.resolve(example.getKey()), example.getValue());
+        var files = new ProjectSourceScanner(defaultProperties()).scan(tempDir);
+        assertThat(files).hasSize(examples.size());
+        assertThat(files).noneMatch(file -> file.fileType() == SourceFileType.JAVA);
+        for (var file : files) {
+            var parsed = new TextSourceParser().parse(file);
+            assertThat(parsed.references()).isEmpty();
+            assertThat(parsed.chunks()).singleElement().satisfies(chunk -> {
+                assertThat(chunk.chunkType()).isEqualTo("TEXT_EXCERPT");
+                assertThat(chunk.startLine()).isEqualTo(1);
+                assertThat(chunk.content()).isEqualTo(examples.get(file.relativePath()) + "\n");
+            });
+        }
+    }
+
+    @Test
     void rejectsSymlinkOutsideRepository() throws Exception {
         Path outside = Files.createTempFile("guide-outside", ".py");
         try {

@@ -112,6 +112,8 @@ V24 不把模型输出当作源码事实：业务流程和阅读建议只能引�
 
 `project-guide-v1` 继续使用该 JSON 列：新增可选 `guide`，保存版本化 project/modules/flows、宿主快照摘要、真实读取范围和证据元数据，不重复存源码。API 回读补充真实代码预览；旧 JSON 缺少 guide 时兼容显示。文本导入在现有 document/chunk 的字符串类型列保存 TEXT、MANIFEST、DOCUMENTATION/TEXT_EXCERPT，片段元数据标记 text-excerpts-v1。Java AST 的 v2 语义与历史 Chunk 不被改写；无新表、列或 Flyway 迁移。详见 PROJECT_GUIDE_IMPLEMENTATION.md。
 
+`project-guide-v2` Prompt 生成学习概要，沿用上述兼容 JSON 外层，新增可空 `content.overview.highlights` 及宿主 `languages` 字段。旧报告缺失字段时不修改原 JSON，回读后可升级生成新报告。亮点关联模块与真实证据，学习建议不作为运行验证。首次进入工作台读取缓存，无当前版本/学习概要才自动生成；权限、并发与幂等规则保持不变。
+
 ### 3.4 `project`
 
 保存接入 DevMate AI 的研发项目。
@@ -410,3 +412,17 @@ V23 保存登录账户的大模型连接配置：
 - 已执行的迁移文件不再修改；后续每次变更新增版本脚本。
 
 本地默认使用 H2 的 MySQL 兼容模式执行相同迁移；提交前至少运行 `./mvnw test`。涉及 MySQL 专属 SQL 时，还需要使用 `local` Profile 在 MySQL 环境补充验证。
+
+### 项目导览 AI 图标（2026-11-11）
+
+V24 的 report_json.guide.content 兼容追加可空 appearance（projectIcon、modules[] 的 moduleId/icon；实验版 moduleIcons 对象兼容回读），属于导览的版本快照，不是项目业务字段，不新增表/列/迁移。旧 JSON 缺失时回退中性图标。项目列表/详情的 icon 是按当前用户、成员关系、当前 revision、SUCCEEDED、created_at/id 选最新报告后提取的展示投影；批量读取最多一页 100 个项目，不跨用户复用，不把报告或代码正文返回项目列表。新生成导览仍沿用原 attemptKey、状态、超时和短事务规则。
+
+
+### 项目导览后台任务兼容（2026-11-12）
+
+继续使用既有 project_understanding_report 的 RUNNING/SUCCEEDED/FAILED、attempt_key、running_key 和错误字段，不新增表列或修改迁移。background=true 先提交短事务，再运行模型；后台失败/队列拒绝均条件更新并释放 running_key。latest 查询会恢复超过 stale-task-timeout 的中断任务。v6 的 E1/E2 等引用只存在于本轮模型输入输出，严格映射回真实字符串 Chunk ID 后才保存 report_json，历史报告与聊天证据保持兼容。
+
+
+### V26：账户中转站请求地址（2026-11-12）
+
+user_model_connection 新增可空 base_url VARCHAR(500)，不修改 V23 或历史数据。新保存配置写入规范化且在服务端信任名单内的地址；旧记录为空时回退提供方默认地址。原有用户/提供方唯一键、单活动连接约束和 Key 加密策略不变；API 不返回加密密文。仅支持 Chat Completions，协议为固定契约，不增加虚假的 Responses 配置列。本地 MySQL 已验证迁移、原账号保存回读及 Key 密文未变。

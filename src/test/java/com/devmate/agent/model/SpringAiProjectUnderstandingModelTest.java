@@ -18,10 +18,25 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class SpringAiProjectUnderstandingModelTest {
 
     @Test
+    void advertisesExplicitModuleIconRecordsRatherThanDynamicMapKeysToTheModel() {
+        String schema = new org.springframework.ai.converter.BeanOutputConverter<>(
+                com.devmate.knowledge.dto.ProjectGuide.Content.class).getJsonSchema();
+        assertThat(schema).contains("moduleId", "projectIcon").doesNotContain("moduleIcons");
+    }
+
+    private ProjectUnderstandingProperties legacyGuideProperties() {
+        var properties = new ProjectUnderstandingProperties(); properties.setPromptVersion("project-guide-v6"); return properties;
+    }
+
+    @Test
     void mapsVersionedGuideContentThroughSpringAiWithoutAcceptingModelSourceLocations() throws Exception {
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         String contentJson = new String(getClass().getResourceAsStream("/guide/cli-guide.json").readAllBytes(),
                 java.nio.charset.StandardCharsets.UTF_8);
+        var contentTree = mapper.readTree(contentJson);
+        var appearance = ((com.fasterxml.jackson.databind.node.ObjectNode) contentTree).putObject("appearance");
+        appearance.put("projectIcon", "🔭"); appearance.putArray("modules").addObject().put("moduleId", "convert").put("icon", "🧮");
+        contentJson = mapper.writeValueAsString(contentTree);
         var envelope = mapper.createObjectNode(); envelope.put("id", "guide-1"); envelope.put("object", "chat.completion");
         envelope.put("created", 1); envelope.put("model", "example-model");
         var choice = envelope.putArray("choices").addObject(); choice.put("index", 0); choice.put("finish_reason", "stop");
@@ -32,10 +47,12 @@ class SpringAiProjectUnderstandingModelTest {
         server.expect(requestTo("https://model.example/v1/chat/completions"))
                 .andRespond(withSuccess(mapper.writeValueAsString(envelope), MediaType.APPLICATION_JSON));
         var model = new SpringAiProjectUnderstandingModel(new ModelConnectionSnapshot("COMPATIBLE", "example-model",
-                "https://model.example/v1", "test-key"), new ProjectUnderstandingProperties(), new SpringAiChatClientFactory(builder, false));
+                "https://model.example/v1", "test-key"), legacyGuideProperties(), new SpringAiChatClientFactory(builder, false));
         var result = model.analyze(new ProjectUnderstandingPrompt("请按 Content 契约输出", "evidenceId=42"));
         assertThat(result.guide().schemaVersion()).isEqualTo("project-guide-v1");
         assertThat(result.guide().content().project().type()).isEqualTo("Python CLI");
+        assertThat(result.guide().content().appearance().projectIcon()).isEqualTo("🔭");
+        assertThat(result.guide().content().appearance().modules()).containsExactly(new com.devmate.knowledge.dto.ProjectGuide.ModuleIcon("convert", "🧮"));
         assertThat(result.guide().snapshot()).isNull();
         assertThat(result.guide().evidence()).isEmpty();
         assertThat(result.totalTokens()).isEqualTo(120); server.verify();

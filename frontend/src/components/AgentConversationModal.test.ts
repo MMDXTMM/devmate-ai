@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { modelAccessKey } from '../composables/useModelAccess'
 import AgentConversationModal from './AgentConversationModal.vue'
 import { ApiError } from '../services/apiClient'
 import { conversationApi } from '../services/conversationApi'
@@ -8,6 +9,23 @@ import { modelConnectionApi } from '../services/modelConnectionApi'
 describe('AgentConversationModal', () => {
   beforeEach(() => { vi.spyOn(modelConnectionApi, 'list').mockResolvedValue([]) })
   afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals() })
+  it('requests API setup before sending and preserves the unsent question on cancellation', async () => {
+    vi.spyOn(conversationApi, 'list').mockResolvedValue([])
+    const create = vi.spyOn(conversationApi, 'create')
+    const stream = vi.spyOn(conversationApi, 'streamMessage')
+    const guard = vi.fn().mockResolvedValue(false)
+    const wrapper = mount(AgentConversationModal, { props: { open: true, projectId: '10' },
+      global: { provide: { [modelAccessKey as symbol]: guard } } })
+    await flushPromises()
+    await wrapper.get('textarea').setValue('这个项目有什么用？')
+    await wrapper.get('.agent-chat-input').trigger('submit')
+    await flushPromises()
+    expect(guard).toHaveBeenCalledWith('向项目 AI 发送问题')
+    expect(create).not.toHaveBeenCalled()
+    expect(stream).not.toHaveBeenCalled()
+    expect(wrapper.get('textarea').element).toHaveProperty('value', '这个项目有什么用？')
+    wrapper.unmount()
+  })
   it('creates a conversation, consumes SSE tokens, and reloads persisted messages', async () => {
     const conversation = {
       id: '100', projectId: '10', title: '新对话', status: 'ACTIVE' as const,
