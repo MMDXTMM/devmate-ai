@@ -8,6 +8,7 @@ public record GenerationSessionResponse(
         String status,
         int latestVersionNo,
         String confirmedVersionId,
+        String lastError,
         GenerationSpecResponse latestSpec,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

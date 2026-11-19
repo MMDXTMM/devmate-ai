@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SourceStructureModal from './SourceStructureModal.vue'
+import { guideFixture } from '../test/fixtures/projectGuide'
 import { ApiError, projectApi } from '../services/projectApi'
 
 describe('SourceStructureModal', () => {
@@ -95,13 +96,18 @@ describe('SourceStructureModal', () => {
     expect(wrapper.find('.project-guide').exists()).toBe(false)
     expect(wrapper.find('.onboarding-view').exists()).toBe(false)
     expect(wrapper.findAll('.source-view-tabs button')).toHaveLength(2)
-    expect(wrapper.get('.source-view-tabs button.active').text()).toContain('Java 实现与接口')
+    expect(wrapper.get('.source-view-tabs button.active').text()).toContain('Java 静态入口与链路')
     expect(latest).not.toHaveBeenCalled()
     expect(create).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('总体调用逻辑')
+    expect(wrapper.text()).toContain('已解析调用链')
     expect(wrapper.text()).toContain('create() → save()')
     expect(wrapper.get('.business-evidence-list pre code').text()).toContain('@PostMapping')
     expect(projectApi.getBusinessFeatureDetail).toHaveBeenCalledWith('1', '11')
+    const guide = guideFixture(); guide.snapshot.revision = 'abcdef'; guide.content.modules[0].evidenceIds = ['11']
+    await wrapper.setProps({ guide })
+    expect(wrapper.text()).toContain(`对应业务模块（共享实现依据）：${guide.content.modules[0].name}`)
+    await wrapper.setProps({ guide: { ...guide, snapshot: { ...guide.snapshot, revision: 'old' } } })
+    expect(wrapper.text()).not.toContain('对应业务模块（共享实现依据）')
   })
 
   it('shows the selected symbol as a real code block with Chinese guidance', async () => {
@@ -155,7 +161,7 @@ describe('SourceStructureModal', () => {
       props: { open: true, projectId: '1', projectName: 'demo' },
     })
     await flushPromises()
-    await wrapper.get('.source-view-tabs button:nth-child(2)').trigger('click')
+    await wrapper.get('.source-view-tabs button:last-child').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('方法实现')

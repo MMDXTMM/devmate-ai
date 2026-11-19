@@ -71,7 +71,7 @@ devmate:
     git-username: ${DEVMATE_GIT_USERNAME:x-access-token}
     git-token: ${DEVMATE_GIT_TOKEN:}
   retrieval:
-    config-version: lexical-graph-v1
+    config-version: lexical-graph-v3
     candidate-limit: 1000
     reference-limit: 5000
     default-top-k: 8
@@ -89,7 +89,7 @@ devmate:
     batch-size: 10
     max-input-characters: 16000
     max-index-chunks: 5000
-    max-vector-scan: 5000
+    max-vector-scan: 50000
     minimum-similarity: 0.05
   analysis:
     timeout-seconds: 30
@@ -104,14 +104,14 @@ devmate:
     read-timeout: 90s
     stale-task-timeout: 10m
   project-understanding:
-    prompt-version: project-guide-v6
+    prompt-version: project-guide-v7
     max-evidence-chunks: 40
     max-evidence-characters: 48000
     connect-timeout: 5s
     read-timeout: 180s
     stale-task-timeout: 10m
   project-conversation:
-    prompt-version: project-conversation-v3
+    prompt-version: project-conversation-v4
     history-messages: 12
     top-k: 6
     token-budget: 5000

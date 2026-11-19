@@ -39,9 +39,9 @@ const trimLabel: Record<RetrievalTrimReason, string> = {
 
 const retrievalModeLabels: Record<RetrievalSearch['executedMode'], string> = {
   LEXICAL: '关键词检索',
-  VECTOR: '语义检索',
-  HYBRID: '关键词 + 语义混合检索',
-  LEXICAL_FALLBACK: '关键词检索（语义检索已降级）',
+  VECTOR: '向量检索',
+  HYBRID: '关键词 + 向量混合检索',
+  LEXICAL_FALLBACK: '关键词检索（向量检索已降级）',
 }
 
 const sourceKindLabels: Record<RetrievalHit['sourceKind'], string> = {
@@ -67,6 +67,9 @@ const chunkTypeLabels: Record<SourceSymbolType, string> = {
 }
 
 const reasonLabels: Record<string, string> = {
+  EXACT_CODE_TARGET: '精确代码目标',
+  IMPLEMENTATION: '优先实现代码',
+  BUSINESS_TOPIC: '当前项目业务词关联',
   EXACT_SYMBOL: '符号名完全匹配',
   EXACT_PATH: '文件路径完全匹配',
   EXACT_CONTENT: '代码内容完全匹配',
@@ -77,7 +80,7 @@ const reasonLabels: Record<string, string> = {
   DIFF_SYMBOL: '最新变更符号',
   LEXICAL_RANK: '关键词排序命中',
   DETERMINISTIC_CONTEXT: '调用关系上下文',
-  VECTOR_SIMILARITY: '语义相似',
+  VECTOR_SIMILARITY: '向量特征相似（含本地哈希）',
 }
 
 const referenceReasonLabels: Record<string, string> = {
@@ -228,12 +231,13 @@ watch(
         <div v-if="result.vectorLimitReached" class="notice warning">
           向量数量达到开发型存储扫描上限，后续需要迁移到专用 ANN 向量检索。
         </div>
+        <p v-if="result.embeddingProvider === 'LOCAL'" class="notice">当前使用本地代码哈希向量，用于特征匹配，不能理解中文语义。混合模式仅保留具有关键词或项目业务证据关联的结果。</p>
         <div v-if="result.degradationReason" class="notice warning">
           向量检索已降级：{{ result.degradationReason }}
         </div>
 
         <div v-if="!result.hits.length" class="state-box compact">
-          <h3>没有命中可用上下文</h3>
+          <h3>未找到足够相关的代码证据</h3>
           <p>可以换用类名、方法名、配置键或数据库表名；中文语义召回将在 Embedding 阶段增强。</p>
         </div>
         <div v-else class="retrieval-results">

@@ -7,11 +7,13 @@ import com.devmate.generation.model.RequirementOption;
 import com.devmate.generation.model.RequirementQuestion;
 import com.devmate.generation.model.RequirementQuestionCategory;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
+@Profile("test")
 public class GuidedRequirementDraftProvider implements RequirementDraftProvider {
 
     private static final String PROMPT_VERSION = "guided-requirement-v2";

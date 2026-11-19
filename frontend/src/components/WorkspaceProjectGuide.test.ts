@@ -63,9 +63,12 @@ describe('WorkspaceProjectGuide', () => {
     const wrapper = mount(WorkspaceProjectGuide, { props: { project }, global: { provide: { [modelAccessKey as symbol]: guard } } })
     wrappers.push(wrapper)
     await flushPromises()
+    expect(guard).not.toHaveBeenCalled()
+    await button(wrapper, '生成导览 · 使用 API 额度').trigger('click')
+    await flushPromises()
     expect(guard).toHaveBeenCalledWith('生成项目概要与新人导览')
     expect(projectApi.createUnderstandingReport).not.toHaveBeenCalled()
-    expect(button(wrapper, '重新分析').attributes('disabled')).toBeUndefined()
+    expect(button(wrapper, '生成导览 · 使用 API 额度').attributes('disabled')).toBeUndefined()
   })
   it('restores model-selected icons from the cached report without generating again', async () => {
     const saved = report()
@@ -97,11 +100,14 @@ describe('WorkspaceProjectGuide', () => {
     await wrapper.get('.guide-detail-actions .primary').trigger('click')
     expect(wrapper.emitted('chat')?.[0]?.[0]).toContain('先检查，再汇总')
   })
-  it('generates once on first entry and uses a saved result on the next entry', async () => {
+  it('only generates after an explicit action, including the first entry', async () => {
     vi.mocked(projectApi.latestUnderstandingReport).mockRejectedValueOnce(
       new ApiError('尚无报告', undefined, 404),
     )
     const first = render()
+    await flushPromises()
+    expect(projectApi.createUnderstandingReport).not.toHaveBeenCalled()
+    await button(first, '生成导览 · 使用 API 额度').trigger('click')
     await flushPromises()
     expect(projectApi.createUnderstandingReport).toHaveBeenCalledTimes(1)
     expect(projectApi.createUnderstandingReport).toHaveBeenCalledWith(
@@ -129,6 +135,9 @@ describe('WorkspaceProjectGuide', () => {
     const wrapper = render()
     await flushPromises()
     expect(wrapper.text()).toContain('帮助财务人员')
+    expect(projectApi.createUnderstandingReport).not.toHaveBeenCalled()
+    await button(wrapper, '更新导览 · 使用 API 额度').trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('分析会使用当前账户的模型额度')
     expect(wrapper.find('.guide-highlights').exists()).toBe(false)
     finish(report())
@@ -162,6 +171,8 @@ describe('WorkspaceProjectGuide', () => {
       .mockResolvedValue(report())
     const wrapper = render()
     await flushPromises()
+    await button(wrapper, '生成导览 · 使用 API 额度').trigger('click')
+    await flushPromises()
     const key = vi.mocked(projectApi.createUnderstandingReport).mock
       .calls[0]?.[2]
     await button(wrapper, '重试生成').trigger('click')
@@ -178,9 +189,11 @@ describe('WorkspaceProjectGuide', () => {
     vi.mocked(projectApi.createUnderstandingReport).mockResolvedValue({ ...report(), status: 'RUNNING', guide: null })
     const wrapper = render()
     await flushPromises()
+    await button(wrapper, '生成导览 · 使用 API 额度').trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('后台正在阅读项目')
     expect(wrapper.text()).toContain('离开页面也不会取消任务')
-    expect(button(wrapper, '重新分析').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '生成导览 · 使用 API 额度').attributes('disabled')).toBeDefined()
     await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
     expect(wrapper.text()).toContain('帮助财务人员')
@@ -193,7 +206,7 @@ describe('WorkspaceProjectGuide', () => {
       .mockResolvedValue(report())
     const wrapper = render()
     await flushPromises()
-    expect(button(wrapper, '重新分析').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '生成导览 · 使用 API 额度').attributes('disabled')).toBeDefined()
     await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
     expect(wrapper.text()).toContain('帮助财务人员')
@@ -214,6 +227,8 @@ describe('WorkspaceProjectGuide', () => {
         }),
     )
     const wrapper = render()
+    await flushPromises()
+    await button(wrapper, '生成导览 · 使用 API 额度').trigger('click')
     await flushPromises()
     expect(button(wrapper, '正在整理…').attributes('disabled')).toBeDefined()
     expect(button(wrapper, '刷新导览').attributes('disabled')).toBeDefined()
@@ -257,6 +272,8 @@ describe('WorkspaceProjectGuide', () => {
     )
     const wrapper = render()
     await flushPromises()
+    await button(wrapper, '生成导览 · 使用 API 额度').trigger('click')
+    await flushPromises()
     await wrapper.setProps({
       project: { ...project, id: '2', currentRevision: 'new' },
     })
@@ -282,13 +299,13 @@ describe('WorkspaceProjectGuide', () => {
     vi.mocked(projectApi.latestUnderstandingReport).mockResolvedValue(
       report('1', 'old'),
     )
-    render()
+    const wrapper = render()
     await flushPromises()
-    expect(projectApi.createUnderstandingReport).toHaveBeenCalledWith(
-      '1',
-      'abc',
-      expect.any(String),
-    )
+    expect(projectApi.createUnderstandingReport).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('其他源码版本')
+    await button(wrapper, '生成导览 · 使用 API 额度').trigger('click')
+    await flushPromises()
+    expect(projectApi.createUnderstandingReport).toHaveBeenCalledWith('1', 'abc', expect.any(String))
   })
   it('does not generate on forbidden reads or before source import', async () => {
     vi.mocked(projectApi.latestUnderstandingReport).mockRejectedValue(

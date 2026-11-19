@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { useModalFocus } from '../composables/useModalFocus'
 import type { Project, ProjectForm } from '../types/project'
 
 const props = defineProps<{
@@ -12,6 +13,8 @@ const emit = defineEmits<{
   close: []
   submit: [form: ProjectForm]
 }>()
+
+const dialog = useModalFocus(() => props.open, () => { if (!props.saving) emit('close') })
 
 const emptyForm = (): ProjectForm => ({
   name: '',
@@ -70,7 +73,7 @@ function submit() {
 
 <template>
   <div v-if="open" class="modal-backdrop" role="presentation" @click.self="emit('close')">
-    <section class="modal" role="dialog" aria-modal="true" :aria-label="title">
+    <section :ref="dialog" tabindex="-1" class="modal" role="dialog" aria-modal="true" :aria-label="title">
       <header class="modal-header">
         <span class="surface-icon" aria-hidden="true">📦</span>
         <div>

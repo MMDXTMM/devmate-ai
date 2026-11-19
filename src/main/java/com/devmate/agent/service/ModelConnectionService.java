@@ -149,6 +149,20 @@ public class ModelConnectionService {
         }
     }
 
+    @Transactional
+    public List<ModelProviderResponse> delete(String providerId) {
+        String id = providerId == null ? "" : providerId.trim().toUpperCase(java.util.Locale.ROOT);
+        // Permit removal even when an administrator has disabled the compatible provider.
+        if (!java.util.Set.of("DEEPSEEK", "DASHSCOPE", "OPENAI", "COMPATIBLE").contains(id)) {
+            throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "暂不支持该模型提供方");
+        }
+        Long userId = currentUserService.getRequiredUser().id();
+        connectionMapper.delete(Wrappers.lambdaQuery(UserModelConnection.class)
+                .eq(UserModelConnection::getUserId, userId)
+                .eq(UserModelConnection::getProvider, id));
+        return list();
+    }
+
     public ModelConnectionSnapshot requireActiveConnection() {
         Long userId = currentUserService.getRequiredUser().id();
         UserModelConnection state = connectionMapper.selectOne(Wrappers.lambdaQuery(UserModelConnection.class)

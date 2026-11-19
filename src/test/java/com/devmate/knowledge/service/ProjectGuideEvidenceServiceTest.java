@@ -35,7 +35,7 @@ class ProjectGuideEvidenceServiceTest {
         assertThat(sample.evidence().getFirst().code()).hasSize(333);
         assertThat(sample.evidence().getFirst().truncated()).isTrue();
         assertThat(sample.coverage().readCharacters()).isLessThanOrEqualTo(1000);
-        assertThat(sample.snapshot().readPolicy()).startsWith("readme-first-v2");
+        assertThat(sample.snapshot().readPolicy()).startsWith("runtime-first-v4");
     }
 
     @Test void boundsLongReadmeAndKeepsMissingReadmeExplicit() {
@@ -50,6 +50,47 @@ class ProjectGuideEvidenceServiceTest {
         var sample = service.sample(1L, "revision");
         assertThat(sample.evidence()).hasSize(1);
         assertThat(sample.coverage().limitations().getFirst()).contains("未索引到 README");
+    }
+
+    @Test void samplesRuntimeCodeBeforeCiAndIssueTemplatesUnderTightBudget() {
+        var docs = mock(KnowledgeDocumentMapper.class); var chunks = mock(KnowledgeChunkMapper.class);
+        when(docs.selectList(any())).thenReturn(List.of(
+                document(1L, "README.md", "DOCUMENTATION"), document(2L, ".github/workflows/test.yml", "YAML"),
+                document(3L, ".devcontainer/setup.sh", "TEXT"), document(4L, "src/library/__init__.py", "TEXT"),
+                document(5L, "src/library/signer.py", "TEXT"), document(6L, "src/library/serializer.py", "TEXT")));
+        when(chunks.selectList(any())).thenReturn(List.of(chunk(1L, "readable")));
+        var properties = new ProjectUnderstandingProperties(); properties.setMaxEvidenceChunks(4);
+        var sample = new ProjectGuideEvidenceService(docs, chunks, properties).sample(1L, "revision");
+        assertThat(sample.evidence()).extracting(item -> item.filePath())
+                .contains("src/library/signer.py", "src/library/serializer.py")
+                .noneMatch(path -> path.startsWith(".github") || path.startsWith(".devcontainer"));
+    }
+
+    @Test void choosesPublicBehaviorAndTailInsteadOfAlwaysTakingTextHeaders() {
+        var docs = mock(KnowledgeDocumentMapper.class); var chunks = mock(KnowledgeChunkMapper.class);
+        when(docs.selectList(any())).thenReturn(List.of(document(1L, "src/library/signer.py", "TEXT")));
+        var header = chunk(1L, "import typing\nclass Signer:"); header.setStartLine(1);
+        var constructor = chunk(2L, "    def __init__(self): pass"); constructor.setStartLine(61);
+        var core = chunk(3L, "    def sign(self, value):\n        return value + signature\n    def verify(self, value):\n        return check(value)"); core.setStartLine(181);
+        var tail = chunk(4L, "    def unsign(self, value):\n        if invalid: raise Error()\n        return value"); tail.setStartLine(241);
+        when(chunks.selectList(any())).thenReturn(List.of(header, constructor, core, tail));
+        var sample = new ProjectGuideEvidenceService(docs, chunks, new ProjectUnderstandingProperties()).sample(1L, "revision");
+        assertThat(sample.evidence()).extracting(item -> item.id()).containsExactly("3", "4");
+    }
+
+    @Test void keepsLatePublicDefinitionsVisibleAfterLongDocstringsWithinAChunk() {
+        var docs = mock(KnowledgeDocumentMapper.class); var chunks = mock(KnowledgeChunkMapper.class);
+        when(docs.selectList(any())).thenReturn(List.of(document(1L, "src/library/signer.py", "TEXT")));
+        String prefix = "    def derive_key(self):\n" + "        # long documentation text\n".repeat(70);
+        var core = chunk(3L, prefix + "    def sign(self, value):\n        return value + signature\n    def verify(self, value):\n        return check(value)");
+        core.setStartLine(181); core.setEndLine(260);
+        when(chunks.selectList(any())).thenReturn(List.of(core));
+        var sample = new ProjectGuideEvidenceService(docs, chunks, new ProjectUnderstandingProperties()).sample(1L, "revision");
+        assertThat(sample.evidence()).singleElement().satisfies(item -> {
+            assertThat(item.code()).contains("def sign(", "def verify(");
+            assertThat(item.startLine()).isEqualTo(252);
+            assertThat(item.truncated()).isTrue();
+        });
     }
 
     private KnowledgeDocument document(Long id, String path, String type) {

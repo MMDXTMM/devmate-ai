@@ -177,6 +177,30 @@ class AuthenticationAndProjectAccessTest {
         String bobToken = register("bob", "bob@example.com");
 
         expectForbidden(get("/api/generation-sessions/{id}", sessionId), bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/runs/latest", sessionId), bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/runs/1/files", sessionId).param("path", "README.md"), bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/runs/1/download", sessionId), bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/runs/1/revisions",sessionId),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/runs/1/revisions",sessionId),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/runs/1/selection",sessionId),bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/runs/1/selection/1",sessionId),bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/revisions/1/change-plans",sessionId).contentType(MediaType.APPLICATION_JSON).content("{\"request\":\"增加搜索\",\"attemptKey\":\"change-access-00001\"}"),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/revisions/1",sessionId),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/tasks/latest",sessionId).param("kind","GENERATE").param("referenceId","1"),bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/tasks/1/cancellations",sessionId),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/revisions/1/learning-guides/latest",sessionId),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/revisions/1/runtime-guide",sessionId),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/revisions/1/error-help/latest",sessionId),bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/revisions/1/error-help",sessionId).contentType(MediaType.APPLICATION_JSON).content("{\"error\":\"test error\",\"attemptKey\":\"error-access-00001\"}"),bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/revisions/1/learning-guides",sessionId).contentType(MediaType.APPLICATION_JSON).content("{\"attemptKey\":\"guide-access-00001\"}"),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/revisions/1/files",sessionId).param("path","README.md"),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/revisions/1/download",sessionId),bobToken);
+        expectForbidden(post("/api/generation-sessions/{id}/revisions/1/verifications",sessionId).contentType(MediaType.APPLICATION_JSON).content("{\"attemptKey\":\"verify-access-00001\",\"repairLimit\":0}"),bobToken);
+        expectForbidden(get("/api/generation-sessions/{id}/revisions/1/verifications/latest",sessionId),bobToken);
+        mockMvc.perform(get("/api/generation-sessions").header("Authorization", bearer(bobToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get("/api/generation-sessions/{id}/runs/latest", sessionId)).andExpect(status().isUnauthorized());
+
         expectForbidden(post("/api/generation-sessions/{id}/clarifications", sessionId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -187,6 +211,39 @@ class AuthenticationAndProjectAccessTest {
                         .header("Authorization", bearer(aliceToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.originalRequirement").value("做一个企业工单管理系统"));
+    }
+
+    @Test
+    void deletesOnlyOwnModelConnectionAndRequiresAuthentication() throws Exception {
+        String aliceToken = register("alice", null);
+        String bobToken = register("bob", null);
+        mockMvc.perform(put("/api/model-connections")
+                        .header("Authorization", bearer(aliceToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"provider":"DEEPSEEK","model":"deepseek-v4-flash","apiKey":"test-delete-only"}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/model-connections/DEEPSEEK"))
+                .andExpect(status().isUnauthorized());
+        // The resource is always scoped to the caller; Bob cannot name Alice's account.
+        mockMvc.perform(delete("/api/model-connections/DEEPSEEK")
+                        .header("Authorization", bearer(bobToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[?(@.provider == 'DEEPSEEK')].configured").value(org.hamcrest.Matchers.contains(false)));
+        mockMvc.perform(get("/api/model-connections").header("Authorization", bearer(aliceToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.provider == 'DEEPSEEK')].configured").value(org.hamcrest.Matchers.contains(true)));
+        mockMvc.perform(delete("/api/model-connections/DEEPSEEK")
+                        .header("Authorization", bearer(aliceToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.provider == 'DEEPSEEK')].configured").value(org.hamcrest.Matchers.contains(false)))
+                .andExpect(jsonPath("$.data[?(@.active == true)]").isEmpty());
+        mockMvc.perform(delete("/api/model-connections/UNKNOWN")
+                        .header("Authorization", bearer(aliceToken)))
+                .andExpect(status().isBadRequest());
     }
 
     private String register(String username, String email) throws Exception {

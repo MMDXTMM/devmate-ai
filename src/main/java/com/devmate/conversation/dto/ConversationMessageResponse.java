@@ -19,6 +19,7 @@ public record ConversationMessageResponse(
         List<ConversationEvidenceResponse> evidence,
         String errorMessage,
         Long latencyMs,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        ConversationContextResponse context
 ) { }
 

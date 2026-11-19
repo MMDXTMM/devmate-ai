@@ -39,7 +39,10 @@ class ProjectOpenApiContractTest {
                 .andExpect(jsonPath("$.components.schemas.ModelConnectionUpdateRequest.required")
                         .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("baseUrl"))))
                 .andExpect(jsonPath("$.components.schemas.ModelProviderResponse.properties.protocol.type").value("string"))
-                .andExpect(jsonPath("$.components.schemas.ModelProviderResponse.properties.allowedBaseUrls.type").value("array"));
+                .andExpect(jsonPath("$.components.schemas.ModelProviderResponse.properties.allowedBaseUrls.type").value("array"))
+                .andExpect(jsonPath("$.paths['/api/model-connections/{provider}'].delete.summary").value("删除当前账户的模型连接"))
+                .andExpect(jsonPath("$.paths['/api/model-connections/{provider}'].delete.security[0].bearerAuth").isArray())
+                .andExpect(jsonPath("$.paths['/api/model-connections/{provider}'].delete.responses['200']").exists());
     }
 
     @Test

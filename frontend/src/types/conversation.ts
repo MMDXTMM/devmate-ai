@@ -1,3 +1,9 @@
+export interface ConversationContext {
+  actions: { tool: string; status: 'SUCCEEDED' | 'REJECTED' | 'REPEATED'; evidenceCount: number }[]
+  warnings: string[]
+  memoryUsed: boolean
+}
+
 export interface AgentConversation {
   id: string
   projectId: string
@@ -30,12 +36,14 @@ export interface ConversationMessage {
   modelName?: string
   evidence: ConversationEvidence[]
   errorMessage?: string
+  context?: ConversationContext
   latencyMs?: number
   createdAt: string
 }
 
 export interface ConversationStreamHandlers {
   onMessage?: (value: { conversationId: string; messageId: string; status: string }) => void
+  onContext?: (value: ConversationContext) => void
   onEvidence?: (value: ConversationEvidence[]) => void
   onToken?: (value: { content: string }) => void
   onDone?: (value: ConversationMessage) => void

@@ -33,6 +33,20 @@ final class SpringAiProjectConversationModel implements ProjectConversationModel
     public String modelName() { return connection.model(); }
 
     @Override
+    public boolean supportsResearch() { return true; }
+
+    @Override
+    public reactor.core.publisher.Mono<ReviewAgentTurn> research(
+            List<ReviewAgentMessage> messages, List<ReviewAgentToolDefinition> tools) {
+        return reactor.core.publisher.Mono.fromCallable(() -> {
+            var timeouts = new com.devmate.agent.config.AiReviewProperties();
+            timeouts.setConnectTimeout(properties.getConnectTimeout());
+            timeouts.setReadTimeout(properties.getReadTimeout());
+            return new SpringAiReviewAgentModel(connection, timeouts, clientFactory).next(messages, tools);
+        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+    }
+
+    @Override
     public Flux<String> stream(ProjectConversationPrompt prompt) {
         try {
             OpenAiChatOptions.Builder options = OpenAiChatOptions.builder().model(connection.model());

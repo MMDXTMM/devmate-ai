@@ -9,6 +9,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,6 +36,12 @@ public class ModelConnectionController {
     public ApiResponse<List<ModelProviderResponse>> update(
             @Valid @RequestBody ModelConnectionUpdateRequest request
     ) { return ApiResponse.success(service.update(request)); }
+
+    @DeleteMapping("/{provider}")
+    @Operation(summary = "删除当前账户的模型连接", description = "按提供方删除当前账户保存的地址、模型和加密 Key，重复删除幂等返回最新列表。删除当前连接后不自动启用其他提供方；项目与历史记录保留。已提交任务的配置快照不受影响，后续调用需重新配置或选择连接。未知提供方返回 400。")
+    public ApiResponse<List<ModelProviderResponse>> delete(@PathVariable String provider) {
+        return ApiResponse.success(service.delete(provider));
+    }
 
     @PostMapping("/test")
     @Operation(summary = "测试当前模型连接", description = "发起一次受超时限制的最小模型请求，并返回脱敏诊断。")

@@ -5,7 +5,20 @@ import { conversationApi } from './conversationApi'
 describe('conversationApi SSE stream', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     sessionStorage.clear()
+  })
+
+  it('delivers additive context events while preserving token streaming', async () => {
+    const context = { actions: [{ tool: 'read_code', status: 'SUCCEEDED', evidenceCount: 2 }], warnings: ['部分覆盖'], memoryUsed: true }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      `event: context\ndata: ${JSON.stringify(context)}\n\nevent: token\ndata: {"content":"说明"}\n\n`,
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    )))
+    const onContext = vi.fn(), onToken = vi.fn()
+    await conversationApi.streamMessage('1', '2', '问题', 'attempt', { onContext, onToken })
+    expect(onContext).toHaveBeenCalledWith(context)
+    expect(onToken).toHaveBeenCalledWith({ content: '说明' })
   })
 
   it('parses split named events and sends the account token', async () => {

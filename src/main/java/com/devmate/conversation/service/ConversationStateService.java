@@ -99,6 +99,36 @@ public class ConversationStateService {
         return previous == null ? "" : previous.getContent();
     }
 
+    @Transactional(readOnly = true)
+    public String retrievalTopic(Long conversationId, Long projectId) {
+        requireOwned(conversationId, projectId);
+        List<ConversationMessage> history = recentCompleted(conversationId, 40);
+        // Prefer the latest substantive topic over a chain of “continue / it” questions.
+        return history.stream().filter(item -> "USER".equals(item.getMessageRole()))
+                .sorted(java.util.Comparator.comparing(ConversationMessage::getSequenceNo).reversed())
+                .map(ConversationMessage::getContent)
+                .filter(text -> !text.matches("[\\s，。！？!?]*(继续|再说说|它呢|然后呢|详细一点|进一步|再详细一点)[\\s，。！？!?]*"))
+                .findFirst().orElse("");
+    }
+
+    @Transactional(readOnly = true)
+    public String topicMemory(Long conversationId, Long projectId, int recentLimit) {
+        requireOwned(conversationId, projectId);
+        List<ConversationMessage> history = recentCompleted(conversationId, 100);
+        int before = Math.max(0, history.size() - recentLimit - 1);
+        if (before == 0) return "";
+        return history.subList(0, before).stream().filter(item -> "USER".equals(item.getMessageRole()))
+                .map(ConversationMessage::getContent).distinct().limit(12)
+                .map(text -> limited(text, 180)).collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    @Transactional
+    public void saveEvidence(Long messageId, String evidenceJson) {
+        messageMapper.update(null, Wrappers.lambdaUpdate(ConversationMessage.class)
+                .eq(ConversationMessage::getId, messageId).eq(ConversationMessage::getStatus,"RUNNING")
+                .set(ConversationMessage::getEvidenceJson,evidenceJson));
+    }
+
     @Transactional
     public PreparedTurn prepareTurn(Long conversationId, Long projectId, String question,
                                     String attemptKey, String requestHash, String evidenceJson,
@@ -253,6 +283,14 @@ public class ConversationStateService {
                         .orderByDesc(ConversationMessage::getSequenceNo)
                         .last("LIMIT " + Math.max(1, limit))
         );
+        // Keep complete successful turns only; failed/cancelled user prompts are not model history.
+        java.util.Set<Integer> completedReplies = loaded.stream()
+                .filter(item -> "ASSISTANT".equals(item.getMessageRole()))
+                .map(ConversationMessage::getSequenceNo).collect(java.util.stream.Collectors.toSet());
+        loaded.removeIf(item -> "USER".equals(item.getMessageRole())
+                && !completedReplies.contains(item.getSequenceNo() + 1));
+        while (!loaded.isEmpty() && "ASSISTANT".equals(loaded.get(loaded.size()-1).getMessageRole()))
+            loaded.remove(loaded.size()-1);
         Collections.reverse(loaded);
         return loaded;
     }

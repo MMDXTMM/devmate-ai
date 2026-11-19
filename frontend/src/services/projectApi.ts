@@ -30,6 +30,7 @@ import { ApiError, apiRequest as request } from './apiClient'
 export { ApiError }
 
 export const projectApi = {
+  get(id: string): Promise<Project> { return request(`/api/projects/${encodeURIComponent(id)}`) },
   list(query: ProjectQuery): Promise<PageData<Project>> {
     const params = new URLSearchParams({
       page: String(query.page),
@@ -104,6 +105,10 @@ export const projectApi = {
     return request(
       `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(documentId)}/symbols/${encodeURIComponent(symbolId)}`,
     )
+  },
+
+  getSourceChunkDetail(projectId: string, chunkId: string, offset = 0): Promise<SourceSymbolDetail> {
+    return request(`/api/projects/${encodeURIComponent(projectId)}/sources/chunks/${encodeURIComponent(chunkId)}?offset=${offset}`)
   },
 
   listSourceReferences(id: string): Promise<SourceReference[]> {

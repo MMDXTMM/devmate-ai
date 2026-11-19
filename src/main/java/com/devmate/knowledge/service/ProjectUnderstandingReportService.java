@@ -114,7 +114,7 @@ public class ProjectUnderstandingReportService {
         if (!Objects.equals(request.revision(), businessMap.revision())) {
             throw new BusinessException(ErrorCode.CONFLICT, "项目源码版本已变化，请刷新后重新生成报告");
         }
-        boolean guideMode = java.util.Set.of("project-guide-v1", "project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6").contains(properties.getPromptVersion());
+        boolean guideMode = java.util.Set.of("project-guide-v1", "project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6", "project-guide-v7").contains(properties.getPromptVersion());
         ProjectGuideEvidenceService.Sample sample = guideMode ? guideEvidenceService.sample(projectId, request.revision()) : null;
         LinkedHashMap<String, EvidenceInput> evidence = guideMode ? new LinkedHashMap<>() : collectEvidence(projectId, businessMap);
         if (sample != null) sample.evidence().forEach(item -> evidence.put(item.id(), new EvidenceInput(item.id(),
@@ -154,7 +154,7 @@ public class ProjectUnderstandingReportService {
             LinkedHashMap<String, EvidenceInput> evidence) {
         long startedAt = System.nanoTime();
         try {
-            ProjectGuideEvidenceReferences references = guideMode && "project-guide-v6".equals(properties.getPromptVersion())
+            ProjectGuideEvidenceReferences references = guideMode && java.util.Set.of("project-guide-v6", "project-guide-v7").contains(properties.getPromptVersion())
                     ? new ProjectGuideEvidenceReferences(sample) : null;
             ProjectUnderstandingPrompt prompt = guideMode ? guidePrompt(references == null ? sample : references.modelSample())
                     : buildPrompt(businessMap, evidence.values());
@@ -244,7 +244,7 @@ public class ProjectUnderstandingReportService {
                                                           ProjectGuideEvidenceService.Sample sample, ProjectGuideEvidenceReferences references) {
         if (raw == null || raw.guide() == null) throw new AiReviewException("模型没有返回新版项目导览契约");
         var guide = ProjectGuideValidator.validate(references == null ? raw.guide().content() : references.restore(raw.guide().content()), sample);
-        if (java.util.Set.of("project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6").contains(properties.getPromptVersion()) && guide.content().overview() == null) {
+        if (java.util.Set.of("project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6", "project-guide-v7").contains(properties.getPromptVersion()) && guide.content().overview() == null) {
             throw new AiReviewException("模型导览缺少新人学习概要，请重试");
         }
         var flows = guide.content().flows().stream().map(flow -> {
@@ -252,6 +252,7 @@ public class ProjectUnderstandingReportService {
             flow.steps().forEach(step -> ids.addAll(step.evidenceIds()));
             flow.rules().forEach(rule -> ids.addAll(rule.evidenceIds()));
             flow.outcomes().forEach(outcome -> ids.addAll(outcome.evidenceIds()));
+            if (flow.transitions() != null) flow.transitions().forEach(t -> ids.addAll(t.evidenceIds()));
             return new ProjectUnderstandingModelResult.BusinessFlow(flow.name(), flow.goal(),
                     flow.steps().stream().map(step -> step.action() + " → " + step.result()).toList(), List.of(),
                     flow.outcomes().stream().map(ProjectGuide.Claim::text).toList(), List.copyOf(ids));
@@ -373,7 +374,7 @@ public class ProjectUnderstandingReportService {
     private ProjectUnderstandingReportResponse response(ProjectUnderstandingReport report) {
         ProjectUnderstandingModelResult result = readResult(report);
         Map<String, ProjectUnderstandingEvidenceResponse> evidence = result == null
-                ? Map.of() : loadEvidence(report.getProjectId(), report.getRevision(), evidenceIds(result));
+                ? Map.of() : loadEvidence(report.getProjectId(), report.getRevision(), evidenceIds(result), result.guide());
         List<ProjectUnderstandingFlowResponse> flows = result == null ? List.of() : result.businessFlows().stream()
                 .map(flow -> new ProjectUnderstandingFlowResponse(
                         flow.name(), flow.goal(), flow.steps(), flow.apiEntries(), flow.dataChanges(),
@@ -408,7 +409,7 @@ public class ProjectUnderstandingReportService {
     private Map<String, ProjectUnderstandingEvidenceResponse> loadEvidence(
             Long projectId,
             String revision,
-            Set<String> ids
+            Set<String> ids, ProjectGuide guide
     ) {
         if (ids.isEmpty()) return Map.of();
         List<Long> numericIds = ids.stream().map(Long::valueOf).toList();
@@ -424,11 +425,24 @@ public class ProjectUnderstandingReportService {
         for (KnowledgeChunk chunk : chunks) {
             KnowledgeDocument document = documents.get(chunk.getDocumentId());
             if (document == null) continue;
-            String code = limited(chunk.getContent(), CODE_PREVIEW_CHARACTERS);
+            var pointer = guide == null ? null : guide.evidence().stream()
+                    .filter(item -> item.id().equals(String.valueOf(chunk.getId()))).findFirst().orElse(null);
+            int startLine = chunk.getStartLine();
+            String content = chunk.getContent() == null ? "" : chunk.getContent();
+            int offset = 0;
+            if (pointer != null && pointer.startLine() != null && pointer.startLine() > startLine
+                    && pointer.startLine() <= chunk.getEndLine()) {
+                for (int line = startLine; line < pointer.startLine() && offset < content.length(); line++) {
+                    int newline = content.indexOf('\n', offset);
+                    offset = newline < 0 ? content.length() : newline + 1;
+                }
+                startLine = pointer.startLine();
+            }
+            String code = limited(content.substring(offset), CODE_PREVIEW_CHARACTERS);
             result.put(String.valueOf(chunk.getId()), new ProjectUnderstandingEvidenceResponse(
                     String.valueOf(chunk.getId()), chunk.getSymbolName(), document.getFilePath(),
-                    chunk.getStartLine(), chunk.getEndLine(), code,
-                    chunk.getContent() != null && chunk.getContent().length() > code.length()
+                    startLine, chunk.getEndLine(), code,
+                    offset > 0 || content.length() > code.length()
             ));
         }
         return Map.copyOf(result);

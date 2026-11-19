@@ -15,6 +15,10 @@ export const conversationApi = {
     })
   },
 
+  get(projectId: string, conversationId: string): Promise<AgentConversation> {
+    return apiRequest(`/api/projects/${encodeURIComponent(projectId)}/agent-conversations/${encodeURIComponent(conversationId)}`)
+  },
+
   list(projectId: string): Promise<AgentConversation[]> {
     return apiRequest(`/api/projects/${encodeURIComponent(projectId)}/agent-conversations`)
   },
@@ -114,6 +118,7 @@ function dispatchEventBlock(block: string, handlers: ConversationStreamHandlers)
     return
   }
   if (event === 'message') handlers.onMessage?.(value)
+  else if (event === 'context') handlers.onContext?.(value)
   else if (event === 'evidence') handlers.onEvidence?.(value)
   else if (event === 'token') handlers.onToken?.(value)
   else if (event === 'done') handlers.onDone?.(value)

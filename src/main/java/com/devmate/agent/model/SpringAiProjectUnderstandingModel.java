@@ -39,11 +39,11 @@ final class SpringAiProjectUnderstandingModel implements ProjectUnderstandingMod
             if ("DASHSCOPE".equals(connection.provider())) {
                 options.extraBody(Map.of("enable_thinking", false));
             }
-            if (java.util.Set.of("project-guide-v1", "project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6").contains(properties.getPromptVersion())) {
+            if (java.util.Set.of("project-guide-v1", "project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6", "project-guide-v7").contains(properties.getPromptVersion())) {
                 ResponseEntity<ChatResponse, ProjectGuide.Content> response =
                         clientFactory.createChatClient(connection, options.build(), properties.getConnectTimeout(),
                                 properties.getReadTimeout()).prompt().system(prompt.systemPrompt()).user(prompt.userPrompt())
-                                .call().responseEntity(ProjectGuide.Content.class);
+                                .call().responseEntity(new ProjectGuideOutputConverter());
                 if (response.entity() == null) throw new AiReviewException("项目导览模型未返回符合契约的结果");
                 Usage usage = response.response() == null ? null : response.response().getMetadata().getUsage();
                 return new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(),

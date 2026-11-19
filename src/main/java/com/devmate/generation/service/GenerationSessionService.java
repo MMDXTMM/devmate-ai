@@ -28,6 +28,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -41,16 +43,13 @@ import java.util.stream.Collectors;
 @Service
 public class GenerationSessionService {
 
-    private static final Set<String> OUT_OF_SCOPE_TERMS = Set.of(
-            "游戏服务器", "实时音视频", "支付清算", "支付结算", "区块链底层", "操作系统内核"
-    );
-
     private final GenerationSessionMapper sessionMapper;
     private final GenerationSpecVersionMapper specVersionMapper;
     private final RequirementDraftProvider draftProvider;
     private final ObjectMapper objectMapper;
     private final CurrentUserService currentUserService;
     private final SecurityProperties securityProperties;
+    private final TransactionTemplate transactions;
 
     public GenerationSessionService(
             GenerationSessionMapper sessionMapper,
@@ -58,7 +57,8 @@ public class GenerationSessionService {
             RequirementDraftProvider draftProvider,
             ObjectMapper objectMapper,
             CurrentUserService currentUserService,
-            SecurityProperties securityProperties
+            SecurityProperties securityProperties,
+            PlatformTransactionManager transactionManager
     ) {
         this.sessionMapper = sessionMapper;
         this.specVersionMapper = specVersionMapper;
@@ -66,38 +66,50 @@ public class GenerationSessionService {
         this.objectMapper = objectMapper;
         this.currentUserService = currentUserService;
         this.securityProperties = securityProperties;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public GenerationSessionResponse createSession(CreateGenerationSessionRequest request) {
         String requirement = request.requirement().trim();
-        validateSupportedScope(requirement);
+        currentOwnerId();
         RequirementDraft draft = draftProvider.createInitialDraft(requirement);
         validateQuestionContract(draft.questions());
-        LocalDateTime now = LocalDateTime.now();
+        return transactions.execute(ignored -> {
+            LocalDateTime now = LocalDateTime.now();
 
-        GenerationSession session = new GenerationSession();
-        session.setOwnerId(currentOwnerId());
-        session.setOriginalRequirement(requirement);
-        session.setStatus(GenerationSessionStatus.CLARIFYING.name());
-        session.setLatestVersionNo(1);
-        session.setDeleted(0);
-        session.setCreatedAt(now);
-        session.setUpdatedAt(now);
-        requireSingleRow(sessionMapper.insert(session), "需求会话创建失败");
+            GenerationSession session = new GenerationSession();
+            session.setOwnerId(currentOwnerId());
+            session.setOriginalRequirement(requirement);
+            session.setStatus(GenerationSessionStatus.CLARIFYING.name());
+            session.setLatestVersionNo(1);
+            session.setDeleted(0);
+            session.setCreatedAt(now);
+            session.setUpdatedAt(now);
+            requireSingleRow(sessionMapper.insert(session), "需求会话创建失败");
 
-        GenerationSpecVersion version = buildVersion(session.getId(), 1, draft, List.of(), now);
-        requireSingleRow(specVersionMapper.insert(version), "需求草案保存失败");
-        return toResponse(session, version);
+            GenerationSpecVersion version = buildVersion(session.getId(), 1, draft, List.of(), now);
+            requireSingleRow(specVersionMapper.insert(version), "需求草案保存失败");
+            return toResponse(session, version);
+        });
     }
 
-    @Transactional(readOnly = true)
     public GenerationSessionResponse getSession(Long sessionId) {
         GenerationSession session = findOwnedSession(sessionId);
+        if ("THINKING".equals(session.getStatus()) && session.getUpdatedAt().isBefore(LocalDateTime.now().minusMinutes(10))) {
+            releaseThinking(sessionId, session.getLatestVersionNo(), "上次追问已中断，请重新提交当前答案");
+            session = findOwnedSession(sessionId);
+        }
         return toResponse(session, findLatestVersion(session));
     }
 
-    @Transactional
+    public List<GenerationSessionResponse> listSessions() {
+        Long ownerId = currentOwnerId();
+        return sessionMapper.selectList(Wrappers.lambdaQuery(GenerationSession.class)
+                .eq(ownerId != null, GenerationSession::getOwnerId, ownerId)
+                .orderByDesc(GenerationSession::getUpdatedAt).orderByDesc(GenerationSession::getId).last("LIMIT 20"))
+                .stream().map(item -> toResponse(item, findLatestVersion(item))).toList();
+    }
+
     public GenerationSessionResponse submitClarification(
             Long sessionId,
             SubmitClarificationRequest request
@@ -105,6 +117,9 @@ public class GenerationSessionService {
         GenerationSession session = findOwnedSession(sessionId);
         requireClarifying(session);
         GenerationSpecVersion previousVersion = findLatestVersion(session);
+        if (request.versionId() != null && !request.versionId().equals(previousVersion.getId())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "需求方案已被更新，请刷新后重新提交");
+        }
         List<RequirementQuestion> questions = readQuestions(previousVersion);
         List<RequirementAnswer> mergedAnswers = mergeAndValidateAnswers(
                 questions,
@@ -112,32 +127,55 @@ public class GenerationSessionService {
                 request.answers()
         );
         RequirementDraft previousDraft = toDraft(previousVersion, questions);
-        RequirementDraft revisedDraft = draftProvider.reviseDraft(
-                session.getOriginalRequirement(), previousDraft, mergedAnswers
-        );
+        if (!"LEGACY".equals(previousVersion.getStage())) validateRequiredAnswers(questions, mergedAnswers);
+        if (session.getLatestVersionNo() >= 9) throw new BusinessException(ErrorCode.CONFLICT, "本会话已达到8轮追问上限，请整理需求后新建会话");
+        int locked = sessionMapper.update(null, Wrappers.lambdaUpdate(GenerationSession.class)
+                .eq(GenerationSession::getId, sessionId).eq(GenerationSession::getLatestVersionNo, session.getLatestVersionNo())
+                .eq(GenerationSession::getStatus, "CLARIFYING").set(GenerationSession::getStatus, "THINKING")
+                .set(GenerationSession::getLastError, null).set(GenerationSession::getUpdatedAt, LocalDateTime.now()));
+        if (locked != 1) throw new BusinessException(ErrorCode.CONFLICT, "AI 正在处理这份需求，请稍后刷新");
+        try {
+            RequirementDraft revisedDraft = draftProvider.reviseDraft(session.getOriginalRequirement(), previousDraft, mergedAnswers);
+            validateQuestionContract(revisedDraft.questions());
+            return transactions.execute(ignored -> {
 
-        int nextVersionNo = session.getLatestVersionNo() + 1;
-        LocalDateTime now = LocalDateTime.now();
-        int updated = sessionMapper.update(
-                null,
-                Wrappers.lambdaUpdate(GenerationSession.class)
-                        .eq(GenerationSession::getId, sessionId)
-                        .eq(GenerationSession::getLatestVersionNo, session.getLatestVersionNo())
-                        .eq(GenerationSession::getStatus, GenerationSessionStatus.CLARIFYING.name())
-                        .set(GenerationSession::getLatestVersionNo, nextVersionNo)
-                        .set(GenerationSession::getUpdatedAt, now)
-        );
-        if (updated != 1) {
-            throw new BusinessException(ErrorCode.CONFLICT, "需求方案已被更新，请刷新后重新提交");
+                int nextVersionNo = session.getLatestVersionNo() + 1;
+                LocalDateTime now = LocalDateTime.now();
+                int updated = sessionMapper.update(
+                        null,
+                        Wrappers.lambdaUpdate(GenerationSession.class)
+                                .eq(GenerationSession::getId, sessionId)
+                                .eq(GenerationSession::getLatestVersionNo, session.getLatestVersionNo())
+                                .eq(GenerationSession::getStatus, "THINKING")
+                                .set(GenerationSession::getStatus, "CLARIFYING")
+                                .set(GenerationSession::getLatestVersionNo, nextVersionNo)
+                                .set(GenerationSession::getUpdatedAt, now)
+                );
+                if (updated != 1) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "需求方案已被更新，请刷新后重新提交");
+                }
+
+                GenerationSpecVersion nextVersion = buildVersion(
+                        sessionId, nextVersionNo, revisedDraft, mergedAnswers, now
+                );
+                requireSingleRow(specVersionMapper.insert(nextVersion), "需求方案版本保存失败");
+                session.setLatestVersionNo(nextVersionNo);
+                session.setStatus("CLARIFYING");
+                session.setLastError(null);
+                session.setUpdatedAt(now);
+                return toResponse(session, nextVersion);
+            });
+        } catch (RuntimeException exception) {
+            releaseThinking(sessionId, session.getLatestVersionNo(), "本轮追问失败，已保留上一版方案和答案，请重试");
+            throw exception;
         }
+    }
 
-        GenerationSpecVersion nextVersion = buildVersion(
-                sessionId, nextVersionNo, revisedDraft, mergedAnswers, now
-        );
-        requireSingleRow(specVersionMapper.insert(nextVersion), "需求方案版本保存失败");
-        session.setLatestVersionNo(nextVersionNo);
-        session.setUpdatedAt(now);
-        return toResponse(session, nextVersion);
+    private void releaseThinking(Long id, int version, String reason) {
+        sessionMapper.update(null, Wrappers.lambdaUpdate(GenerationSession.class).eq(GenerationSession::getId, id)
+                .eq(GenerationSession::getLatestVersionNo, version).eq(GenerationSession::getStatus, "THINKING")
+                .set(GenerationSession::getStatus, "CLARIFYING").set(GenerationSession::getLastError, reason)
+                .set(GenerationSession::getUpdatedAt, LocalDateTime.now()));
     }
 
     @Transactional
@@ -152,6 +190,9 @@ public class GenerationSessionService {
             throw new BusinessException(ErrorCode.CONFLICT, "只能确认当前最新的需求方案");
         }
         validateRequiredAnswers(readQuestions(latestVersion), readAnswers(latestVersion));
+        if (!"LEGACY".equals(latestVersion.getStage()) && !Boolean.TRUE.equals(latestVersion.getReadyForGeneration())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "请先完成业务、语言、框架架构和运行方式的选择");
+        }
 
         LocalDateTime now = LocalDateTime.now();
         int updatedSession = sessionMapper.update(
@@ -202,6 +243,8 @@ public class GenerationSessionService {
         version.setAnswersJson(writeJson(answers));
         version.setStatus(GenerationSpecStatus.DRAFT.name());
         version.setPromptVersion(draft.promptVersion());
+        version.setStage(draft.stage());
+        version.setReadyForGeneration(draft.readyForGeneration());
         version.setCreatedAt(createdAt);
         return version;
     }
@@ -387,6 +430,7 @@ public class GenerationSessionService {
     }
 
     private void validateQuestionContract(List<RequirementQuestion> questions) {
+        if (questions == null || questions.size() > 40) throw new BusinessException(ErrorCode.INTERNAL_ERROR, "AI 追问数量超出限制，请重试");
         Set<String> questionIds = new HashSet<>();
         for (RequirementQuestion question : questions) {
             if (!hasText(question.id()) || !questionIds.add(question.id())) {
@@ -453,18 +497,6 @@ public class GenerationSessionService {
         }
     }
 
-    private void validateSupportedScope(String requirement) {
-        OUT_OF_SCOPE_TERMS.stream()
-                .filter(requirement::contains)
-                .findFirst()
-                .ifPresent(term -> {
-                    throw new BusinessException(
-                            ErrorCode.INVALID_ARGUMENT,
-                            "第一版暂不支持“" + term + "”类项目，请先使用管理或业务流程型 Spring Boot 后端需求"
-                    );
-                });
-    }
-
     private GenerationSession findOwnedSession(Long sessionId) {
         GenerationSession session = sessionMapper.selectById(sessionId);
         if (session == null) {
@@ -490,6 +522,7 @@ public class GenerationSessionService {
     }
 
     private void requireClarifying(GenerationSession session) {
+        if ("THINKING".equals(session.getStatus())) throw new BusinessException(ErrorCode.CONFLICT, "AI 正在整理下一轮问题，请稍后刷新");
         if (!GenerationSessionStatus.CLARIFYING.name().equals(session.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "已确认的需求方案不能继续修改");
         }
@@ -504,7 +537,7 @@ public class GenerationSessionService {
                 version.getArchitectureSummary(),
                 readStringList(version.getAssumptionsJson()),
                 questions,
-                version.getPromptVersion()
+                version.getPromptVersion(), version.getStage(), Boolean.TRUE.equals(version.getReadyForGeneration())
         );
     }
 
@@ -522,6 +555,8 @@ public class GenerationSessionService {
                 readAnswers(version),
                 version.getStatus(),
                 version.getPromptVersion(),
+                version.getStage(),
+                Boolean.TRUE.equals(version.getReadyForGeneration()),
                 version.getCreatedAt()
         );
         return new GenerationSessionResponse(
@@ -530,6 +565,7 @@ public class GenerationSessionService {
                 session.getStatus(),
                 session.getLatestVersionNo(),
                 session.getConfirmedVersionId() == null ? null : session.getConfirmedVersionId().toString(),
+                session.getLastError(),
                 spec,
                 session.getCreatedAt(),
                 session.getUpdatedAt()

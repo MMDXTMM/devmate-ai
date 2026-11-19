@@ -126,7 +126,7 @@ class RetrievalControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.projectId").value(project.getId().toString()))
                 .andExpect(jsonPath("$.data.revision").value(REVISION))
-                .andExpect(jsonPath("$.data.configVersion").value("lexical-graph-v1"))
+                .andExpect(jsonPath("$.data.configVersion").value("lexical-graph-v3"))
                 .andExpect(jsonPath("$.data.hits[0].chunkId").value(reserveStock.getId().toString()))
                 .andExpect(jsonPath("$.data.hits[0].reasons", hasItem("DIFF_SYMBOL")))
                 .andExpect(jsonPath("$.data.hits[1].chunkId").value(saveOrder.getId().toString()))
@@ -134,6 +134,18 @@ class RetrievalControllerTest {
                 .andExpect(jsonPath("$.data.hits[*].excerpt", org.hamcrest.Matchers.everyItem(
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("must-not-leak"))
                 )));
+    }
+
+    @Test
+    void doesNotInventAnExtraLineForTrailingNewlineInSourcePreview() throws Exception {
+        reserveStock.setContent("public void reserveStock(Long id) { saveOrder(id); }\n");
+        reserveStock.setEndLine(10); chunkMapper.updateById(reserveStock);
+        mockMvc.perform(post("/api/projects/{projectId}/retrieval/search", project.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"reserveStock\",\"retrievalMode\":\"LEXICAL\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.hits[0].startLine").value(10))
+                .andExpect(jsonPath("$.data.hits[0].endLine").value(10));
     }
 
     @Test
@@ -223,7 +235,7 @@ class RetrievalControllerTest {
                         .content("{\"datasetVersion\":\"baseline-v1\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
-                .andExpect(jsonPath("$.data.retrievalConfigVersion").value("lexical-graph-v1"))
+                .andExpect(jsonPath("$.data.retrievalConfigVersion").value("lexical-graph-v3"))
                 .andExpect(jsonPath("$.data.totalCases").value(1))
                 .andExpect(jsonPath("$.data.resolvedCases").value(1))
                 .andExpect(jsonPath("$.data.recallAtK").value(1.0))
@@ -300,6 +312,57 @@ class RetrievalControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message", startsWith("所选检索模式未就绪")));
+    }
+
+    @Test
+    void retrievesLateSymbolAndPathBeyondInitialCandidateWindow() throws Exception {
+        for (int i = 0; i < 1002; i++) insertChunk(project.getId(), reserveStock.getDocumentId(),
+                "METHOD", "Filler#noise" + i + "()", "void noise() {}", "filler-" + i, REVISION, 100 + i);
+        KnowledgeDocument lateDocument = insertDocument(project.getId(), "src/UniqueLateHandler.java", REVISION);
+        KnowledgeChunk late = insertChunk(project.getId(), lateDocument.getId(), "METHOD",
+                "UniqueLateHandler#finishPayment()", "void finishPayment() { settle(); }", "late-target", REVISION, 1);
+        mockMvc.perform(post("/api/projects/{projectId}/retrieval/search", project.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"UniqueLateHandler.finishPayment\",\"retrievalMode\":\"LEXICAL\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.hits[0].chunkId").value(late.getId().toString()));
+        mockMvc.perform(post("/api/projects/{projectId}/retrieval/search", project.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"UniqueLateHandler.java\",\"retrievalMode\":\"LEXICAL\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.hits[0].chunkId").value(late.getId().toString()));
+    }
+
+    @Test
+    void includesLongMethodPreviewInsteadOfDroppingItsEntireContext() throws Exception {
+        reserveStock.setContent("public void reserveStock() {\n" + "// long method\n".repeat(2500) + "commitOrder();\n}");
+        chunkMapper.updateById(reserveStock);
+        mockMvc.perform(post("/api/projects/{projectId}/retrieval/search", project.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"OrderService.reserveStock\",\"retrievalMode\":\"LEXICAL\",\"tokenBudget\":1000}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.hits[0].chunkId").value(reserveStock.getId().toString()))
+                .andExpect(jsonPath("$.data.usedTokens").value(org.hamcrest.Matchers.lessThanOrEqualTo(1000)));
+    }
+
+    @Test
+    void evaluatesVersionedDatasetWithSameRevisionForLexicalAndHybrid() throws Exception {
+        var dataset = objectMapper.readTree(getClass().getResourceAsStream("/evaluation/retrieval-regression-v1.json"));
+        for (var item : dataset) mockMvc.perform(post("/api/projects/{projectId}/retrieval/evaluation-cases", project.getId())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(item)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/projects/{projectId}/embeddings/index",project.getId()))
+                .andExpect(status().isOk());
+        for (String mode : List.of("LEXICAL","HYBRID")) mockMvc.perform(
+                post("/api/projects/{projectId}/retrieval/evaluation-runs",project.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetVersion\":\"retrieval-regression-v1\",\"retrievalMode\":\"" + mode + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalCases").value(4))
+                .andExpect(jsonPath("$.data.resolvedCases").value(4))
+                .andExpect(jsonPath("$.data.recallAtK").value(1.0))
+                .andExpect(jsonPath("$.data.meanReciprocalRank").value(1.0));
+        org.assertj.core.api.Assertions.assertThat(evaluationRunMapper.selectCount(null)).isEqualTo(2);
     }
 
     private Project insertProject(String name, String revision) {

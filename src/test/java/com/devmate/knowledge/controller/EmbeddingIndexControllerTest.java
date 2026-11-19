@@ -163,7 +163,7 @@ class EmbeddingIndexControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.retrievalMode").value("HYBRID"))
                 .andExpect(jsonPath("$.data.retrievalConfigVersion")
-                        .value("lexical-graph-v1+local:code-hash-v1:256"))
+                        .value("lexical-graph-v3+local:code-hash-v1:256"))
                 .andExpect(jsonPath("$.data.hitRateAtK").value(1.0));
 
         org.assertj.core.api.Assertions.assertThat(taskMapper.selectCount(null)).isEqualTo(2);

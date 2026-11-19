@@ -90,3 +90,7 @@ GET  /api/projects/{projectId}/retrieval/evaluation-runs/latest
 - 真实 MySQL 26.7：Flyway V8 执行成功，`retrieval_evaluation_case`、`retrieval_evaluation_run` 已创建，健康检查为 `UP`。
 - 浏览器联调：项目列表和检索弹窗正常显示，输入、Top-K、Token 预算、最新 Diff/项目检索入口与错误态可用，控制台无警告和错误。
 - 真实库中的旧 revision 只有文档记录且 `chunk_count=0`，检索接口明确返回“尚未建立知识索引”，没有误报为空结果；重新导入因当时 GitHub 网络超时失败，项目状态已恢复，待网络可用后重新建索引。
+
+## 2026-11-17：lexical-graph-v3
+
+先在整个授权revision以参数化LOCATE召回匹配符号、路径、文本，再施加候选上限；不再只排名导入顺序的前1000个Chunk。显式目标/路径优先，长方法按实际预览预算，仍保留扫描与裁剪提示。固定回归数据集和LEXICAL/LOCAL HYBRID对照运行见CONTEXT_RESEARCH_IMPROVEMENTS.md；结果不可作为真实语义模型效果证明。

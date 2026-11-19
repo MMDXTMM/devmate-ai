@@ -1,4 +1,4 @@
-export type GenerationSessionStatus = 'CLARIFYING' | 'CONFIRMED'
+export type GenerationSessionStatus = 'CLARIFYING' | 'THINKING' | 'CONFIRMED'
 export type GenerationSpecStatus = 'DRAFT' | 'CONFIRMED'
 export type RequirementQuestionCategory = 'BUSINESS' | 'TECHNICAL' | 'TRADEOFF'
 export type RequirementInputType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'FREE_TEXT'
@@ -49,6 +49,8 @@ export interface GenerationSpec {
   answers: RequirementAnswer[]
   status: GenerationSpecStatus
   promptVersion: string
+  stage?: string
+  readyForGeneration?: boolean
   createdAt: string
 }
 
@@ -58,6 +60,7 @@ export interface GenerationSession {
   status: GenerationSessionStatus
   latestVersionNo: number
   confirmedVersionId?: string
+  lastError?: string
   latestSpec: GenerationSpec
   createdAt: string
   updatedAt: string
@@ -69,4 +72,19 @@ export interface ClarificationAnswerForm {
   selectedOptionIds?: string[]
   customAnswer?: string
   answer?: string
+}
+
+export interface GenerationRun {
+  id: string
+  sessionId: string
+  versionId: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
+  summary?: string
+  runInstructions?: string
+  files: { path: string; characters: number }[]
+  warnings: string[]
+  verification: 'STRUCTURE_ONLY'
+  errorMessage?: string
+  createdAt: string
+  updatedAt: string
 }

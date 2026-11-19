@@ -65,7 +65,15 @@ public record ProjectGuide(String schemaVersion, Snapshot snapshot, Content cont
                          List<String> evidenceIds) { }
     public record Flow(String id, String name, String goal, List<String> actors, String trigger,
                        List<String> moduleIds, List<Step> steps, List<Claim> rules,
-                       List<Claim> outcomes, List<String> unknowns) { }
+                       List<Claim> outcomes, List<String> unknowns, List<Transition> transitions) {
+        public Flow(String id, String name, String goal, List<String> actors, String trigger, List<String> moduleIds,
+                    List<Step> steps, List<Claim> rules, List<Claim> outcomes, List<String> unknowns) {
+            this(id, name, goal, actors, trigger, moduleIds, steps, rules, outcomes, unknowns, List.of());
+        }
+    }
+    @Schema(description = "证据支持的条件流转；步骤从1编号；toStep为空表示到达独立结果并停止，不默认继续下一步")
+    public record Transition(int fromStep, @Schema(nullable = true, description = "下一步序号；null表示分支结束") Integer toStep, String condition, String result,
+                             ConclusionStatus conclusionStatus, List<String> evidenceIds) { }
     public record Step(String action, String input, String result, List<String> moduleIds,
                        ConclusionStatus conclusionStatus, List<String> evidenceIds) { }
     public record Claim(String text, ConclusionStatus conclusionStatus, List<String> evidenceIds) { }

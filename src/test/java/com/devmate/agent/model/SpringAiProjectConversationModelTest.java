@@ -20,6 +20,31 @@ import static org.mockito.Mockito.when;
 class SpringAiProjectConversationModelTest {
 
     @Test
+    void researchUsesSavedConnectionAndReturnsReadOnlyToolCallThroughSpringAi() {
+        var builder = org.springframework.web.client.RestClient.builder();
+        var server = org.springframework.test.web.client.MockRestServiceServer.bindTo(builder).build();
+        server.expect(org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo("https://model.example/v1/chat/completions"))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.header("Authorization","Bearer test-key"))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.content().string(
+                        org.hamcrest.Matchers.containsString("read_code")))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess("""
+                        {"id":"research-1","object":"chat.completion","created":1,"model":"test-model",
+                         "choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[
+                           {"id":"call-1","type":"function","function":{"name":"read_code","arguments":"{\\\"chunkId\\\":\\\"3\\\"}"}}
+                         ]},"finish_reason":"tool_calls"}]}
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+        var model = new SpringAiProjectConversationModel(new ModelConnectionSnapshot(
+                "COMPATIBLE","test-model","https://model.example/v1","test-key"),
+                new ProjectConversationProperties(),new SpringAiChatClientFactory(builder,false));
+        var turn = model.research(List.of(ReviewAgentMessage.user("读取完整实现")), List.of(
+                new ReviewAgentToolDefinition("read_code","读取代码", java.util.Map.of("type","object"))))
+                .block(java.time.Duration.ofSeconds(3));
+        assertThat(model.supportsResearch()).isTrue();
+        assertThat(turn.message().toolCalls().getFirst().function().name()).isEqualTo("read_code");
+        server.verify();
+    }
+
+    @Test
     void streamsTokensAndMapsMultiTurnHistoryIntoSpringAiMessages() {
         SpringAiChatClientFactory factory = mock(SpringAiChatClientFactory.class);
         ChatClient client = mock(ChatClient.class);

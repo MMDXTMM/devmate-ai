@@ -195,6 +195,61 @@ class ModelConnectionServiceTest {
         when(currentUserService.getRequiredUser()).thenReturn(new AuthenticatedUser(id, username));
     }
 
+    @Test
+    void deletingInactiveConnectionRetainsActiveKeyAndOtherAccounts() {
+        loginAs(8101L, "model-user-a");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "test-delete-a"));
+        service.update(new ModelConnectionUpdateRequest("OPENAI", "gpt-5-mini", "test-delete-b"));
+        loginAs(8102L, "model-user-b");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "test-delete-other"));
+
+        loginAs(8101L, "model-user-a");
+        var response = service.delete("deepseek");
+        assertThat(response).filteredOn(item -> item.provider().equals("DEEPSEEK"))
+                .singleElement().matches(item -> !item.configured() && !item.active());
+        assertThat(connectionMapper.selectCount(Wrappers.lambdaQuery(UserModelConnection.class)
+                .eq(UserModelConnection::getUserId, 8101L).eq(UserModelConnection::getProvider, "DEEPSEEK"))).isZero();
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("test-delete-b");
+        assertThatThrownBy(() -> service.requireSavedConnection("DEEPSEEK", "deepseek-v4-flash"))
+                .hasMessageContaining("先保存");
+        service.delete("DEEPSEEK");
+        assertThat(service.requireActiveConnection().provider()).isEqualTo("OPENAI");
+
+        loginAs(8102L, "model-user-b");
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("test-delete-other");
+    }
+
+    @Test
+    void deletingActiveAndLastConnectionRequiresExplicitSelectionOrNewKey() {
+        loginAs(8101L, "model-user-a");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "test-delete-a"));
+        service.update(new ModelConnectionUpdateRequest("OPENAI", "gpt-5-mini", "test-delete-b"));
+        var response = service.delete("OPENAI");
+        assertThat(response).noneMatch(item -> item.active());
+        assertThat(response).filteredOn(item -> item.provider().equals("DEEPSEEK"))
+                .singleElement().matches(item -> item.configured());
+        assertThatThrownBy(service::requireActiveConnection).hasMessageContaining("保存并启用");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", ""));
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("test-delete-a");
+        assertThat(service.delete("DEEPSEEK")).allMatch(item -> !item.configured() && !item.active());
+        assertThatThrownBy(() -> service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "")))
+                .hasMessageContaining("请先填写");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "test-new-key"));
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("test-new-key");
+    }
+
+    @Test
+    void rejectsUnknownDeletionWithoutChangingExistingConfiguration() {
+        loginAs(8101L, "model-user-a");
+        service.update(new ModelConnectionUpdateRequest("DEEPSEEK", "deepseek-v4-flash", "test-preserved"));
+        assertThatThrownBy(() -> service.delete("UNKNOWN")).hasMessage("暂不支持该模型提供方");
+        assertThatThrownBy(() -> service.delete(null)).hasMessage("暂不支持该模型提供方");
+        assertThat(service.requireActiveConnection().apiKey()).isEqualTo("test-preserved");
+        // Disabled compatible configurations must still be removable.
+        service.delete("COMPATIBLE");
+        assertThat(service.requireActiveConnection().provider()).isEqualTo("DEEPSEEK");
+    }
+
     private void insertUser(long id, String username) {
         if (appUserMapper.selectById(id) != null) return;
         AppUser user = new AppUser();

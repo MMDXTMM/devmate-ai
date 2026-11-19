@@ -61,7 +61,7 @@ describe('ProjectUnderstandingWorkspace', () => {
     expect(wrapper.text()).toContain('1 个迁移文件')
     expect(wrapper.text()).toContain('8')
     expect(wrapper.text()).toContain('已解析调用关系')
-    expect(wrapper.get('.workspace-primary-actions').text()).toContain('理解项目业务')
+    expect(wrapper.get('.workspace-primary-actions').text()).toContain('查看项目源码')
     expect(wrapper.get('.workspace-primary-actions').text()).toContain('向项目提问')
     expect(wrapper.get('.advanced-analysis').text()).toContain('开始代码审查')
     expect(wrapper.get('.workspace-primary-actions').text()).not.toContain('开始代码审查')
@@ -97,7 +97,7 @@ describe('ProjectUnderstandingWorkspace', () => {
       props: { project, parsing: false, rebuilding: false, deleting: false, reviewing: false } })
     await flushPromises()
     expect(wrapper.find('.review-primary-action').exists()).toBe(false)
-    expect(wrapper.get('.workspace-primary-actions').text()).toContain('理解项目业务')
+    expect(wrapper.get('.workspace-primary-actions').text()).toContain('查看项目源码')
   })
 
   it('passes a suggested business question to the AI conversation', async () => {

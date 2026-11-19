@@ -16,6 +16,8 @@ public record GenerationSpecResponse(
         List<RequirementAnswer> answers,
         String status,
         String promptVersion,
+        String stage,
+        boolean readyForGeneration,
         LocalDateTime createdAt
 ) {
 }

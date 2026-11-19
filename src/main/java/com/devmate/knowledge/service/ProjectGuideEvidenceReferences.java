@@ -41,7 +41,8 @@ public final class ProjectGuideEvidenceReferences {
                 map(f.steps(), step -> new Step(step.action(), step.input(), step.result(), step.moduleIds(),
                         step.conclusionStatus(), ids(step.evidenceIds(), "flows.steps.evidenceIds"))),
                 map(f.rules(), c -> claim(c, "flows.rules.evidenceIds")),
-                map(f.outcomes(), c -> claim(c, "flows.outcomes.evidenceIds")), f.unknowns()));
+                map(f.outcomes(), c -> claim(c, "flows.outcomes.evidenceIds")), f.unknowns(), map(f.transitions(), t -> new Transition(t.fromStep(), t.toStep(), t.condition(), t.result(),
+                        t.conclusionStatus(), ids(t.evidenceIds(), "flows.transitions.evidenceIds")))));
         var overview = content.overview() == null ? null : new Overview(map(content.overview().highlights(), h ->
                 new Highlight(h.title(), h.moduleIds(), h.problem(), h.solution(), h.learningValue(), h.suggestedExercise(),
                         h.limitation(), h.conclusionStatus(), h.implementationStatus(), ids(h.evidenceIds(), "overview.highlights.evidenceIds"))));

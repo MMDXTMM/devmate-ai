@@ -55,6 +55,12 @@ public class ProjectConversationController {
         return ApiResponse.success(service.list(projectId));
     }
 
+    @GetMapping("/{conversationId}")
+    @Operation(summary = "按稳定地址读取自己的会话", description = "只读且不调用模型；仍校验项目成员和会话归属，已删除返回404。")
+    public ApiResponse<ConversationResponse> get(@Positive @PathVariable Long projectId, @Positive @PathVariable Long conversationId) {
+        return ApiResponse.success(service.get(projectId, conversationId));
+    }
+
     @PutMapping("/{conversationId}")
     @Operation(summary = "重命名自己的项目会话", description = "生成中返回 409；无权访问返回 403，已删除返回 404。")
     public ApiResponse<ConversationResponse> rename(@Positive @PathVariable Long projectId,
@@ -90,7 +96,7 @@ public class ProjectConversationController {
     @PostMapping(value = "/{conversationId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(
             summary = "流式提问项目",
-            description = "通过 SSE 返回 message、evidence、token、done 或 failed 事件；attemptKey 用于防止重复付费。"
+            description = "通过 SSE 返回 message、context、evidence、token、done 或 failed 事件；context为可选取证摘要，取证受预算和权限约束；attemptKey 用于防止重复付费。"
     )
     public SseEmitter stream(
             @Positive @PathVariable Long projectId,

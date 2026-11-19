@@ -7,6 +7,30 @@ import { setAuthSession } from './services/authSession'
 import type { Project } from './types/project'
 
 describe('App project entry', () => {
+  it('restores a project URL after refresh without depending on the current list page', async () => {
+    setAuthSession({ accessToken: 'token', tokenType: 'Bearer', expiresAt: '2099-01-01T00:00:00Z', user: { id: '1', username: 'demo' } })
+    window.history.replaceState(null, '', '#/projects/1?revision=abc&item=module:convert&conversation=77')
+    vi.spyOn(projectApi, 'get').mockResolvedValue({ ...project, id: '1', currentRevision: 'abc' })
+    vi.spyOn(projectApi, 'list').mockResolvedValue({ page: 1, size: 10, total: 0, pages: 0, items: [] })
+    vi.spyOn(projectApi, 'latestReviewWorkflow').mockRejectedValue(new ApiError('暂无', undefined, 404))
+    const wrapper = mount(App, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'ProjectUnderstandingWorkspace' }).props('project').id).toBe('1')
+    expect(wrapper.findComponent({ name: 'AgentConversationModal' }).props('initialConversationId')).toBe('77')
+    expect(projectApi.get).toHaveBeenCalledWith('1')
+    wrapper.unmount()
+  })
+  it('shows a forbidden deep link without displaying another account project', async () => {
+    setAuthSession({ accessToken: 'token', tokenType: 'Bearer', expiresAt: '2099-01-01T00:00:00Z', user: { id: '1', username: 'demo' } })
+    window.history.replaceState(null, '', '#/projects/999')
+    vi.spyOn(projectApi, 'get').mockRejectedValue(new ApiError('没有项目权限', undefined, 403))
+    vi.spyOn(projectApi, 'list').mockResolvedValue({ page: 1, size: 10, total: 0, pages: 0, items: [] })
+    const wrapper = mount(App, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('没有项目权限')
+    expect(wrapper.findComponent({ name: 'ProjectUnderstandingWorkspace' }).exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('reminds an account without an API before importing and opens the connection center only on request', async () => {
     setAuthSession({ accessToken: 'token', tokenType: 'Bearer', expiresAt: '2099-01-01T00:00:00Z', user: { id: '1', username: 'demo' } })
     vi.spyOn(projectApi, 'list').mockResolvedValue({ page: 1, size: 10, total: 0, pages: 0, items: [] })

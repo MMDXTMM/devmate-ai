@@ -76,7 +76,8 @@ public class HybridRetrievalRanker {
             ));
         }
         return result.stream()
-                .sorted(Comparator.comparingDouble(RetrievalCandidate::score).reversed()
+                .sorted(Comparator.comparingInt(LexicalGraphRanker::targetPriority).reversed()
+                        .thenComparing(Comparator.comparingDouble(RetrievalCandidate::score).reversed())
                         .thenComparing(candidate -> candidate.document().getFilePath())
                         .thenComparing(candidate -> candidate.chunk().getStartLine()))
                 .toList();

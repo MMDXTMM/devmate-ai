@@ -8,8 +8,20 @@ import java.time.Duration;
 @Configuration
 @ConfigurationProperties(prefix = "devmate.project-conversation")
 public class ProjectConversationProperties {
-    private String promptVersion = "project-conversation-v3";
+    private String promptVersion = "project-conversation-v4";
     private int historyMessages = 12;
+    private int maxResearchCalls = 3;
+    private int maxEvidenceCharacters = 24000;
+    private int maxHistoryCharacters = 20000;
+    private Duration researchTimeout = Duration.ofSeconds(35);
+    public int getMaxResearchCalls() { return maxResearchCalls; }
+    public void setMaxResearchCalls(int value) { maxResearchCalls = value; }
+    public int getMaxEvidenceCharacters() { return maxEvidenceCharacters; }
+    public void setMaxEvidenceCharacters(int value) { maxEvidenceCharacters = value; }
+    public int getMaxHistoryCharacters() { return maxHistoryCharacters; }
+    public void setMaxHistoryCharacters(int value) { maxHistoryCharacters = value; }
+    public Duration getResearchTimeout() { return researchTimeout; }
+    public void setResearchTimeout(Duration value) { researchTimeout = value; }
     private int topK = 6;
     private int tokenBudget = 5000;
     private int maxAnswerCharacters = 16000;

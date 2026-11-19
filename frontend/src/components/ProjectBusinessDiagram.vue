@@ -57,12 +57,14 @@ function moduleIcon(id: string) {
       <div class="diagram-module-picker" role="group" aria-label="选择业务路线"><button v-for="item in flows" :key="item.id" type="button" :aria-pressed="selectedFlowId === item.id" @click="selectedFlowId = item.id">👣 {{ item.name }}</button></div>
       <template v-if="journey">
         <div class="journey-heading"><b>{{ journey.name }}</b><span>{{ journey.goal }}</span><button class="diagram-text-button" type="button" @click="emit('selectFlow', journey.id)">查看规则与依据 ↗</button></div>
-        <ol class="journey-track" tabindex="0" aria-label="业务执行步骤，可横向滚动">
+        <ol :class="{ 'journey-with-branches': journey.transitions?.length }" class="journey-track" tabindex="0" aria-label="业务执行步骤，可横向滚动">
           <li class="journey-start"><span class="journey-number" aria-hidden="true">🏁</span><b>从这里开始</b><p>{{ journey.trigger }}</p></li>
-          <li v-for="(step, index) in journey.steps" :key="index"><span class="journey-number">{{ String(index + 1).padStart(2, '0') }}</span><b>{{ step.action }}</b><p>{{ step.result }}</p><div class="journey-modules"><span v-for="id in step.moduleIds.filter(id => moduleName(id))" :key="id">{{ moduleIcon(id) }} {{ moduleName(id) }}</span></div><small>{{ { OBSERVED: '证据观察', INFERRED: '推断步骤', UNKNOWN: '尚待确认' }[step.conclusionStatus] }}</small></li>
+          <li v-for="(step, index) in journey.steps" :key="index"><span class="journey-number">{{ String(index + 1).padStart(2, '0') }}</span><b>{{ step.action }}</b><p>{{ step.result }}</p><div class="journey-modules"><span v-for="id in step.moduleIds.filter(id => moduleName(id))" :key="id">{{ moduleIcon(id) }} {{ moduleName(id) }}</span></div><div v-if="journey.transitions?.some(t => t.fromStep === index + 1)" class="journey-branches">
+              <div v-for="(transition, branch) in journey.transitions.filter(t => t.fromStep === index + 1)" :key="branch" :class="{ 'branch-stop': !transition.toStep }"><b>{{ transition.condition }}</b><span>↳ {{ transition.result }}</span><strong>{{ transition.toStep ? `→ 步骤 ${transition.toStep}` : '■ 到此结束' }}</strong></div>
+            </div><small>{{ { OBSERVED: '证据观察', INFERRED: '推断步骤', UNKNOWN: '尚待确认' }[step.conclusionStatus] }}</small></li>
           <li class="journey-finish"><span class="journey-number" aria-hidden="true">🎁</span><b>最后得到</b><p>{{ journey.outcomes[0]?.text ?? '结果仍待确认' }}</p></li>
         </ol>
-        <p class="diagram-caption">按报告中的步骤顺序展示；模块标签表示参与该步骤，不额外推断模块间调用关系。</p>
+        <p class="diagram-caption">{{ journey.transitions?.length ? '条件边仅来自报告证据；结束分支不会继续到下一步。未列出的边尚未确认。' : '按报告中的步骤顺序展示，尚无结构化分支信息；顺序不表示所有条件都会继续成功。' }}</p>
       </template>
       <div v-else class="diagram-empty"><span aria-hidden="true">👣</span><p>当前证据还不足以串起业务路线，先从模块卡片开始探索吧。</p></div>
     </template>
@@ -112,4 +114,12 @@ function moduleIcon(id: string) {
 .journey-modules span { font-size:10px; border-radius:7px; padding:3px 6px; background:#f2edf7; }
 button:focus-visible,.diagram-scroll:focus-visible,.journey-track:focus-visible { outline:3px solid #9270bd; outline-offset:3px; }
 @media(max-width:640px) { .business-diagram { padding:16px; border-radius:18px; } .journey-track > li { flex-basis:178px; } }
+</style>
+
+<style scoped>
+.journey-track.journey-with-branches > li::after { content: none; }
+.journey-branches { margin-top: 12px; display: grid; gap: 8px; }
+.journey-branches > div { border-left: 3px solid #70a180; background: #edf7ef; padding: 8px; font-size: 12px; }
+.journey-branches .branch-stop { border-left-color: #c77170; background: #fff0ed; }
+.journey-branches span,.journey-branches strong { display: block; margin-top: 5px; }
 </style>

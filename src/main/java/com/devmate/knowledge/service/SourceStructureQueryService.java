@@ -95,6 +95,20 @@ public class SourceStructureQueryService {
             Long documentId,
             Long symbolId
     ) {
+        return getSymbolDetail(projectId, documentId, symbolId, 0);
+    }
+
+    @Transactional(readOnly = true)
+    public SourceSymbolDetailResponse getChunkDetail(Long projectId, Long chunkId, int offset) {
+        requireProject(projectId);
+        KnowledgeChunk chunk = chunkMapper.selectById(chunkId);
+        if (chunk == null || !java.util.Objects.equals(chunk.getProjectId(), projectId))
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "源码片段不存在");
+        return getSymbolDetail(projectId, chunk.getDocumentId(), chunkId, offset);
+    }
+
+    @Transactional(readOnly = true)
+    public SourceSymbolDetailResponse getSymbolDetail(Long projectId, Long documentId, Long symbolId, int offset) {
         requireDocument(projectId, documentId);
         KnowledgeChunk chunk = chunkMapper.selectOne(
                 Wrappers.lambdaQuery(KnowledgeChunk.class)
@@ -106,7 +120,7 @@ public class SourceStructureQueryService {
         if (chunk == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "源码符号不存在");
         }
-        return SourceSymbolDetailResponse.from(chunk, readAnnotations(chunk.getMetadataJson()));
+        return SourceSymbolDetailResponse.from(chunk, readAnnotations(chunk.getMetadataJson()), offset);
     }
 
     @Transactional(readOnly = true)

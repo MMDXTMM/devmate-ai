@@ -42,14 +42,14 @@ input:not([type='radio']):not([type='checkbox']), textarea, select {
   accent-color: var(--accent);
 }
 input::placeholder, textarea::placeholder { color: #8b8092; opacity: 1; }
-:where(.auth-form, .project-form, .model-provider-grid, .evaluation-toolbar,
+:where(.auth-form, .project-form, .model-connection-editor, .evaluation-toolbar,
   .evaluation-case-form, .retrieval-form, .generation-workspace, .chat-management)
   :is(input:not([type='radio']):not([type='checkbox']), textarea, select) {
   border: 1px solid var(--line);
   background: var(--surface);
   padding: 11px 12px;
 }
-:where(.auth-form, .project-form, .model-provider-grid, .evaluation-toolbar,
+:where(.auth-form, .project-form, .model-connection-editor, .evaluation-toolbar,
   .evaluation-case-form, .retrieval-form, .generation-workspace, .chat-management)
   :is(input, textarea, select):focus {
   border-color: var(--accent);
@@ -117,10 +117,6 @@ td { border-color: var(--line); }
 .modal-header p:not(.eyebrow) { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .model-modal { background: var(--page); }
 .model-setup-guide { margin-top: 20px; background: var(--cream); border-radius: 17px; border-color: #eaddc7; color: #6c5b46; }
-.model-provider-grid article { border-radius: var(--radius-card); background: var(--surface); box-shadow: 0 3px 0 #ebe3ef; }
-.model-provider-grid article.active { background: #f8f3fc; border-color: var(--accent-line); box-shadow: inset 0 3px 0 var(--accent), 0 3px 0 #e7ddef; }
-.model-provider-heading h3 { color: #59436d; font-size: 18px; }
-.model-provider-heading > span { padding: 5px 8px; background: var(--accent-soft); border-radius: 999px; white-space: nowrap; }
 .model-modal-footer { background: var(--surface); }
 .model-test-result { color: #366747; }
 .source-view-tabs { background: var(--surface); gap: 16px; }
@@ -298,7 +294,6 @@ td { border-color: var(--line); }
   .workspace-header { padding: 20px; gap: 16px; }
   .workspace-primary-actions > button { padding: 18px; }
   .content-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .model-provider-grid { padding: 16px; }
   .model-setup-guide { margin-inline: 16px; }
   .agent-chat-modal { border-radius: 0; }
   .chat-suggestions { grid-template-columns: minmax(0, 1fr); }

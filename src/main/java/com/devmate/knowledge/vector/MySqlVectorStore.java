@@ -10,7 +10,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -43,35 +42,38 @@ public class MySqlVectorStore {
             float[] queryVector,
             int limit
     ) {
-        List<EmbeddingVector> loaded = vectorMapper.selectList(Wrappers.lambdaQuery(EmbeddingVector.class)
-                .eq(EmbeddingVector::getProjectId, projectId)
-                .eq(EmbeddingVector::getRevision, revision)
-                .eq(EmbeddingVector::getProvider, provider)
-                .eq(EmbeddingVector::getModelName, model)
-                .eq(EmbeddingVector::getDimensions, dimensions)
-                .orderByAsc(EmbeddingVector::getVectorId)
-                .last("LIMIT " + (properties.getMaxVectorScan() + 1)));
-        if (loaded.isEmpty()) {
-            return VectorSearchResult.unavailable("当前项目版本尚未使用所选模型建立向量索引");
-        }
-        boolean limitReached = loaded.size() > properties.getMaxVectorScan();
-        List<VectorMatch> matches = new ArrayList<>();
-        for (EmbeddingVector stored : loaded.stream().limit(properties.getMaxVectorScan()).toList()) {
-            float[] vector = readVector(stored.getVectorJson(), dimensions);
-            double similarity = cosine(queryVector, vector);
-            if (similarity >= properties.getMinimumSimilarity()) {
-                matches.add(new VectorMatch(stored.getChunkId(), round(similarity)));
+        if (limit < 1) throw new IllegalArgumentException("向量结果数量必须大于0");
+        Comparator<VectorMatch> bestFirst = Comparator.comparingDouble(VectorMatch::similarity).reversed()
+                .thenComparing(VectorMatch::chunkId);
+        java.util.PriorityQueue<VectorMatch> best = new java.util.PriorityQueue<>(bestFirst.reversed());
+        int scanned = 0;
+        String cursor = null;
+        boolean limitReached = false;
+        while (true) {
+            int remaining = properties.getMaxVectorScan() - scanned;
+            int pageSize = Math.min(256, remaining + 1);
+            List<EmbeddingVector> page = vectorMapper.selectList(Wrappers.lambdaQuery(EmbeddingVector.class)
+                    .eq(EmbeddingVector::getProjectId, projectId).eq(EmbeddingVector::getRevision, revision)
+                    .eq(EmbeddingVector::getProvider, provider).eq(EmbeddingVector::getModelName, model)
+                    .eq(EmbeddingVector::getDimensions, dimensions)
+                    .gt(cursor != null, EmbeddingVector::getVectorId, cursor)
+                    .orderByAsc(EmbeddingVector::getVectorId).last("LIMIT " + pageSize));
+            if (page.isEmpty()) break;
+            for (EmbeddingVector stored : page) {
+                if (scanned == properties.getMaxVectorScan()) { limitReached = true; break; }
+                scanned++;
+                double similarity = cosine(queryVector, readVector(stored.getVectorJson(), dimensions));
+                if (similarity >= properties.getMinimumSimilarity()) {
+                    best.add(new VectorMatch(stored.getChunkId(), round(similarity)));
+                    if (best.size() > limit) best.poll();
+                }
+                cursor = stored.getVectorId();
             }
+            if (limitReached || page.size() < pageSize) break;
         }
-        matches.sort(Comparator.comparingDouble(VectorMatch::similarity).reversed()
-                .thenComparing(VectorMatch::chunkId));
-        return new VectorSearchResult(
-                matches.stream().limit(limit).toList(),
-                Math.min(loaded.size(), properties.getMaxVectorScan()),
-                limitReached,
-                true,
-                null
-        );
+        if (scanned == 0) return VectorSearchResult.unavailable("当前项目版本尚未使用所选模型建立向量索引");
+        return new VectorSearchResult(best.stream().sorted(bestFirst).toList(), scanned, limitReached, true,
+                limitReached ? "向量扫描达到安全上限，检索只覆盖部分索引" : null);
     }
 
     public long count(

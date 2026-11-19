@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch, useId } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, useId } from 'vue'
+import { readReadingLocation, writeReadingLocation, subscribeReadingLocation } from '../utils/readingLocation'
+import EvidenceCode from './EvidenceCode.vue'
+import { sourceLabel } from '../utils/sourcePresentation'
 import ProjectBusinessDiagram from './ProjectBusinessDiagram.vue'
 import { moduleEmoji, projectEmoji } from '../utils/guideAppearance'
 import type {
@@ -7,18 +10,28 @@ import type {
   GuideImplementation,
   GuideConclusion,
 } from '../types/project'
-const props = defineProps<{ guide: ProjectGuide }>()
+const props = defineProps<{ guide: ProjectGuide; projectId?: string }>()
 const emit = defineEmits<{ chat: [question: string] }>()
 const highlightsTitleId = useId()
 const selected = ref('')
 const evidenceOpen = ref(false)
-watch(
-  () => props.guide,
-  () => {
-    selected.value = ''
-    evidenceOpen.value = false
-  },
-)
+const expandedSteps = ref<Record<string, boolean>>({})
+const evidenceSelection = ref<string[]>()
+function showEvidence(ids: string[]) { evidenceSelection.value = ids; evidenceOpen.value = true }
+function restoreSelection() {
+  if (!props.projectId) { selected.value = ''; return }
+  const route = readReadingLocation()
+  const item = route.projectId === props.projectId && route.revision === props.guide.snapshot.revision ? route.item ?? '' : ''
+  const valid = item === 'project' || props.guide.content.modules.some(m => item === `module:${m.id}`)
+    || props.guide.content.flows.some(f => item === `flow:${f.id}`)
+    || /^highlight:\d+$/.test(item) && !!props.guide.content.overview?.highlights[Number(item.split(':')[1])]
+  selected.value = valid ? item : ''
+  evidenceOpen.value = false
+  evidenceSelection.value = undefined
+}
+watch(() => props.guide, restoreSelection, { immediate: true })
+const stopReading = subscribeReadingLocation(restoreSelection)
+onBeforeUnmount(stopReading)
 const module = computed(() =>
   props.guide.content.modules.find(
     (item) => `module:${item.id}` === selected.value,
@@ -52,25 +65,28 @@ const currentEvidence = computed(() => {
       : (highlight.value?.evidenceIds ?? module.value?.evidenceIds ?? []),
   )
   currentFlows.value.forEach((item) => {
+    item.transitions?.forEach(t => t.evidenceIds.forEach(id => ids.add(id)))
     item.steps.forEach((step) => step.evidenceIds.forEach((id) => ids.add(id)))
     ;[...item.rules, ...item.outcomes].forEach((claim) =>
       claim.evidenceIds.forEach((id) => ids.add(id)),
     )
   })
-  return props.guide.evidence.filter((item) => ids.has(item.id))
+  return props.guide.evidence.filter((item) => evidenceSelection.value ? evidenceSelection.value.includes(item.id) : ids.has(item.id))
 })
 const implementationLabel = (status: GuideImplementation) =>
   ({
     IMPLEMENTED: '源码中已实现',
-    PARTIAL: '部分实现或演示',
+    PARTIAL: '已观察到部分实现',
     PLANNED: '仅计划',
-    UNCLEAR: '实现情况未确认',
+    UNCLEAR: '本轮未核实实现',
   })[status]
 const conclusionLabel = (status: GuideConclusion) =>
   ({ OBSERVED: '证据观察', INFERRED: '推断', UNKNOWN: '未确认' })[status]
 function select(value: string) {
   selected.value = value
+  if (props.projectId) writeReadingLocation({ projectId: props.projectId, revision: props.guide.snapshot.revision, item: value || undefined })
   evidenceOpen.value = false
+  evidenceSelection.value = undefined
 }
 </script>
 <template>
@@ -93,7 +109,7 @@ function select(value: string) {
         <p><b>🧑‍💻 给谁用：</b>{{ guide.content.project.audience }}</p>
         <p class="guide-scenario">💭 {{ guide.content.project.scenario }}</p>
         <small
-          >{{ implementationLabel(guide.content.project.implementationStatus) }}
+          >{{ guide.content.project.conclusionStatus === 'UNKNOWN' ? '本轮未核实实现' : implementationLabel(guide.content.project.implementationStatus) }}
           ·
           {{
             conclusionLabel(guide.content.project.conclusionStatus)
@@ -113,16 +129,15 @@ function select(value: string) {
         >
           <span class="guide-card-top"><span class="guide-module-emoji" aria-hidden="true">{{ moduleEmoji(item, guide.content.appearance) }}</span><span class="guide-card-number">MODULE {{ String(index + 1).padStart(2, '0') }}</span></span>
           <b>{{ item.name }}</b
-          ><span>{{ item.responsibility }}</span
-          ><span>{{ item.capabilities.slice(0, 3).join('、') }}</span
+          ><span class="guide-short-responsibility">{{ item.responsibility }}</span
           ><small
-            >{{ implementationLabel(item.implementationStatus) }} ·
+            >{{ item.conclusionStatus === 'UNKNOWN' ? '本轮未核实实现' : implementationLabel(item.implementationStatus) }} ·
             {{ conclusionLabel(item.conclusionStatus) }}</small
           ><em>了解这块业务 →</em>
         </button>
       </div>
-      <ProjectBusinessDiagram :guide="guide" @select-module="select(`module:${$event}`)" @select-flow="select(`flow:${$event}`)" />
-      <section
+      <details class="guide-extra"><summary>🗺️ 展开业务地图与路线</summary><ProjectBusinessDiagram :guide="guide" @select-module="select(`module:${$event}`)" @select-flow="select(`flow:${$event}`)" /></details>
+      <details v-if="guide.content.overview" class="guide-extra"><summary>💡 想深入学习：看看设计与练习建议</summary><section
         v-if="guide.content.overview"
         class="guide-highlights"
         :aria-labelledby="highlightsTitleId"
@@ -146,7 +161,7 @@ function select(value: string) {
             ><span><strong>解决的问题：</strong>{{ item.problem }}</span>
             <span><strong>值得学习：</strong>{{ item.learningValue }}</span>
             <small
-              >{{ implementationLabel(item.implementationStatus) }} ·
+              >{{ item.conclusionStatus === 'UNKNOWN' ? '本轮未核实实现' : implementationLabel(item.implementationStatus) }} ·
               {{ conclusionLabel(item.conclusionStatus) }}</small
             >
             <em>了解设计与学习建议 →</em>
@@ -156,9 +171,10 @@ function select(value: string) {
           当前证据还不足以推荐具体的实现亮点。可以先从上面的能力模块开始理解。
         </p>
       </section>
+      </details>
       <h4 v-if="guide.content.flows.length">👣 一件事是怎样完成的</h4>
       <button
-        v-for="item in guide.content.flows"
+        v-for="item in guide.content.flows.slice(0, 1)"
         :key="item.id"
         class="guide-flow-preview"
         type="button"
@@ -168,13 +184,15 @@ function select(value: string) {
         ><span>{{ item.goal }}</span
         ><small
           >{{ item.trigger }} →
-          {{ item.steps.map((step) => step.action).join(' → ') }} →
-          {{ item.outcomes[0]?.text ?? '结果仍待确认' }}</small
+          {{ item.goal }}</small
         ><small v-if="item.rules.length"
           >关键判断：{{ item.rules[0]?.text }}</small
         ><em>查看步骤与关键判断 →</em>
       </button>
-      <section v-if="guide.content.openQuestions.length">
+      <details v-if="guide.content.flows.length > 1" class="guide-extra"><summary>查看其他主流程</summary>
+        <button v-for="item in guide.content.flows.slice(1)" :key="item.id" type="button" class="guide-flow-preview" @click="select(`flow:${item.id}`)"><b>{{ item.name }}</b><span>{{ item.goal }}</span></button>
+      </details>
+      <details v-if="guide.content.openQuestions.length" class="guide-extra"><summary>哪些内容还没有核实</summary><section>
         <h4>还需要知道</h4>
         <ul>
           <li
@@ -196,6 +214,7 @@ function select(value: string) {
           </ul>
         </details>
       </section>
+      </details>
       <p class="guide-scope-note">
         这是代表性内容导览，未读取的实现与外部服务可能影响结论。
       </p>
@@ -255,13 +274,23 @@ function select(value: string) {
           <li v-for="(step, index) in item.steps" :key="index">
             <b>{{ step.action }}</b>
             <p>输入：{{ step.input }}；结果：{{ step.result }}</p>
-            <small>{{ conclusionLabel(step.conclusionStatus) }}</small>
+            <small>{{ conclusionLabel(step.conclusionStatus) }}</small><button v-if="step.evidenceIds.length" type="button" class="guide-claim-evidence" @click="showEvidence(step.evidenceIds)">核对这一步的依据</button>
+            <details v-if="step.evidenceIds.length" class="guide-step-implementation" @toggle="expandedSteps[`${item.id}:${index}`] = ($event.target as HTMLDetailsElement).open"><summary>展开这一步的实现代码</summary>
+              <template v-if="expandedSteps[`${item.id}:${index}`]"><article v-for="evidence in guide.evidence.filter(entry => step.evidenceIds.includes(entry.id))" :key="evidence.id">
+                <b>{{ evidence.filePath }}:{{ evidence.startLine }}–{{ evidence.endLine }}</b><small>{{ sourceLabel(evidence.filePath, evidence.sourceKind) }}</small>
+                <EvidenceCode :project-id="projectId" :revision="guide.snapshot.revision" :chunk-id="evidence.id" :file-path="evidence.filePath" :code="evidence.code" :truncated="evidence.truncated" />
+              </article></template>
+            </details>
+            <button type="button" class="guide-claim-evidence" @click="emit('chat', `请围绕「${item.name}」的第${index + 1}步「${step.action}」讲解：入口是什么、关键判断、数据变化及失败分支。优先读取这一步证据涉及的实现及直接关联代码，区分源码观察、推断与待确认。`)">追问这一步</button>
           </li>
         </ol>
+        <section v-if="item.transitions?.length" class="guide-branches"><h5>在这里判断，会走向哪里</h5>
+          <p v-for="(transition, index) in item.transitions" :key="index">步骤 {{ transition.fromStep }} · {{ transition.condition }} → {{ transition.result }} → {{ transition.toStep ? `进入步骤 ${transition.toStep}` : '到此结束' }}<button type="button" class="guide-claim-evidence" @click="showEvidence(transition.evidenceIds)">核对分支依据</button></p>
+        </section>
         <h5 v-if="item.rules.length">关键判断</h5>
         <ul>
           <li v-for="rule in item.rules" :key="rule.text">
-            {{ rule.text }}
+            {{ rule.text }}<button v-if="rule.evidenceIds.length" type="button" class="guide-claim-evidence" @click="showEvidence(rule.evidenceIds)">核对依据</button>
             <small>（{{ conclusionLabel(rule.conclusionStatus) }}）</small>
           </li>
         </ul>
@@ -283,7 +312,7 @@ function select(value: string) {
           class="button secondary"
           type="button"
           :aria-expanded="evidenceOpen"
-          @click="evidenceOpen = !evidenceOpen"
+          @click="evidenceSelection = undefined; evidenceOpen = !evidenceOpen"
         >
           {{ evidenceOpen ? '收起实现依据' : '查看实现依据' }}</button
         ><button
@@ -309,16 +338,17 @@ function select(value: string) {
         <details v-for="item in currentEvidence" :key="item.id">
           <summary>
             {{ item.filePath }}:{{ item.startLine }}–{{ item.endLine }} ·
-            {{ item.sourceKind }}
+            {{ sourceLabel(item.filePath, item.sourceKind) }}
           </summary>
           <p>{{ item.symbolName }}</p>
-          <pre><code>{{ item.code }}</code></pre>
-          <small v-if="item.truncated"
-            >片段已截断，可从文件结构中继续阅读。</small
-          >
+          <EvidenceCode :project-id="projectId" :revision="guide.snapshot.revision" :chunk-id="item.id" :file-path="item.filePath" :code="item.code" :truncated="item.truncated" />
         </details>
       </section>
     </section>
+    <details v-if="guide.content.glossary.length" class="guide-extra guide-glossary">
+      <summary>📖 先认识这些词 · {{ guide.content.glossary.length }} 个术语</summary>
+      <dl><template v-for="item in guide.content.glossary" :key="item.term"><dt>{{ item.term }}</dt><dd>{{ item.explanation }}</dd></template></dl>
+    </details>
     <details class="guide-coverage">
       <summary>阅读范围与限制</summary>
       <p>
@@ -554,4 +584,13 @@ function select(value: string) {
 .guide-module-card:focus-visible, .guide-hero button:focus-visible, .guide-highlight-card:focus-visible, .guide-flow-preview:focus-visible { outline:3px solid #8c6db0; outline-offset:4px; }
 @media(prefers-reduced-motion:reduce) { .guide-module-card { transition:none; } .guide-module-card:hover { transform:none; } }
 @media(max-width:640px) { .guide-hero { padding:18px; } .guide-hero h3 { font-size:20px; } .guide-detail { padding:16px; } .guide-welcome { gap:10px; } .guide-sticker { display:none; } }
+</style>
+
+<style scoped>
+.guide-extra { margin: 16px 0; border: 1px solid #e3deea; border-radius: 12px; padding: 12px 16px; }
+.guide-extra > summary { cursor: pointer; font-weight: 600; color: #5e496f; }
+.guide-short-responsibility { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.guide-claim-evidence { border: 0; background: transparent; color: #68508a; text-decoration: underline; cursor: pointer; margin: 0 8px; }
+.guide-glossary dt { font-weight: 700; margin-top: 12px; }
+.guide-glossary dd { margin-left: 0; }
 </style>

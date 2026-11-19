@@ -16,7 +16,7 @@ public class EmbeddingProperties {
     private int batchSize = 10;
     private int maxInputCharacters = 16000;
     private int maxIndexChunks = 5000;
-    private int maxVectorScan = 5000;
+    private int maxVectorScan = 50000;
     private double minimumSimilarity = 0.05;
 
     public String getProvider() { return provider; }

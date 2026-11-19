@@ -21,6 +21,10 @@ public class GenerationSession {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
+    private String lastError;
+    public String getLastError() { return lastError; }
+    public void setLastError(String value) { this.lastError = value; }
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getOwnerId() { return ownerId; }

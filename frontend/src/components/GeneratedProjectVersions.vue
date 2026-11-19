@@ -1,0 +1,37 @@
+<script setup lang="ts">
+import GenerationTaskProgress from './GenerationTaskProgress.vue'
+import {onMounted,onBeforeUnmount,ref} from 'vue'
+import {generationEvolutionApi as api} from '../services/generationEvolutionApi'
+import {useModelAccess} from '../composables/useModelAccess'
+import {ApiError} from '../services/apiClient'
+import type {ProjectRevision,ChangePlan,RevisionComparison} from '../types/generationEvolution'
+const props=defineProps<{sessionId:string;runId:string;revisionId:string}>()
+const emit=defineEmits<{select:[revision:ProjectRevision]}>()
+const ensureModel=useModelAccess(),items=ref<ProjectRevision[]>([]),selected=ref(''),request=ref(''),plan=ref<ChangePlan|null>(null),busy=ref(false),error=ref(''),comparison=ref<RevisionComparison|null>(null),diff=ref<{path:string;before:string;after:string}|null>(null)
+let alive=true,timer:ReturnType<typeof setTimeout>|undefined,attemptKey='',diffTicket=0
+onMounted(()=>{void load();void restorePlan()});onBeforeUnmount(()=>{alive=false;diffTicket++;clearTimeout(timer)})
+const message=(e:unknown)=>e instanceof ApiError?e.message:'读取或修改失败，请重试'
+async function load(){try{const [list,current]=await Promise.all([api.revisions(props.sessionId,props.runId),api.selected(props.sessionId,props.runId)]);if(!alive)return;items.value=list;selected.value=current.id;if(current.id!==props.revisionId)emit('select',current)}catch(e){if(alive)error.value=message(e)}}
+async function restorePlan(){try{const p=await api.latestPlan(props.sessionId,props.revisionId);if(!alive)return;plan.value=p;watchPlan()}catch(e){if(alive)error.value=message(e)}}
+async function select(id:string){if(busy.value)return;busy.value=true;error.value='';try{const r=await api.select(props.sessionId,props.runId,id);if(!alive)return;selected.value=r.id;emit('select',r);comparison.value=null;diff.value=null;plan.value=null;clearTimeout(timer)}catch(e){if(alive)error.value=message(e)}finally{if(alive)busy.value=false}}
+async function createPlan(){if(busy.value||!request.value.trim()||pending())return;busy.value=true;error.value='';try{if(!await ensureModel('整理项目修改计划'))return;if(!alive)return;if(!attemptKey)attemptKey=crypto.randomUUID();const p=await api.plan(props.sessionId,props.revisionId,request.value.trim(),attemptKey);if(!alive)return;plan.value=p;attemptKey='';watchPlan()}catch(e){if(alive)error.value=message(e)}finally{if(alive)busy.value=false}}
+function pending(){return plan.value?.status==='PLANNING'||plan.value?.status==='GENERATING'}
+function watchPlan(attempt=0){clearTimeout(timer);if(!pending()||!plan.value||attempt>=300)return;const id=plan.value.id;timer=setTimeout(async()=>{try{const p=await api.getPlan(props.sessionId,id);if(!alive||plan.value?.id!==id)return;plan.value=p;if(p.status==='SUCCEEDED')await load();else watchPlan(attempt+1)}catch(e){if(alive)error.value=message(e)}},2000)}
+async function approve(){if(busy.value||plan.value?.status!=='PLANNED')return;busy.value=true;try{if(!await ensureModel('按确认计划修改源码'))return;if(!alive)return;const p=await api.approve(props.sessionId,plan.value.id);if(!alive)return;plan.value=p;if(p.status==='SUCCEEDED')await load();watchPlan()}catch(e){if(alive)error.value=message(e)}finally{if(alive)busy.value=false}}
+async function compare(){const parent=items.value.find(i=>i.id===props.revisionId)?.parentId;if(!parent)return;error.value='';try{const c=await api.compare(props.sessionId,props.revisionId,parent);if(alive)comparison.value=c}catch(e){if(alive)error.value=message(e)}}
+async function readDiff(path:string){if(!comparison.value)return;const seq=++diffTicket;try{const d=await api.diff(props.sessionId,comparison.value.afterId,comparison.value.beforeId,path);if(alive&&seq===diffTicket)diff.value=d}catch(e){if(alive&&seq===diffTicket)error.value=message(e)}}
+</script>
+<template>
+ <section class="versions"><h3>继续修改与版本记录</h3><p>先看修改计划，确认后再生成。选用旧版本可以恢复此前的源码，所有版本都保留。</p>
+ <p v-if="error" class="notice error" role="alert">{{error}}</p>
+ <label>当前选用版本 <select :value="selected" :disabled="busy||pending()" aria-label="当前源码版本" @change="select(($event.target as HTMLSelectElement).value)"><option v-for="item in items.filter(i=>i.status==='SUCCEEDED')" :key="item.id" :value="item.id">{{item.kind==='ORIGINAL'?'原始版本':item.kind==='REPAIR'?'修复版本':'修改版本'}} · {{item.summary?.slice(0,45)}} · {{item.createdAt}}</option></select></label>
+ <button class="button secondary" @click="load">刷新版本</button><button v-if="items.find(i=>i.id===revisionId)?.parentId" class="button secondary" @click="compare">查看与上一版本的差异</button>
+ <div v-if="comparison"><p v-if="!comparison.files.length">两个版本的文件内容相同。</p><button v-for="file in comparison.files" :key="file.path" class="diff-file" @click="readDiff(file.path)">{{({ADDED:'新增',DELETED:'删除',MODIFIED:'修改'} as Record<string,string>)[file.change]}} · {{file.path}}</button><div v-if="diff" class="diff-content"><h4>{{diff.path}}</h4><details open><summary>修改前</summary><pre>{{diff.before||'此前不存在此文件'}}</pre></details><details open><summary>修改后</summary><pre>{{diff.after||'此文件已删除'}}</pre></details></div></div>
+ <form @submit.prevent="createPlan"><label for="change-project-request">还想让这个项目增加或改进什么？</label><textarea id="change-project-request" v-model="request" maxlength="2000" rows="3" placeholder="例如：增加按关键词搜索任务，其他功能保持不变" :disabled="busy||pending()"></textarea><button class="button primary" :disabled="busy||pending()||!request.trim()">{{plan?.status==='PLANNING'?'AI 正在整理计划…':'先看修改计划 · 使用 API 额度'}}</button></form>
+ <GenerationTaskProgress v-if="plan" :key="plan.id+plan.status" :session-id="sessionId" :kind="plan.status==='GENERATING'||plan.status==='SUCCEEDED'&&plan.resultRevisionId?'CHANGE':'PLAN'" :reference-id="plan.id" @cancelled="restorePlan()" />
+ <div v-if="plan" class="change-plan" role="status"><p v-if="plan.errorMessage">{{plan.errorMessage}}</p><template v-if="plan.plan"><h4>{{plan.plan.summary}}</h4><ul><li v-for="change in plan.plan.changes" :key="change">{{change}}</li></ul><details v-if="plan.plan.risks.length"><summary>可能影响与待验证项</summary><ul><li v-for="risk in plan.plan.risks" :key="risk">{{risk}}</li></ul></details></template><button v-if="plan.status==='PLANNED'" class="button primary" :disabled="busy" @click="approve">确认计划，生成新版本 · 使用 API 额度</button><p v-else-if="plan.status==='GENERATING'">正在生成独立版本，旧版本仍可使用。</p><button v-else-if="plan.status==='SUCCEEDED'&&plan.resultRevisionId" class="button primary" @click="select(plan.resultRevisionId!)">查看并选用新版本</button><p v-else-if="plan.status==='CANCELLED'">修改已取消，旧版本保持不变。</p><p v-else-if="plan.status==='FAILED'">本次未完成，旧版本保留。可以调整要求后重新创建计划。</p></div>
+ </section>
+</template>
+<style scoped>
+.versions{border-top:1px solid var(--line);margin-top:24px;padding-top:18px}.versions p,.versions li{font-size:13px;line-height:1.8;color:var(--ink-soft)}h3{font-size:17px}label{display:block;margin:12px 0;font-size:13px}select{max-width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}textarea{width:100%;box-sizing:border-box}.button{margin:8px 8px 8px 0}.change-plan{padding:18px;background:var(--surface-soft);border-radius:12px;margin-top:16px}.diff-file{display:block;margin:8px 0;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;padding:16px;background:var(--code-bg);color:var(--code-ink);font-size:12px}summary{cursor:pointer}
+</style>

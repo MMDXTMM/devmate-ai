@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useModalFocus } from '../composables/useModalFocus'
 import { ApiError, projectApi } from '../services/projectApi'
 import type {
   BusinessFeature,
   BusinessFeatureDetail,
   BusinessModule,
   ProjectBusinessMap,
+  ProjectGuide,
   SourceDocument,
   SourceReference,
   SourceSymbol,
@@ -17,10 +19,12 @@ const props = defineProps<{
   open: boolean
   projectId?: string
   projectName?: string
+  guide?: ProjectGuide
 }>()
 
 const emit = defineEmits<{ close: []; configureModel: []; chat: [question: string] }>()
 
+const dialog = useModalFocus(() => props.open, () => emit('close'))
 const documents = ref<SourceDocument[]>([])
 const businessMap = ref<ProjectBusinessMap | null>(null)
 const featureDetail = ref<BusinessFeatureDetail | null>(null)
@@ -60,6 +64,7 @@ async function loadBusinessMap() {
     const result = await projectApi.getBusinessMap(projectId)
     if (generation !== reportGeneration) return
     businessMap.value = result
+    if (!businessMap.value.modules.length) { await switchView('FILES'); return }
     const firstModule = businessMap.value.modules[0]
     if (firstModule) {
       await selectModule(firstModule)
@@ -104,6 +109,12 @@ async function switchView(view: 'BUSINESS' | 'FILES') {
 function selectedModule() {
   return businessMap.value?.modules.find((module) => module.id === selectedModuleId.value)
 }
+
+const businessNames = computed(() => {
+  if (!featureDetail.value || !props.guide || props.guide.snapshot.revision !== businessMap.value?.revision) return []
+  const ids = new Set([featureDetail.value.feature.id, ...featureDetail.value.implementation.map(item => item.chunkId)])
+  return props.guide.content.modules.filter(module => module.evidenceIds.some(id => ids.has(id))).map(module => module.name)
+})
 
 function evidenceLayerLabel(layer: BusinessFeatureDetail['implementation'][number]['layer']) {
   return {
@@ -165,7 +176,7 @@ function documentKindLabel(document: SourceDocument) {
 }
 
 function documentItemLabel(document: SourceDocument) {
-  return document.sourceKind === 'SOURCE_CODE' ? '符号' : '结构项'
+  return document.sourceKind === 'SOURCE_CODE' ? document.fileType === 'JAVA' ? '符号' : '文本片段' : '结构项'
 }
 
 const symbolTypeLabels: Record<SourceSymbolType, string> = {
@@ -295,7 +306,7 @@ watch(
 
 <template>
   <div v-if="open" class="modal-backdrop" @click.self="emit('close')">
-    <section class="modal source-modal" role="dialog" aria-modal="true" aria-labelledby="source-title">
+    <section :ref="dialog" tabindex="-1" class="modal source-modal" role="dialog" aria-modal="true" aria-labelledby="source-title">
       <header class="modal-header">
         <span class="surface-icon" aria-hidden="true">🧩</span>
         <div>
@@ -307,15 +318,17 @@ watch(
       </header>
 
       <nav class="source-view-tabs" aria-label="项目理解方式">
-        <button type="button" :class="{ active: activeView === 'BUSINESS' }" @click="switchView('BUSINESS')">
-          Java 实现与接口
+        <button v-if="businessMap?.modules.length" type="button" :class="{ active: activeView === 'BUSINESS' }" @click="switchView('BUSINESS')">
+          Java 静态入口与链路
           <small>下钻功能、接口和实现链路</small>
         </button>
         <button type="button" :class="{ active: activeView === 'FILES' }" @click="switchView('FILES')">
-          文件结构（高级）
-          <small>按文件、类和方法查阅源码</small>
+          文件与源码
+          <small>按文件查阅源码；Java 额外提供语法符号</small>
         </button>
       </nav>
+
+      <p v-if="activeView === 'FILES' && businessMap && !businessMap.modules.length" class="source-scope-note">当前展示通用文件与文本片段。未识别到 Java Web 静态入口不影响项目导览；其他语言暂不生成语法调用链。</p>
 
       <div v-if="errorMessage" class="notice error" role="alert">{{ errorMessage }}</div>
 
@@ -387,8 +400,9 @@ watch(
               </div>
             </header>
             <section class="business-flow-summary">
-              <b>总体调用逻辑</b>
-              <p>{{ featureDetail.flowSummary }}</p>
+              <p v-if="businessNames.length">对应业务模块（共享实现依据）：{{ businessNames.join('、') }}</p>
+              <b>已解析调用链</b>
+              <p>{{ featureDetail.flowSummary }}</p><p class="source-scope-note">这是有界静态解析结果，分组来自技术入口；不代表完整业务流程或运行顺序。</p><ul v-if="featureDetail.unresolvedCalls?.length"><li v-for="item in featureDetail.unresolvedCalls" :key="item">{{ item }}</li></ul>
             </section>
             <section v-if="featureDetail.dataOperations.length" class="business-data-operations">
               <b>涉及的数据操作</b>

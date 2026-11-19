@@ -54,6 +54,14 @@ public class SourceStructureController {
         return ApiResponse.success(queryService.listSymbols(projectId, documentId));
     }
 
+    @GetMapping("/chunks/{chunkId}")
+    @Operation(summary = "读取同项目代码片段并按需续读", description = "只读且不调用模型；offset为UTF-16字符偏移，默认0，每次最多16000字符；响应nextOffset为空表示读完。仍校验项目权限和片段归属。")
+    public ApiResponse<SourceSymbolDetailResponse> getChunkDetail(
+            @Positive @PathVariable Long projectId, @Positive @PathVariable Long chunkId,
+            @jakarta.validation.constraints.Min(0) @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int offset) {
+        return ApiResponse.success(queryService.getChunkDetail(projectId, chunkId, offset));
+    }
+
     @GetMapping("/{documentId}/symbols/{symbolId}")
     @Operation(summary = "查询符号代码详情", description = "返回受长度限制的真实代码块和准确文件行号。")
     public ApiResponse<SourceSymbolDetailResponse> getSymbolDetail(

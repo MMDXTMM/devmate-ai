@@ -36,6 +36,15 @@ describe('readable code-grounded answers', () => {
     wrapper.unmount()
   })
 
+  it('opens only real numbered citations and preserves code literals', async () => {
+    const wrapper = mount(ModelAnswer, { props: { content: '核心是**“签名”**用于防篡改。[证据1] [证据99] `源码[证据1]`', evidenceCount: 2 } })
+    expect(wrapper.get('strong').text()).toBe('“签名”')
+    expect(wrapper.findAll('.answer-citation')).toHaveLength(1)
+    await wrapper.get('.answer-citation').trigger('click')
+    expect(wrapper.emitted('citation')).toEqual([[0]])
+    expect(wrapper.get('code').text()).toContain('[证据1]')
+    expect(wrapper.text()).toContain('[证据99]')
+  })
   it('copies code without markup and reports clipboard denial', async () => {
     const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('denied'))
     vi.stubGlobal('navigator', { clipboard: { writeText } })

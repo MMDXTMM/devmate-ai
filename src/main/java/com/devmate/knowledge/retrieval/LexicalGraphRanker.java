@@ -38,6 +38,7 @@ public class LexicalGraphRanker {
     ) {
         List<String> queryTerms = new ArrayList<>(new LinkedHashSet<>(tokenize(query)));
         String normalizedQuery = normalize(query);
+        List<String> targets = RetrievalQueryTargets.identifiers(query);
         Map<Long, List<String>> contentTerms = new HashMap<>();
         Map<String, Integer> documentFrequency = new HashMap<>();
 
@@ -59,6 +60,7 @@ public class LexicalGraphRanker {
             if (document == null) {
                 continue;
             }
+            if (Set.of("IMPORT", "FILE_HEADER").contains(chunk.getChunkType()) && !seedChunkIds.contains(chunk.getId())) continue;
             Set<String> reasons = new LinkedHashSet<>();
             double score = lexicalScore(
                     chunk,
@@ -70,6 +72,29 @@ public class LexicalGraphRanker {
                     candidateCount,
                     reasons
             );
+            String body = chunk.getContent() == null ? "" : chunk.getContent();
+            boolean implementation = "METHOD".equals(chunk.getChunkType()) && body.contains("{")
+                    || "TEXT_EXCERPT".equals(chunk.getChunkType()) && Pattern.compile("(?m)^(?:\\s*(?:async )?def |.*(?:function |fn |func ))").matcher(body).find();
+            for (String target : targets) {
+                String[] parts = target.split("[.#/]");
+                String leaf = parts[parts.length - 1];
+                String symbol = chunk.getSymbolName() == null ? "" : chunk.getSymbolName();
+                boolean member = Pattern.compile("(?<![A-Za-z0-9_$])" + Pattern.quote(leaf) + "\\s*\\(", Pattern.CASE_INSENSITIVE)
+                        .matcher(symbol + "\n" + body).find();
+                boolean owner = parts.length < 2 || normalize(document.getFilePath()).contains(normalize(parts[parts.length - 2]))
+                        || normalize(symbol).contains(normalize(parts[parts.length - 2]));
+                if (member && owner) {
+                    boolean definition = "METHOD".equals(chunk.getChunkType())
+                            && Pattern.compile("#" + Pattern.quote(leaf) + "\\s*\\(", Pattern.CASE_INSENSITIVE).matcher(symbol).find()
+                            || "TEXT_EXCERPT".equals(chunk.getChunkType())
+                            && Pattern.compile("(?m)^\\s*(?:(?:export|public|async)\\s+)*(?:def|function|fn|func)\\s+"
+                                    + Pattern.quote(leaf) + "\\s*\\(", Pattern.CASE_INSENSITIVE).matcher(body).find();
+                    score += definition && implementation ? 220 : 40;
+                    reasons.add("EXACT_CODE_TARGET");
+                    if (definition) reasons.add("EXACT_DEFINITION");
+                }
+            }
+            if (score > 0 && implementation) { score += Math.min(6, Math.log1p(body.length())); reasons.add("IMPLEMENTATION"); }
             if (seedChunkIds.contains(chunk.getId())) {
                 score += 100.0;
                 reasons.add("DIFF_SYMBOL");
@@ -91,10 +116,17 @@ public class LexicalGraphRanker {
         }
 
         return ranked.stream()
-                .sorted(Comparator.comparingDouble(RetrievalCandidate::score).reversed()
+                .sorted(Comparator.comparingInt(LexicalGraphRanker::targetPriority).reversed()
+                        .thenComparing(Comparator.comparingDouble(RetrievalCandidate::score).reversed())
                         .thenComparing(candidate -> candidate.document().getFilePath())
                         .thenComparing(candidate -> candidate.chunk().getStartLine()))
                 .toList();
+    }
+
+    static int targetPriority(RetrievalCandidate candidate) {
+        if (!candidate.reasons().contains("EXACT_CODE_TARGET")) return 0;
+        if (!candidate.reasons().contains("EXACT_DEFINITION")) return 1;
+        return candidate.reasons().contains("IMPLEMENTATION") ? 3 : 2;
     }
 
     private double lexicalScore(
@@ -173,11 +205,16 @@ public class LexicalGraphRanker {
         String normalized = NON_WORD.matcher(
                 Normalizer.normalize(camelSplit, Normalizer.Form.NFKC)
         ).replaceAll(" ").toLowerCase(Locale.ROOT);
-        return Arrays.stream(normalized.split("\\s+"))
-                .map(String::trim)
-                .filter(token -> token.length() > 1)
-                .filter(token -> !STOP_WORDS.contains(token))
-                .toList();
+        List<String> result = new ArrayList<>();
+        Arrays.stream(normalized.split("\\s+"))
+                .filter(token -> token.length() > 1 && !STOP_WORDS.contains(token)).forEach(token -> {
+                    result.add(token);
+                    if (token.matches("[\\p{IsHan}]{3,}")) {
+                        for (int i = 0; i < token.length() - 1; i++) result.add(token.substring(i, i + 2));
+                    }
+                });
+        return result;
+
     }
 
     int estimateTokens(String content) {

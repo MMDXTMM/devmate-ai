@@ -21,6 +21,14 @@ public class GenerationSpecVersion {
     private String promptVersion;
     private LocalDateTime createdAt;
 
+    private String stage;
+    public String getStage() { return stage; }
+    public void setStage(String value) { this.stage = value; }
+
+    private Boolean readyForGeneration;
+    public Boolean getReadyForGeneration() { return readyForGeneration; }
+    public void setReadyForGeneration(Boolean value) { this.readyForGeneration = value; }
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getSessionId() { return sessionId; }

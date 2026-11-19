@@ -179,6 +179,40 @@ class ProjectBusinessMapControllerTest {
     }
 
     @Test
+    void resolvesDeclaredInterfaceTypesRatherThanGuessingOnlyFromVariableNames() throws Exception {
+        var chunks = chunkMapper.selectList(null);
+        var controller = chunks.stream().filter(c -> c.getSymbolName().equals("com.example.project.ProjectController")).findFirst().orElseThrow();
+        controller.setContent(controller.getContent().replace("public class ProjectController { }",
+                "public class ProjectController { private final IProjectService projectService; }"));
+        chunkMapper.updateById(controller);
+        var contract = chunks.stream().filter(c -> c.getSymbolName().contains("ProjectService#create")).findFirst().orElseThrow();
+        contract.setSymbolName("com.example.project.IProjectService#create(CreateProjectRequest)"); chunkMapper.updateById(contract);
+        var implementation = chunks.stream().filter(c -> c.getSymbolName().contains("ProjectServiceImpl#create")).findFirst().orElseThrow();
+        chunk(documentMapper.selectById(implementation.getDocumentId()), 1, "CLASS", "com.example.project.service.ProjectServiceImpl",
+                "public class ProjectServiceImpl implements IProjectService { }", "{}", 1, 40);
+        mockMvc.perform(get("/api/projects/{id}/business-map/features/{feature}", project.getId(), controllerMethod.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.implementation.length()").value(3))
+                .andExpect(jsonPath("$.data.implementation[2].symbolName").value(implementation.getSymbolName()));
+    }
+
+    @Test
+    void readsCodeByChunkAndValidatesOffsetAndProjectIsolation() throws Exception {
+        mockMvc.perform(get("/api/projects/{id}/sources/chunks/{chunk}", project.getId(), controllerMethod.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.revision").value(REVISION))
+                .andExpect(jsonPath("$.data.codeOffset").value(0));
+        mockMvc.perform(get("/api/projects/{id}/sources/chunks/{chunk}?offset=-1", project.getId(), controllerMethod.getId()))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/projects/{id}/sources/chunks/{chunk}?offset=999999", project.getId(), controllerMethod.getId()))
+                .andExpect(status().isBadRequest());
+        var ownId = project.getId();
+        project.setId(null); project.setName("other-project"); projectMapper.insert(project);
+        mockMvc.perform(get("/api/projects/{id}/sources/chunks/{chunk}", project.getId(), controllerMethod.getId()))
+                .andExpect(status().isNotFound());
+        project.setId(ownId);
+    }
+
+    @Test
     void exposesBusinessModulesEndpointsAndEvidenceBackedImplementation() throws Exception {
         mockMvc.perform(get("/api/projects/{projectId}/business-map", project.getId()))
                 .andExpect(status().isOk())

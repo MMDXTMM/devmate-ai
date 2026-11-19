@@ -12,6 +12,19 @@ function connectedGuide() {
 }
 
 describe('ProjectBusinessDiagram', () => {
+  it('shows rejection as a terminal branch and continuation only when supplied', async () => {
+    const guide = connectedGuide()
+    guide.content.flows[0]!.transitions = [
+      { fromStep: 1, toStep: null, condition: '输入不存在', result: '返回错误', conclusionStatus: 'OBSERVED', evidenceIds: ['42'] },
+      { fromStep: 1, toStep: 2, condition: '输入可读', result: '继续导出', conclusionStatus: 'OBSERVED', evidenceIds: ['42'] },
+    ]
+    const wrapper = mount(ProjectBusinessDiagram, { props: { guide } })
+    await wrapper.get('.diagram-tabs button:nth-child(2)').trigger('click')
+    expect(wrapper.get('.branch-stop').text()).toContain('到此结束')
+    expect(wrapper.get('.branch-stop').text()).not.toContain('步骤 2')
+    expect(wrapper.get('.journey-branches').text()).toContain('→ 步骤 2')
+    expect(wrapper.get('.journey-track').classes()).toContain('journey-with-branches')
+  })
   it('shows only saved module relations and lets readers open either end', async () => {
     const wrapper = mount(ProjectBusinessDiagram, { props: { guide: connectedGuide() } })
     expect(wrapper.findAll('.relation-wires path')).toHaveLength(1)

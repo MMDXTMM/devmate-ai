@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { writeReadingLocation } from '../utils/readingLocation'
 import { useModelAccess } from '../composables/useModelAccess'
 import { useStreamingText } from '../composables/useStreamingText'
 import { ApiError } from '../services/apiClient'
@@ -9,7 +10,8 @@ import type { ModelProvider } from '../types/modelConnection'
 import ModelAnswer from './ModelAnswer.vue'
 import ConversationHistory from './ConversationHistory.vue'
 import ChatEvidencePanel from './ChatEvidencePanel.vue'
-import type { AgentConversation, ConversationEvidence, ConversationMessage } from '../types/conversation'
+import ConversationContextStatus from './ConversationContextStatus.vue'
+import type { AgentConversation, ConversationEvidence, ConversationMessage, ConversationContext } from '../types/conversation'
 
 const requireModel = useModelAccess()
 const checkingModel = ref(false)
@@ -18,6 +20,7 @@ const props = defineProps<{
   projectId?: string
   projectName?: string
   initialQuestion?: string
+  initialConversationId?: string
 }>()
 const emit = defineEmits<{ close: []; configureModel: [] }>()
 const conversations = ref<AgentConversation[]>([])
@@ -56,7 +59,7 @@ function chooseModel(event: Event) {
 }
 const composer = ref<HTMLTextAreaElement>()
 const sidebarOpen = ref(false)
-const evidencePanel = ref<{ evidence: ConversationEvidence[]; title: string }>()
+const evidencePanel = ref<{ evidence: ConversationEvidence[]; title: string; focusIndex?: number }>()
 const managing = ref(false)
 const management = ref<{ kind: 'rename' | 'delete'; item: AgentConversation }>()
 const titleDraft = ref('')
@@ -78,6 +81,7 @@ function startNewChat() {
   if (busy.value || loading.value) return
   selectionEpoch += 1
   selected.value = undefined; messages.value = []; pendingAttempt = undefined
+  writeReadingLocation({ conversation: undefined, chat: '1' })
   question.value = ''; errorMessage.value = ''; evidencePanel.value = undefined; sidebarOpen.value = false
   void nextTick(() => composer.value?.focus())
 }
@@ -146,6 +150,7 @@ function onComposerKey(event: KeyboardEvent) {
 watch(streamedText, () => { void scrollLatest() })
 watch(() => messages.value.length, () => { void scrollLatest() })
 const streamedEvidence = ref<ConversationEvidence[]>([])
+const streamedContext = ref<ConversationContext>()
 const errorMessage = ref('')
 let controller: AbortController | undefined
 let dialogEpoch = 0
@@ -183,7 +188,12 @@ async function loadConversations() {
     const result = await conversationApi.list(props.projectId)
     if (!current(epoch)) return
     conversations.value = result
-    if (!selected.value && result.length) await selectConversation(result[0])
+    if (!selected.value && props.initialConversationId) {
+      const target = result.find(item => item.id === props.initialConversationId) ?? await conversationApi.get(props.projectId, props.initialConversationId)
+      if (!current(epoch)) return
+      if (!result.some(item => item.id === target.id)) conversations.value = [target, ...result]
+      await selectConversation(target)
+    } else if (!selected.value && result.length) await selectConversation(result[0])
   } catch (error) {
     if (current(epoch)) errorMessage.value = readableError(error)
   } finally {
@@ -202,6 +212,7 @@ async function createConversation() {
     if (!current(epoch)) return
     conversations.value = [created, ...conversations.value]
     selected.value = created
+    writeReadingLocation({ projectId: props.projectId, conversation: created.id, chat: '1' })
     messages.value = []
     followLatest.value = true
     historySearch.value = ''
@@ -218,6 +229,7 @@ async function selectConversation(conversation: AgentConversation) {
   const epoch = dialogEpoch
   const selection = ++selectionEpoch
   selected.value = conversation
+  writeReadingLocation({ projectId: props.projectId, conversation: conversation.id, chat: '1' })
   sidebarOpen.value = false
   evidencePanel.value = undefined
   followLatest.value = true
@@ -259,7 +271,7 @@ async function sendQuestion() {
   stopping.value = false
   evidencePanel.value = undefined
   reveal.reset()
-  streamedEvidence.value = []
+  streamedEvidence.value = []; streamedContext.value = undefined
   errorMessage.value = ''
   let terminal = false
   let failed = false
@@ -276,6 +288,7 @@ async function sendQuestion() {
   try {
     await conversationApi.streamMessage(projectId, conversationId, submitted, attempt.key, {
       onMessage: value => { assistantId = value.messageId; if (current(epoch)) activeMessageId.value = value.messageId },
+      onContext: value => { if (current(epoch)) streamedContext.value = value },
       onEvidence: value => { if (current(epoch)) streamedEvidence.value = value },
       onToken: value => { if (current(epoch)) reveal.append(value.content) },
       onDone: value => { terminal = true; completedMessage = value; if (current(epoch)) { pendingAttempt = undefined; activeMessageId.value = undefined } },
@@ -322,7 +335,7 @@ async function sendQuestion() {
     if (current(epoch)) {
       streaming.value = false
       reveal.reset()
-      streamedEvidence.value = []
+      streamedEvidence.value = []; streamedContext.value = undefined
       controller = undefined
       activeMessageId.value = undefined
       stopping.value = false
@@ -359,6 +372,14 @@ onBeforeUnmount(() => { document.body.style.overflow = previousOverflow })
 watch(management, async value => { await nextTick(); if (value) workspace.value?.querySelector<HTMLInputElement>('.chat-management input, .chat-management button')?.focus(); else composer.value?.focus() })
 function close() { clearTimeout(historyPoll); dialogEpoch += 1; controller?.abort(); reveal.reset(); emit('close') }
 onBeforeUnmount(() => { clearTimeout(historyPoll); dialogEpoch += 1; controller?.abort(); reveal.reset() })
+watch(() => props.initialConversationId, async id => {
+  if (!props.open || !props.projectId || !id || selected.value?.id === id || loading.value || busy.value) return
+  const epoch = dialogEpoch
+  try {
+    const target = conversations.value.find(item => item.id === id) ?? await conversationApi.get(props.projectId, id)
+    if (current(epoch)) await selectConversation(target)
+  } catch (error) { if (current(epoch)) errorMessage.value = readableError(error) }
+})
 watch(() => [props.open, props.projectId] as const, ([open]) => {
   dialogEpoch += 1
   controller?.abort()
@@ -408,16 +429,17 @@ watch(() => [props.open, props.projectId] as const, ([open]) => {
             <article v-for="(message, index) in messages" :key="message.id" :class="message.role.toLowerCase()">
               <header><b><span class="chat-avatar">{{ message.role === 'USER' ? '你' : '🌱' }}</span>{{ message.role === 'USER' ? '你' : 'DevMate Agent' }}</b><span>{{ message.role === 'USER' ? `第 ${turnNumber(index)} 轮` : statusLabels[message.status] }}<time v-if="message.createdAt"> · {{ formatTime(message.createdAt) }}</time></span></header>
               <p v-if="message.role === 'USER'" class="chat-user-text">{{ message.content }}</p>
-              <ModelAnswer v-else :content="message.content || message.errorMessage || (message.status === 'RUNNING' ? '回答仍在后台生成，可刷新历史或停止生成。' : message.status === 'CANCELLED' ? '已停止，本次尚未生成内容。' : '')" />
+              <ModelAnswer v-else :evidence-count="message.evidence.length" @citation="evidencePanel = { evidence: message.evidence, title: '这句回答的依据', focusIndex: $event }" :content="message.content || message.errorMessage || (message.status === 'RUNNING' ? '回答仍在后台生成，可刷新历史或停止生成。' : message.status === 'CANCELLED' ? '已停止，本次尚未生成内容。' : '')" />
+              <ConversationContextStatus v-if="message.role === 'ASSISTANT' && message.context" :context="message.context" />
               <footer v-if="message.role === 'ASSISTANT'" class="chat-message-actions"><button v-if="message.content" type="button" @click="copyAnswer(message)">{{ copiedMessage === message.id ? '已复制' : '复制回答' }}</button><button v-if="message.evidence.length" type="button" class="evidence-toggle" @click="evidencePanel = { evidence: message.evidence, title: messages[index - 1]?.content || '本轮回答' }">查看 {{ message.evidence.length }} 条代码证据 ↗</button><span v-if="message.latencyMs">{{ (message.latencyMs / 1000).toFixed(1) }} 秒 · {{ message.modelName }}</span><button v-if="message.status === 'RUNNING' && !streaming" type="button" :disabled="stopping" @click="stopAnswer">{{ stopping ? '正在停止…' : '停止生成' }}</button></footer>
               <p v-if="message.status === 'CANCELLED' && message.content" class="chat-stopped-note">已停止生成，以上内容尚未完整回答。</p>
             </article>
-            <article v-if="streaming" class="assistant streaming" aria-label="正在生成的回答"><header><b><span class="chat-avatar" aria-hidden="true">🌱</span>DevMate Agent</b><span role="status">{{ stopping ? '正在停止并保存…' : streamedText ? '正在逐字输出' : streamedEvidence.length ? '已找到代码，正在组织回答…' : '正在查找项目代码…' }}</span></header><ModelAnswer v-if="streamedText" :content="streamedText" /><p v-else class="chat-thinking">回答将逐步显示<span class="stream-cursor" aria-hidden="true"></span></p><div class="chat-message-actions"><button v-if="streamedEvidence.length" type="button" @click="evidencePanel = { evidence: streamedEvidence, title: '当前回答的代码依据' }">已找到 {{ streamedEvidence.length }} 条代码证据 ↗</button></div></article>
+            <article v-if="streaming" class="assistant streaming" aria-label="正在生成的回答"><header><b><span class="chat-avatar" aria-hidden="true">🌱</span>DevMate Agent</b><span role="status">{{ stopping ? '正在停止并保存…' : streamedText ? '正在逐字输出' : streamedEvidence.length ? '已找到代码，正在组织回答…' : '正在查找项目代码…' }}</span></header><ModelAnswer v-if="streamedText" :content="streamedText" :evidence-count="streamedEvidence.length" @citation="evidencePanel = { evidence: streamedEvidence, title: '当前回答的依据', focusIndex: $event }" /><p v-else class="chat-thinking">回答将逐步显示<span class="stream-cursor" aria-hidden="true"></span></p><ConversationContextStatus v-if="streamedContext" :context="streamedContext" /><div class="chat-message-actions"><button v-if="streamedEvidence.length" type="button" @click="evidencePanel = { evidence: streamedEvidence, title: '当前回答的代码依据' }">已找到 {{ streamedEvidence.length }} 条代码证据 ↗</button></div></article>
           </div>
           <button v-if="!followLatest" type="button" class="button secondary chat-latest" @click="scrollLatest(true)">↓ 回到最新消息</button>
           <form class="agent-chat-input" @submit.prevent="sendQuestion"><div class="chat-composer-box"><label class="sr-only" for="project-chat-question">向当前项目提问</label><textarea ref="composer" id="project-chat-question" v-model="question" rows="1" maxlength="4000" placeholder="给 DevMate 发送消息，聊聊这个项目…" :disabled="busy" @compositionstart="isComposing = true" @compositionend="isComposing = false" @keydown="onComposerKey"></textarea><button v-if="streaming" type="button" class="chat-send stop-answer" :disabled="stopping || !activeMessageId" :aria-label="stopping ? '正在停止' : '停止生成'" @click="stopAnswer">■</button><button v-else class="chat-send" aria-label="发送问题" :disabled="busy || loading || !question.trim()">↑</button></div><div class="chat-composer-note"><small>{{ streaming ? '停止会保存已有内容；返回项目后后台仍会完成回答。' : 'Enter 发送 · Shift + Enter 换行' }}</small><small>{{ question.length }}/4000 · 自动保存</small></div><p class="chat-disclaimer">AI 回答仅供参考，请结合代码证据核对。<span class="sr-only" role="status">{{ copyNotice }}</span></p></form>
         </div>
-        <ChatEvidencePanel v-if="evidencePanel" :evidence="evidencePanel.evidence" :title="evidencePanel.title" @close="evidencePanel = undefined" />
+        <ChatEvidencePanel v-if="evidencePanel" :evidence="evidencePanel.evidence" :title="evidencePanel.title" :focus-index="evidencePanel.focusIndex" :project-id="projectId" :revision="selected?.revision" @close="evidencePanel = undefined" />
       </div>
       <div v-if="management" class="chat-management-backdrop"><form class="chat-management" role="alertdialog" aria-modal="true" aria-labelledby="chat-management-title" @submit.prevent="manageConversation"><h3 id="chat-management-title">{{ management.kind === 'rename' ? '重命名对话' : '删除这段对话？' }}</h3><label v-if="management.kind === 'rename'">对话标题<input v-model="titleDraft" maxlength="100" required :disabled="managing" /></label><p v-else>“{{ management.item.title }}”将从你的历史列表移除。其他对话、项目和模型配置不受影响。</p><p v-if="managementError" role="alert" class="notice error">{{ managementError }}</p><footer><button type="button" class="button secondary" :disabled="managing" @click="management = undefined">取消</button><button class="button" :class="management.kind === 'delete' ? 'danger' : 'primary'" :disabled="managing || (management.kind === 'rename' && !titleDraft.trim())">{{ managing ? '保存中…' : management.kind === 'rename' ? '保存标题' : '确认删除' }}</button></footer></form></div>
     </section>

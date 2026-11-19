@@ -50,6 +50,7 @@ public class ContextRetrievalService {
     private final HybridRetrievalRanker hybridRanker;
     private final VectorRetrievalService vectorRetrievalService;
     private final RetrievalProperties properties;
+    private final com.devmate.knowledge.service.ProjectUnderstandingReportService reports;
 
     public ContextRetrievalService(
             ProjectService projectService,
@@ -59,7 +60,8 @@ public class ContextRetrievalService {
             LexicalGraphRanker ranker,
             HybridRetrievalRanker hybridRanker,
             VectorRetrievalService vectorRetrievalService,
-            RetrievalProperties properties
+            RetrievalProperties properties,
+            com.devmate.knowledge.service.ProjectUnderstandingReportService reports
     ) {
         this.projectService = projectService;
         this.chunkMapper = chunkMapper;
@@ -69,6 +71,7 @@ public class ContextRetrievalService {
         this.hybridRanker = hybridRanker;
         this.vectorRetrievalService = vectorRetrievalService;
         this.properties = properties;
+        this.reports = reports;
     }
 
     public RetrievalSearchResponse search(Long projectId, RetrievalSearchCommand command) {
@@ -82,25 +85,26 @@ public class ContextRetrievalService {
             throw new BusinessException(ErrorCode.INVALID_ARGUMENT, "检索数量或Token预算超出允许范围");
         }
 
-        List<KnowledgeChunk> loaded = chunkMapper.selectList(
-                Wrappers.lambdaQuery(KnowledgeChunk.class)
-                        .eq(KnowledgeChunk::getProjectId, projectId)
-                        .eq(KnowledgeChunk::getRevision, revision)
-                        .orderByAsc(KnowledgeChunk::getId)
-                        .last("LIMIT " + (properties.getCandidateLimit() + 1))
-        );
+        // Search the whole authorized revision in SQL before applying the candidate budget.
+        // A matching symbol/path late in an import must not depend on its generated ID.
+        List<KnowledgeChunk> loaded = loadRelevantCandidates(projectId, revision, command.query());
         if (loaded.isEmpty()) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "该项目版本尚未建立知识索引");
         }
         boolean candidateLimitReached = loaded.size() > properties.getCandidateLimit();
         List<KnowledgeChunk> candidates = new ArrayList<>(loaded.stream()
-                .limit(properties.getCandidateLimit())
-                .toList());
+                .limit(properties.getCandidateLimit()).toList());
 
+        boolean topicSeeds = (command.seedChunkIds() == null || command.seedChunkIds().isEmpty())
+                && !RetrievalQueryTargets.hasExplicitTarget(command.query())
+                && org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication() != null
+                && org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getPrincipal()
+                    instanceof com.devmate.user.security.AuthenticatedUser;
+        List<Long> requestedSeeds = topicSeeds ? reports.conversationSeeds(projectId, revision, command.query()) : command.seedChunkIds();
         Set<Long> seedIds = validateAndLoadSeeds(
                 projectId,
                 revision,
-                command.seedChunkIds(),
+                requestedSeeds,
                 candidates
         );
         ReferenceLoad referenceLoad = loadSeedReferences(projectId, revision, seedIds);
@@ -121,10 +125,19 @@ public class ContextRetrievalService {
                 );
         includeVectorMatches(projectId, revision, vectorResult.matches(), candidates);
         Map<Long, KnowledgeDocument> documents = loadDocuments(candidates);
+        String searchQuery = command.query().trim();
+        if (topicSeeds && !seedIds.isEmpty()) {
+            // The saved report maps this project's vocabulary to source, never a global translation table.
+            String aliases = candidates.stream().filter(item -> seedIds.contains(item.getId()))
+                    .map(KnowledgeChunk::getSymbolName).filter(Objects::nonNull)
+                    .map(name -> name.contains("#") ? name.substring(name.lastIndexOf('#') + 1).replaceAll("\\(.*", "") : "")
+                    .filter(name -> name.length() > 3).distinct().limit(6).collect(Collectors.joining(" "));
+            searchQuery += " " + aliases;
+        }
         List<RetrievalCandidate> lexicalRanked = ranker.rank(
                 candidates,
                 documents,
-                command.query().trim(),
+                searchQuery,
                 seedIds,
                 graphReasons
         );
@@ -140,6 +153,23 @@ public class ContextRetrievalService {
                 chunksById,
                 documents
         );
+        if (requestedMode == RetrievalMode.HYBRID && "LOCAL".equals(embeddingProvider.providerName())) {
+            Set<Long> relevant = lexicalRanked.stream().map(item -> item.chunk().getId()).collect(Collectors.toSet());
+            ranked = ranked.stream().filter(item -> relevant.contains(item.chunk().getId())).toList();
+        }
+        if (topicSeeds && !seedIds.isEmpty()) ranked = ranked.stream().map(item -> {
+            Set<String> reasons = new LinkedHashSet<>(item.reasons());
+            if (reasons.remove("DIFF_SYMBOL")) reasons.add("BUSINESS_TOPIC");
+            return new RetrievalCandidate(item.chunk(), item.document(), item.score(), item.estimatedTokens(), Set.copyOf(reasons));
+        }).toList();
+        // Budget the actual excerpt passed downstream, not a full long method that would otherwise
+        // be excluded before read_code ever gets a chance to expand it.
+        String originalQuery = command.query();
+        ranked = ranked.stream().map(candidate -> {
+            String excerpt = preview(candidate.chunk(), originalQuery).text();
+            int tokens = Math.max(1, (excerpt.codePointCount(0, excerpt.length()) + 1) / 2);
+            return new RetrievalCandidate(candidate.chunk(), candidate.document(), candidate.score(), tokens, candidate.reasons());
+        }).toList();
         BudgetedResults budgeted = applyBudget(ranked, topK, tokenBudget);
 
         List<RetrievalTrimmedResponse> trimmedDetails = budgeted.trimmed().stream()
@@ -169,9 +199,70 @@ public class ContextRetrievalService {
                 budgeted.selected().size(),
                 budgeted.trimmed().size(),
                 omittedTrimmedDetails,
-                budgeted.selected().stream().map(this::toHitResponse).toList(),
+                budgeted.selected().stream().map(item -> toHitResponse(item, command.query())).toList(),
                 trimmedDetails
         );
+    }
+
+    private List<KnowledgeChunk> loadRelevantCandidates(Long projectId, String revision, String query) {
+        int limit = properties.getCandidateLimit();
+        Map<Long, KnowledgeChunk> selected = new LinkedHashMap<>();
+        List<String> targets = RetrievalQueryTargets.identifiers(query);
+        List<String> terms = ranker.tokenize(query).stream().distinct().limit(16).toList();
+        List<Long> pathDocuments = terms.isEmpty() ? List.of() : documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                .select(KnowledgeDocument::getId)
+                .eq(KnowledgeDocument::getProjectId, projectId)
+                .eq(KnowledgeDocument::getRevision, revision)
+                .and(!terms.isEmpty(), wrapper -> {
+                    for (String term : terms) wrapper.or().apply("LOCATE({0}, LOWER(file_path)) > 0", term);
+                }).orderByAsc(KnowledgeDocument::getId).last("LIMIT " + limit))
+                .stream().map(KnowledgeDocument::getId).toList();
+        if (!targets.isEmpty()) {
+            List<Long> explicitDocuments = documentMapper.selectList(Wrappers.lambdaQuery(KnowledgeDocument.class)
+                    .select(KnowledgeDocument::getId)
+                    .eq(KnowledgeDocument::getProjectId, projectId).eq(KnowledgeDocument::getRevision, revision)
+                    .and(wrapper -> targets.forEach(target -> wrapper.or()
+                            .apply("LOCATE({0}, LOWER(file_path)) > 0", target.toLowerCase(java.util.Locale.ROOT))))
+                    .orderByAsc(KnowledgeDocument::getId).last("LIMIT " + limit))
+                    .stream().map(KnowledgeDocument::getId).toList();
+            if (!explicitDocuments.isEmpty()) chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                    .eq(KnowledgeChunk::getProjectId, projectId).eq(KnowledgeChunk::getRevision, revision)
+                    .in(KnowledgeChunk::getDocumentId, explicitDocuments)
+                    .orderByAsc(KnowledgeChunk::getId).last("LIMIT " + (limit + 1)))
+                    .forEach(chunk -> selected.putIfAbsent(chunk.getId(), chunk));
+            var exact = Wrappers.lambdaQuery(KnowledgeChunk.class)
+                    .eq(KnowledgeChunk::getProjectId, projectId).eq(KnowledgeChunk::getRevision, revision);
+            exact.and(wrapper -> {
+                for (String target : targets) {
+                    String[] parts = target.toLowerCase(java.util.Locale.ROOT).split("[.#/]");
+                    String leaf = parts[parts.length - 1];
+                    wrapper.or(nested -> {
+                        nested.apply("LOCATE({0}, LOWER(symbol_name)) > 0", leaf);
+                        if (parts.length > 1) nested.apply("LOCATE({0}, LOWER(symbol_name)) > 0", parts[parts.length-2]);
+                    });
+                }
+            });
+            chunkMapper.selectList(exact.orderByAsc(KnowledgeChunk::getId).last("LIMIT " + (limit + 1)))
+                    .forEach(chunk -> selected.putIfAbsent(chunk.getId(), chunk));
+        }
+        if (selected.size() <= limit && (!terms.isEmpty() || !pathDocuments.isEmpty())) {
+            var matching = Wrappers.lambdaQuery(KnowledgeChunk.class)
+                    .eq(KnowledgeChunk::getProjectId, projectId).eq(KnowledgeChunk::getRevision, revision);
+            matching.and(wrapper -> {
+                for (String term : terms) {
+                    wrapper.or().apply("LOCATE({0}, LOWER(symbol_name)) > 0 OR LOCATE({0}, LOWER(content)) > 0", term);
+                }
+                if (!pathDocuments.isEmpty()) wrapper.or().in(KnowledgeChunk::getDocumentId, pathDocuments);
+            });
+            chunkMapper.selectList(matching.orderByAsc(KnowledgeChunk::getId).last("LIMIT " + (limit + 1)))
+                    .forEach(chunk -> selected.putIfAbsent(chunk.getId(), chunk));
+        }
+        // Preserve seed-only queries and the existing not-indexed error for empty projects.
+        if (selected.isEmpty()) chunkMapper.selectList(Wrappers.lambdaQuery(KnowledgeChunk.class)
+                .eq(KnowledgeChunk::getProjectId, projectId).eq(KnowledgeChunk::getRevision, revision)
+                .orderByAsc(KnowledgeChunk::getId).last("LIMIT " + (limit + 1)))
+                .forEach(chunk -> selected.putIfAbsent(chunk.getId(), chunk));
+        return List.copyOf(selected.values());
     }
 
     public String configVersion(RetrievalMode mode) {
@@ -337,9 +428,10 @@ public class ContextRetrievalService {
         return new BudgetedResults(List.copyOf(selected), List.copyOf(trimmed), usedTokens);
     }
 
-    private RetrievalHitResponse toHitResponse(RetrievalCandidate candidate) {
+    private RetrievalHitResponse toHitResponse(RetrievalCandidate candidate, String query) {
         KnowledgeChunk chunk = candidate.chunk();
         KnowledgeDocument document = candidate.document();
+        Preview preview = preview(chunk, query);
         return new RetrievalHitResponse(
                 chunk.getId(),
                 chunk.getDocumentId(),
@@ -347,12 +439,12 @@ public class ContextRetrievalService {
                 document.getSourceKind(),
                 chunk.getChunkType(),
                 chunk.getSymbolName(),
-                chunk.getStartLine(),
-                chunk.getEndLine(),
+                preview.startLine(),
+                preview.endLine(),
                 candidate.score(),
                 candidate.estimatedTokens(),
                 candidate.reasons().stream().sorted().toList(),
-                excerpt(chunk.getContent())
+                preview.text()
         );
     }
 
@@ -367,14 +459,25 @@ public class ContextRetrievalService {
         );
     }
 
-    private String excerpt(String content) {
-        if (!StringUtils.hasText(content)) {
-            return "";
+    private Preview preview(KnowledgeChunk chunk, String query) {
+        String text = chunk.getContent() == null ? "" : chunk.getContent().replace('\u0000', ' ');
+        int offset = 0;
+        var targets = RetrievalQueryTargets.identifiers(query);
+        for (String target : targets) {
+            String[] parts = target.split("[.#/]");
+            var match = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_$])" + java.util.regex.Pattern.quote(parts[parts.length - 1]) + "\\s*\\(")
+                    .matcher(text);
+            if (match.find()) { offset = Math.max(0, text.lastIndexOf('\n', Math.max(0, match.start() - 120)) + 1); break; }
         }
-        String normalized = content.replace('\u0000', ' ').trim();
-        int max = properties.getPreviewCharacters();
-        return normalized.length() <= max ? normalized : normalized.substring(0, max) + "…";
+        int end = Math.min(text.length(), offset + properties.getPreviewCharacters());
+        int startLine = (chunk.getStartLine() == null ? 1 : chunk.getStartLine()) + (int)text.substring(0, offset).chars().filter(c -> c == '\n').count();
+        String preview = text.substring(offset, end);
+        int endLine = startLine + (int)preview.chars().filter(c -> c == '\n').count()
+                - (preview.endsWith("\n") ? 1 : 0);
+        endLine = Math.max(startLine, chunk.getEndLine() == null ? endLine : Math.min(chunk.getEndLine(), endLine));
+        return new Preview(preview + (end < text.length() ? "…" : ""), startLine, endLine);
     }
+    private record Preview(String text, int startLine, int endLine) { }
 
     private record TrimmedCandidate(RetrievalCandidate candidate, String reason) {
     }

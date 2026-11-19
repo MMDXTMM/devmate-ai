@@ -34,6 +34,7 @@ DevMate 要同时服务两类使用者：
 
 - `POST /api/projects/{projectId}/agent-conversations`
 - `GET /api/projects/{projectId}/agent-conversations`
+- `GET /api/projects/{projectId}/agent-conversations/{conversationId}`
 - `GET /api/projects/{projectId}/agent-conversations/{conversationId}/messages`
 
 流式接口为：
@@ -60,7 +61,7 @@ DevMate 要同时服务两类使用者：
 - 会话行锁串行分配 `sequence_no`，数据库唯一键作为最终一致性保护。
 - 模型调用和 SSE 发送不在数据库事务内；只有开始、完成和失败状态使用短事务。
 - 模型 429、网络错误、空回答、超长回答和任务队列拒绝均保存或返回可读状态。
-- 只持久化证据 Chunk ID；历史回读时由 Java 重新校验并回填真实路径、行号和代码片段。
+- 只持久化证据指针（Chunk ID、真实行范围和有限预览长度）；历史回读由Java从原Chunk回填聚焦片段，兼容旧ID数组，不复制源码。
 
 ## 5. 下一闭环：只读 MCP Server
 
@@ -122,3 +123,16 @@ MCP 闭环的验收标准是：受信任客户端能发现四个工具；有权�
 新增消息终态 CANCELLED 及停止请求接口，Reactor 取消订阅并保存已经输出的内容，释放并发运行键，允许后续提问；已入队但未执行的任务也可停止。重放沿用幂等策略。前端关闭与停止语义分开，历史 RUNNING 状态采用有界轮询恢复。重命名/删除先锁会话并拒绝生成中操作。
 
 MCP、长期记忆和通用 AgentScope 工具引擎仍未迁入。本轮是 Ragent 交互模式的 Vue / Spring AI 适配，不宣称同等问答准确率。数据契约、来源及真实验收见 [迁移设计与记录](CHAT_WORKSPACE_MIGRATION.md)。
+
+
+## 2026-11-13：明确目标与证据阅读
+
+明确路径/符号（含“继续解释Signer.sign”）使用本轮目标定向检索，不拼旧问题或报告种子；普通代词追问仍可继承上轮语境。本用户同版本报告可为中文业务词提供源码线索，失效或无证据时如实返回，不能当成全局中英文翻译。
+
+回答中有效`[证据N]`变成定位按钮，非法编号不生成链接；源码语言和来源分类按路径识别，测试标“未执行”。预览可按需读取完整Chunk和后续片段，固定project/revision，历史保持聚焦位置。中文加粗采用安全渲染，仍不解释任意HTML。
+
+会话Hash与只读元数据GET恢复原位置；打开历史不触发生成。现有SSE、幂等、取消、后台完成和模型超时不变。真实Python问答与浏览器引用/续读已核验，见 [论文证据](PROJECT_UNDERSTANDING_THESIS_EVIDENCE.md)。本轮未实现MCP Server或允许模型执行Shell/SQL。
+
+## 2026-11-17：有预算的只读聊天取证
+
+聊天在初始检索后可以通过Spring AI Tool Calling补读完整代码区间与直接关联证据，再流式生成。默认3次工具请求/35秒/24000字符；支持取消、重复请求去重、身份/revision固定，取证失败后保留已有证据并说明限制。新增context事件和历史元数据，旧证据JSON继续可读。新会话Prompt为v4；多轮使用完整成功问答对和有界用户问题主题，排除失败/取消对话。范围及测试见CONTEXT_RESEARCH_IMPROVEMENTS.md。仍未实现MCP Server。

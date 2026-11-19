@@ -88,7 +88,7 @@ public class ProjectBusinessMapService {
         int endpointCount = modules.stream().mapToInt(module -> module.features().size()).sum();
         String summary = endpointCount == 0
                 ? "当前源码中没有识别到 Spring Web 接口入口，可以继续使用文件结构查看非 Web 模块。"
-                : "系统从源码中识别到 " + modules.size() + " 个业务模块和 " + endpointCount
+                : "Java 静态分析从源码中分组得到 " + modules.size() + " 个接口入口分组和 " + endpointCount
                         + " 个接口入口。建议先按业务模块理解功能，再沿接口调用链阅读实现代码。";
         return new ProjectBusinessMapResponse(
                 context.project().getCurrentRevision(),
@@ -428,7 +428,12 @@ public class ProjectBusinessMapService {
                 feature,
                 flow.isBlank() ? "当前只识别到接口入口，尚未解析出后续调用。" : flow,
                 dataOperations,
-                evidence
+                evidence,
+                implementation.stream().flatMap(chunk -> context.referencesBySource().getOrDefault(chunk.getId(), List.of()).stream())
+                        .filter(ref -> "METHOD_CALL".equals(ref.getReferenceKind()) && resolveTarget(context, ref) == null)
+                        .filter(ref -> value(ref.getQualifier()).matches(".*(?:Service|service|Mapper|mapper|Repository|repository).*"))
+                        .map(ref -> value(ref.getQualifier()) + "." + ref.getReferenceName() + "()：调用已出现，后续实现尚未解析")
+                        .distinct().limit(12).toList()
         );
     }
 
@@ -649,6 +654,13 @@ public class ProjectBusinessMapService {
             return null;
         }
         String expectedOwner = Character.toUpperCase(variableName.charAt(0)) + variableName.substring(1);
+        KnowledgeChunk source = context.chunksById().get(reference.getSourceChunkId());
+        KnowledgeChunk ownerClass = source == null ? null : context.classesByName().get(ownerType(source.getSymbolName()));
+        if (ownerClass != null) {
+            var declaration = Pattern.compile("\\b([A-Za-z_$][\\w$.]*)\\s+" + Pattern.quote(variableName) + "\\s*[;=,)]")
+                    .matcher(value(ownerClass.getContent()));
+            if (declaration.find()) expectedOwner = simpleSymbol(declaration.group(1));
+        }
         List<KnowledgeChunk> candidates = context.methodsByCallKey().getOrDefault(
                 methodKey(expectedOwner, reference.getReferenceName(), reference.getArgumentCount()),
                 List.of()
@@ -662,14 +674,14 @@ public class ProjectBusinessMapService {
             return null;
         }
         String owner = simpleSymbol(ownerType(method.getSymbolName()));
-        List<KnowledgeChunk> candidates = context.methodsByCallKey().getOrDefault(
-                methodKey(
-                        owner + "Impl",
-                        methodName(method.getSymbolName()),
-                        parameterCount(method.getMetadataJson())
-                ),
-                List.of()
-        );
+        Set<String> implementations = context.classesByName().values().stream()
+                .filter(type -> Pattern.compile("\\bimplements\\s+[^\\{]*\\b" + Pattern.quote(owner) + "\\b")
+                        .matcher(value(type.getContent()).split("\\{", 2)[0]).find())
+                .map(type -> simpleSymbol(type.getSymbolName())).collect(Collectors.toSet());
+        // Retain conventional resolution for historical indexes without class declaration chunks.
+        if (implementations.isEmpty()) implementations = Set.of(owner + "Impl");
+        List<KnowledgeChunk> candidates = implementations.stream().flatMap(name -> context.methodsByCallKey().getOrDefault(
+                methodKey(name, methodName(method.getSymbolName()), parameterCount(method.getMetadataJson())), List.of()).stream()).toList();
         return candidates.size() == 1 ? candidates.getFirst() : null;
     }
 
@@ -840,7 +852,7 @@ public class ProjectBusinessMapService {
 
     private String layerExplanation(String layer) {
         return switch (layer) {
-            case "CONTROLLER" -> "接口入口：接收请求、校验参数并把业务交给服务层。";
+            case "CONTROLLER" -> "接口入口：展示请求入口的实际代码；是否校验参数需核对具体实现。";
             case "SERVICE" -> "业务实现：组织规则、状态变化以及多个组件之间的协作。";
             case "DATA_ACCESS" -> "数据访问：读取或写入业务数据。";
             default -> "关联实现：被业务链路调用的领域或辅助代码。";

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import WorkspaceProjectGuide from './WorkspaceProjectGuide.vue'
 import { ApiError, projectApi } from '../services/projectApi'
-import type { Project, ReviewWorkflow, SourceDocument, SourceReference } from '../types/project'
+import type { Project, ProjectUnderstandingReport, ReviewWorkflow, SourceDocument, SourceReference } from '../types/project'
 
 const props = defineProps<{
   project: Project
@@ -14,6 +14,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  reportLoaded: [report: ProjectUnderstandingReport | null]
   back: []
   structure: []
   configureModel: []
@@ -149,7 +150,7 @@ watch(
       </div>
     </header>
 
-    <WorkspaceProjectGuide :project="project" @chat="emit('chat', $event)" @configure-model="emit('configureModel')" />
+    <WorkspaceProjectGuide :project="project" @report-loaded="emit('reportLoaded', $event)" @chat="emit('chat', $event)" @configure-model="emit('configureModel')" />
 
     <div v-if="errorMessage" class="notice error" role="alert">
       {{ errorMessage }}
@@ -170,8 +171,8 @@ watch(
         <div class="workspace-primary-actions">
           <button type="button" @click="emit('structure')">
             <span class="action-index" aria-hidden="true">🧩</span>
-            <b>理解项目业务</b>
-            <small>查看业务模块、接口入口与调用链，沿实现代码深入理解</small><i>→</i>
+            <b>查看项目源码</b>
+            <small>{{ supportsJavaReview ? 'Java 静态入口与已解析链路；业务模块见上方导览' : '按文件和文本片段阅读实现，暂不生成语法调用链' }}</small><i>→</i>
           </button>
           <button type="button" @click="emit('chat')">
             <span class="action-index" aria-hidden="true">💬</span>
@@ -207,7 +208,7 @@ watch(
             </li>
           </ol>
           <p v-if="reviewWorkflow?.status === 'FAILED'" role="alert">
-            {{ reviewWorkflow.errorMessage }}<br />
+            上次任务（{{ formatDate(reviewWorkflow.finishedAt || reviewWorkflow.createdAt) }}）失败原因：{{ reviewWorkflow.errorMessage }}。该记录不代表当前连接状态。<br />
             <strong>下一步：</strong>{{ reviewWorkflow.recoveryAction }}
           </p>
         </div>
@@ -220,7 +221,7 @@ watch(
         </summary>
       <section class="understanding-summary" aria-label="解析结果">
         <div><strong>{{ sourceFiles.length }}</strong><span>源码文件</span></div>
-        <div><strong>{{ totalSymbols }}</strong><span>类与方法等结构</span></div>
+        <div><strong>{{ totalSymbols }}</strong><span>结构项与文本片段</span></div>
         <div><strong>{{ packages }}</strong><span>源码包</span></div>
         <div><strong>{{ resolvedReferences }}</strong><span>已解析调用关系</span></div>
       </section>

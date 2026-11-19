@@ -426,3 +426,24 @@ V24 的 report_json.guide.content 兼容追加可空 appearance（projectIcon、
 ### V26：账户中转站请求地址（2026-11-12）
 
 user_model_connection 新增可空 base_url VARCHAR(500)，不修改 V23 或历史数据。新保存配置写入规范化且在服务端信任名单内的地址；旧记录为空时回退提供方默认地址。原有用户/提供方唯一键、单活动连接约束和 Key 加密策略不变；API 不返回加密密文。仅支持 Chat Completions，协议为固定契约，不增加虚假的 Responses 配置列。本地 MySQL 已验证迁移、原账号保存回读及 Key 密文未变。
+
+
+### V27：多轮选择与源码生成任务（2026-11-13）
+
+- generation_spec_version新增stage（旧数据默认LEGACY）与ready_for_generation，保存分阶段方案及可确认状态。问题/答案仍用现有不可变版本JSON保留完整历史。
+- generation_session新增last_error；状态支持CLARIFYING→THINKING→CLARIFYING→CONFIRMED，模型请求使用短状态更新与短版本提交，外部调用不处于数据库事务。
+- generation_run以version_id唯一约束保证一份确认方案只保留一个任务；attempt_key区分显式失败重试。保存状态、错误、文件清单、运行说明和注意事项，源码/ZIP存workspace/generated/{sessionId}/{runId}/{attemptKey}。文件内容和模型Key不进入这张表。
+- 任务所有读写、文件预览与下载均通过父会话校验账户权限。异步工作线程使用提交时捕获的受信任模型快照，不依赖线程中的用户上下文。状态完成/失败必须匹配RUNNING及attempt_key，旧任务不能覆盖重试结果。
+
+
+### V28～V31：生成后的版本与任务（2026-11-14）
+
+- V28 `generation_revision`保存原版/修复/修改的不可变成功快照、父版本、状态、清单和摘要；root_run_id唯一，(run_id,attempt_key)唯一。正文与ZIP仍在独立workspace/generated目录。`generation_verification`绑定准确revision，保存修复预算、结果版本、退出码/输出JSON和唯一running_key。
+- V29 `generation_change_plan`保存需求、计划、确认后的目标版本和状态；用户确认前不生成源码。`generation_selection`每run一个选用指针，恢复旧版只改指针。revision.running_key约束并发修改。
+- V30 `generation_insight`按版本保存GUIDE/ERROR_HELP，包含attempt_key幂等、任务状态、结果JSON及running_key；报错在写入与调用模型前做常见凭据脱敏。模型密钥不进入记录。
+- V31 `generation_task`跟踪kind/reference/attempt、队列/运行/结束、真实阶段、模型次数及Token；缺失用量标记usage_complete=0。任务取消和成功发布通过同task行FOR UPDATE及短数据库事务串行化，外部调用/文件写入/容器不在事务内。
+- 本机MySQL已从V27依次应用V28～V31，既有数据保留；未改写已执行迁移。所有新表权限由父generation_session验证，API的BIGINT以字符串传递。
+
+### 2026-11-17：聊天取证过程的兼容JSON
+
+`conversation_message.evidence_json` 新记录使用`{evidence:[证据指针],context:{actions,warnings,memoryUsed}}`，仅保存引用、真实行范围、有限读取长度及脱敏工具结果摘要；不保存参数/完整工具输出。读取兼容旧字符串ID数组和旧指针数组。最多20段证据，单指针回填最多8000字符。没有新增表、列或迁移。旧历史和账号数据保留。

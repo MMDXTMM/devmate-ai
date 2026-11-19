@@ -19,9 +19,15 @@ class SpringAiProjectUnderstandingModelTest {
 
     @Test
     void advertisesExplicitModuleIconRecordsRatherThanDynamicMapKeysToTheModel() {
-        String schema = new org.springframework.ai.converter.BeanOutputConverter<>(
-                com.devmate.knowledge.dto.ProjectGuide.Content.class).getJsonSchema();
+        String schema = new ProjectGuideOutputConverter().getJsonSchema();
         assertThat(schema).contains("moduleId", "projectIcon").doesNotContain("moduleIcons");
+    }
+
+    @Test
+    void allowsTerminalBranchesInTheActualModelJsonSchema() throws Exception {
+        String schema = new ProjectGuideOutputConverter().getJsonSchema();
+        var tree = new com.fasterxml.jackson.databind.ObjectMapper().readTree(schema);
+        assertThat(tree.findValue("toStep").toString()).contains("null");
     }
 
     private ProjectUnderstandingProperties legacyGuideProperties() {

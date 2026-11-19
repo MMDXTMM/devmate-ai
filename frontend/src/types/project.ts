@@ -121,6 +121,8 @@ export interface SourceSymbolDetail {
   code: string
   truncated: boolean
   originalCharacters: number
+  codeOffset?: number
+  nextOffset?: number | null
 }
 
 export type SourceReferenceKind =
@@ -220,6 +222,7 @@ export interface GuideFlow {
   id: string; name: string; goal: string; actors: string[]; trigger: string; moduleIds: string[]
   steps: { action: string; input: string; result: string; moduleIds: string[]; conclusionStatus: GuideConclusion; evidenceIds: string[] }[]
   rules: GuideClaim[]; outcomes: GuideClaim[]; unknowns: string[]
+  transitions?: { fromStep: number; toStep?: number | null; condition: string; result: string; conclusionStatus: GuideConclusion; evidenceIds: string[] }[] | null
 }
 export interface GuideHighlight {
   title: string; moduleIds: string[]; problem: string; solution: string; learningValue: string
@@ -336,6 +339,7 @@ export interface BusinessCodeEvidence {
 
 export interface BusinessFeatureDetail {
   feature: BusinessFeature
+  unresolvedCalls?: string[]
   flowSummary: string
   dataOperations: string[]
   implementation: BusinessCodeEvidence[]

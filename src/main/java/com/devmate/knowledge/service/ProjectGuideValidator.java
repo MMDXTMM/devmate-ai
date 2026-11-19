@@ -15,6 +15,7 @@ public final class ProjectGuideValidator {
         text(p.name(), 100, "project.name"); text(p.type(), 100, "project.type"); text(p.purpose(), 300, "project.purpose"); text(p.audience(), 200, "project.audience");
         text(p.input(), 250, "project.input"); text(p.output(), 250, "project.output"); text(p.scenario(), 600, "project.scenario");
         fact(p.conclusionStatus(), p.evidenceIds(), allowed, "project"); state(p.implementationStatus(), "project");
+        checkedState(p.conclusionStatus(), p.implementationStatus(), "project");
         list(content.modules(), 20, "modules"); list(content.flows(), 3, "flows"); list(content.glossary(), 20, "glossary"); strings(content.openQuestions(), 12, 400, "openQuestions");
         if (content.modules().isEmpty()) fail("modules", "至少需要一个模块");
         Set<String> moduleIds = new HashSet<>();
@@ -25,7 +26,7 @@ public final class ProjectGuideValidator {
             String path = "modules[" + i + "]";
             text(m.name(), 100, path + ".name"); text(m.responsibility(), 400, path + ".responsibility"); strings(m.capabilities(), 8, 200, path + ".capabilities");
             text(m.input(), 250, path + ".input"); text(m.output(), 250, path + ".output"); refs(m.relatedModuleIds(), moduleIds, path + ".relatedModuleIds");
-            fact(m.conclusionStatus(), m.evidenceIds(), allowed, path); state(m.implementationStatus(), path);
+            fact(m.conclusionStatus(), m.evidenceIds(), allowed, path); state(m.implementationStatus(), path); checkedState(m.conclusionStatus(), m.implementationStatus(), path);
         }
         for (int i = 0; i < content.flows().size(); i++) {
             var f = content.flows().get(i);
@@ -40,6 +41,19 @@ public final class ProjectGuideValidator {
                 String stepPath = path + ".steps[" + j + "]";
                 text(step.action(), 300, stepPath + ".action"); text(step.input(), 250, stepPath + ".input"); text(step.result(), 300, stepPath + ".result");
                 refs(step.moduleIds(), moduleIds, stepPath + ".moduleIds"); fact(step.conclusionStatus(), step.evidenceIds(), allowed, stepPath);
+            }
+            if (f.transitions() != null) {
+                list(f.transitions(), 20, path + ".transitions");
+                for (var transition : f.transitions()) {
+                    if (transition.fromStep() < 1 || transition.fromStep() > f.steps().size()
+                            || transition.toStep() != null && (transition.toStep() < 1 || transition.toStep() > f.steps().size()))
+                        fail(path + ".transitions", "流转引用了不存在的步骤");
+                    text(transition.condition(), 200, path + ".transitions.condition");
+                    text(transition.result(), 300, path + ".transitions.result");
+                    fact(transition.conclusionStatus(), transition.evidenceIds(), allowed, path + ".transitions");
+                    if (transition.conclusionStatus() == ConclusionStatus.UNKNOWN || transition.evidenceIds().isEmpty())
+                        fail(path + ".transitions", "条件流转必须有真实依据，未知分支放入 unknowns");
+                }
             }
             claims(f.rules(), allowed, path + ".rules");
             claims(f.outcomes(), allowed, path + ".outcomes");
@@ -86,6 +100,10 @@ public final class ProjectGuideValidator {
         if (status == null) fail(path + ".conclusionStatus", "缺少结论状态");
         refs(ids, allowed, path + ".evidenceIds");
         if (status != ConclusionStatus.UNKNOWN && ids.isEmpty()) fail(path + ".evidenceIds", "确定或推断结论需要真实证据");
+    }
+    private static void checkedState(ConclusionStatus conclusion, ImplementationStatus implementation, String path) {
+        if (conclusion == ConclusionStatus.UNKNOWN && (implementation == ImplementationStatus.PARTIAL || implementation == ImplementationStatus.IMPLEMENTED))
+            fail(path + ".implementationStatus", "未核实不能判为已实现或部分实现");
     }
     private static void state(ImplementationStatus state, String path) {
         if (state == null) fail(path + ".implementationStatus", "缺少实现状态");

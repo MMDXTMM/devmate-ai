@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "devmate.retrieval")
 public class RetrievalProperties {
 
-    private String configVersion = "lexical-graph-v1";
+    private String configVersion = "lexical-graph-v3";
     private int candidateLimit = 1000;
     private int referenceLimit = 5000;
     private int defaultTopK = 8;

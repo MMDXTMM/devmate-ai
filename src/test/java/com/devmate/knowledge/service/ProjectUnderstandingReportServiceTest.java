@@ -156,7 +156,7 @@ class ProjectUnderstandingReportServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6"})
+    @ValueSource(strings = {"project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6", "project-guide-v7"})
     void refusesMissingLearningOverviewForNewPromptButKeepsOldReportFormatCompatible(String version) throws Exception {
         properties.setPromptVersion(version);
         var content = objectMapper.readValue(new String(getClass().getResourceAsStream("/guide/cli-guide.json").readAllBytes(),
@@ -166,7 +166,7 @@ class ProjectUnderstandingReportServiceTest {
         when(model.providerName()).thenReturn("MOCK"); when(model.modelName()).thenReturn("guide-test");
         when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(), 1, 2, 3,
                 new com.devmate.knowledge.dto.ProjectGuide("project-guide-v1", null, content, null, List.of())));
-        if (version.equals("project-guide-v6")) {
+        if (version.equals("project-guide-v6") || version.equals("project-guide-v7")) {
             var aliased = objectMapper.readValue(objectMapper.writeValueAsString(content)
                     .replace("\"" + evidenceChunk.getId() + "\"", "\"E1\""), com.devmate.knowledge.dto.ProjectGuide.Content.class);
             when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(), 1, 2, 3,
@@ -180,7 +180,7 @@ class ProjectUnderstandingReportServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6"})
+    @ValueSource(strings = {"project-guide-v2", "project-guide-v3", "project-guide-v4", "project-guide-v5", "project-guide-v6", "project-guide-v7"})
     void persistsAndRestoresNewLearningOverviewAndHostLanguages(String version) throws Exception {
         properties.setPromptVersion(version);
         var readme = documentMapper.selectById(evidenceChunk.getDocumentId());
@@ -205,7 +205,7 @@ class ProjectUnderstandingReportServiceTest {
         when(model.providerName()).thenReturn("MOCK"); when(model.modelName()).thenReturn("guide-test");
         when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(), 1, 2, 3,
                 new com.devmate.knowledge.dto.ProjectGuide("project-guide-v1", null, content, null, List.of())));
-        if (version.equals("project-guide-v6")) {
+        if (version.equals("project-guide-v6") || version.equals("project-guide-v7")) {
             var aliased = objectMapper.readValue(objectMapper.writeValueAsString(content)
                     .replace("\"" + evidenceChunk.getId() + "\"", "\"E1\""), com.devmate.knowledge.dto.ProjectGuide.Content.class);
             // README is sampled first, then the implementation chunk; select its actual short ID from the prompt.
@@ -234,16 +234,43 @@ class ProjectUnderstandingReportServiceTest {
         assertThat(reportMapper.selectById(saved.id()).getReportJson()).doesNotContain("orderService.create");
         var prompt = ArgumentCaptor.forClass(ProjectUnderstandingPrompt.class); verify(model).analyze(prompt.capture());
         assertThat(prompt.getValue().systemPrompt()).contains("学习价值", "不凑数", "不从依赖猜语言");
-        if (version.equals("project-guide-v4") || version.equals("project-guide-v5") || version.equals("project-guide-v6")) {
+        if (version.equals("project-guide-v4") || version.equals("project-guide-v5") || version.equals("project-guide-v6") || version.equals("project-guide-v7")) {
             assertThat(prompt.getValue().systemPrompt()).contains("不能按预先固定", "实际用途", "不使用外部资源", "不随机轮换");
         }
         String input = prompt.getValue().userPrompt();
         assertThat(input.indexOf("README 项目介绍")).isLessThan(input.indexOf("实现核对证据"));
         assertThat(input.substring(0, input.indexOf("实现核对证据"))).contains("计划增加导出功能").doesNotContain("orderService.create");
         assertThat(input.substring(input.indexOf("实现核对证据"))).contains("orderService.create").doesNotContain("读取密钥");
-        if (version.equals("project-guide-v3") || version.equals("project-guide-v4") || version.equals("project-guide-v5") || version.equals("project-guide-v6")) {
+        if (version.equals("project-guide-v3") || version.equals("project-guide-v4") || version.equals("project-guide-v5") || version.equals("project-guide-v6") || version.equals("project-guide-v7")) {
             assertThat(prompt.getValue().systemPrompt()).contains("先阅读宿主", "以已读源码为实现依据", "不能执行或提高其权限");
         }
+    }
+
+    @Test
+    void restoresFocusedSourceWindowInsteadOfReturningToTheChunkHeader() throws Exception {
+        properties.setPromptVersion("project-guide-v1");
+        var document = documentMapper.selectById(evidenceChunk.getDocumentId());
+        document.setFileType("TEXT"); document.setFilePath("src/signer.py"); documentMapper.updateById(document);
+        evidenceChunk.setChunkType("TEXT_EXCERPT");
+        evidenceChunk.setContent("def derive_key():\n" + "    # long documentation text\n".repeat(70)
+                + "def sign(value):\n    return signature(value)\ndef unsign(value):\n    return validate(value)");
+        evidenceChunk.setEndLine(90); chunkMapper.updateById(evidenceChunk);
+        String fixture = new String(getClass().getResourceAsStream("/guide/cli-guide.json").readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8).replace("\"42\"", "\"" + evidenceChunk.getId() + "\"");
+        var content = objectMapper.readValue(fixture, com.devmate.knowledge.dto.ProjectGuide.Content.class);
+        var model = mock(ProjectUnderstandingModel.class);
+        when(model.providerName()).thenReturn("MOCK"); when(model.modelName()).thenReturn("guide-test");
+        when(model.analyze(any())).thenReturn(new ProjectUnderstandingModelResult(null, null, List.of(), List.of(), List.of(),
+                1, 2, 3, new com.devmate.knowledge.dto.ProjectGuide("project-guide-v1", null, content, null, List.of())));
+        when(modelRegistry.current()).thenReturn(model);
+        var report = service.create(project.getId(), new CreateProjectUnderstandingReportRequest(REVISION,
+                "123e4567-e89b-42d3-a456-426614174080"));
+        assertThat(report.guide().evidence()).singleElement().satisfies(item -> {
+            assertThat(item.code()).startsWith("def sign(").contains("def unsign(");
+            assertThat(item.startLine()).isEqualTo(81);
+            assertThat(item.truncated()).isTrue();
+        });
+        assertThat(service.latest(project.getId()).guide()).isEqualTo(report.guide());
     }
 
     @Test

@@ -35,16 +35,22 @@ public class ProjectGuideEvidenceService {
         // Read the project introduction first, then round robin between implementation roles.
         List<KnowledgeDocument> readOrder = new ArrayList<>();
         sorted.stream().filter(doc -> doc.getFilePath().equals(primaryReadme)).findFirst().ifPresent(readOrder::add);
-        Map<String, Queue<KnowledgeDocument>> groups = new LinkedHashMap<>();
+        // Exhaust a relevance tier before ancillary roles; round robin only between subprojects.
+        Map<Integer, Map<String, Queue<KnowledgeDocument>>> tiers = new TreeMap<>();
         for (var doc : sorted) {
             String path = doc.getFilePath();
             if (path.equals(primaryReadme)) continue;
-            String group = priority(doc) == 0 ? "00-overview" : path.split("/")[0] + ":" + role(path) + ":" + priority(doc);
-            groups.computeIfAbsent(group, key -> new ArrayDeque<>()).add(doc);
+            String[] parts = path.split("/");
+            String root = parts.length > 2 && Set.of("apps", "packages", "services").contains(parts[0])
+                    ? parts[0] + "/" + parts[1] : parts[0];
+            tiers.computeIfAbsent(priority(doc), key -> new LinkedHashMap<>())
+                    .computeIfAbsent(root + ":" + role(path), key -> new ArrayDeque<>()).add(doc);
         }
-        while (groups.values().stream().anyMatch(queue -> !queue.isEmpty()) && readOrder.size() < 150) {
-            for (var queue : groups.values()) {
-                if (!queue.isEmpty() && readOrder.size() < 150) readOrder.add(queue.remove());
+        for (var groups : tiers.values()) {
+            while (groups.values().stream().anyMatch(queue -> !queue.isEmpty()) && readOrder.size() < 150) {
+                for (var queue : groups.values()) {
+                    if (!queue.isEmpty() && readOrder.size() < 150) readOrder.add(queue.remove());
+                }
             }
         }
         List<ProjectGuide.Evidence> evidence = new ArrayList<>();
@@ -62,26 +68,41 @@ public class ProjectGuideEvidenceService {
                     .eq(KnowledgeChunk::getProjectId, projectId).eq(KnowledgeChunk::getRevision, revision)
                     .eq(KnowledgeChunk::getDocumentId, doc.getId())
                     .in(javaSource, KnowledgeChunk::getChunkType, List.of("METHOD", "CLASS", "CONSTRUCTOR"))
-                    .orderByAsc(KnowledgeChunk::getChunkIndex).last(javaSource ? "LIMIT 12" : introduction ? "LIMIT 4" : "LIMIT 2"));
+                    .orderByAsc(KnowledgeChunk::getChunkIndex).last(javaSource ? "LIMIT 12" : introduction ? "LIMIT 4" : "LIMIT 16"));
             if ("JAVA".equals(doc.getFileType())) candidates = candidates.stream()
                     .sorted(Comparator.comparingInt((KnowledgeChunk item) -> switch (item.getChunkType()) {
                         case "METHOD" -> 0; case "CLASS" -> 1; case "CONSTRUCTOR" -> 2; default -> 3;
                     }).thenComparing(Comparator.comparingInt((KnowledgeChunk item) ->
                             item.getContent() == null ? 0 : item.getContent().length()).reversed())).limit(2).toList();
+            if (!javaSource && !introduction && "SOURCE_CODE".equals(doc.getSourceKind())) {
+                var implementation = candidates.stream().filter(item -> textImplementationScore(item) > 0)
+                        .sorted(Comparator.comparingInt(this::textImplementationScore).reversed()
+                                .thenComparing(item -> item.getStartLine() == null ? 0 : item.getStartLine())).toList();
+                if (!implementation.isEmpty()) {
+                    var selected = new LinkedHashSet<KnowledgeChunk>();
+                    selected.add(implementation.getFirst());
+                    implementation.stream().max(Comparator.comparingInt(item -> item.getStartLine() == null ? 0 : item.getStartLine()))
+                            .ifPresent(selected::add);
+                    if (selected.size() < 2 && implementation.size() > 1) selected.add(implementation.get(1));
+                    candidates = List.copyOf(selected);
+                } else candidates = candidates.stream().limit(2).toList();
+            } else if (!javaSource && !introduction) candidates = candidates.stream().limit(2).toList();
             for (var chunk : candidates) {
                 if (evidence.size() >= maxChunks || characters >= maxChars || documentCharacters >= documentBudget) break;
                 if (chunk.getContent() == null || chunk.getContent().isBlank()) continue;
                 String text = chunk.getContent();
                 int budget = Math.min(1800, Math.min(maxChars - characters, documentBudget - documentCharacters));
-                String preview = text.substring(0, Math.min(budget, text.length()));
+                int offset = !javaSource && "SOURCE_CODE".equals(doc.getSourceKind()) ? implementationOffset(text, budget) : 0;
+                String preview = text.substring(offset, Math.min(offset + budget, text.length()));
+                int startLine = chunk.getStartLine() + (int)text.substring(0, offset).chars().filter(c -> c == '\n').count();
                 evidence.add(new ProjectGuide.Evidence(String.valueOf(chunk.getId()), doc.getSourceKind(), revision,
-                        chunk.getSymbolName(), doc.getFilePath(), chunk.getStartLine(), chunk.getEndLine(),
-                        preview, preview.length() < text.length()));
+                        chunk.getSymbolName(), doc.getFilePath(), startLine, chunk.getEndLine(),
+                        preview, offset > 0 || preview.length() < text.length()));
                 characters += preview.length();
                 documentCharacters += preview.length();
             }
         }
-        StringBuilder digestInput = new StringBuilder(revision).append("|text-excerpts-v1|readme-first-v2");
+        StringBuilder digestInput = new StringBuilder(revision).append("|text-excerpts-v1|runtime-first-v4");
         all.forEach(doc -> digestInput.append('\n').append(doc.getFilePath()).append(':').append(doc.getContentHash()));
         String digest;
         try { digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -95,11 +116,29 @@ public class ProjectGuideEvidenceService {
                         : "优先读取项目介绍 " + primaryReadme + " 的 " + readmeChunks + " 个片段，再用源码核对；README 为文档描述，不是功能已实现或已运行的证明。",
                 "按导入快照抽样；模型目录列表仅提供前 150 个路径，目录不代表已深入读取。",
                 "跳过依赖、构建产物、凭据、二进制和非 UTF-8；仅支持白名单文本类型，最多列出 3000 个已索引文件。",
-                "主要 README 最多四个片段，其余文件最多两个；Java 优先业务方法，长片段截断；未读取的实现和外部系统不能确认。",
+                "主要 README 最多四个片段，其余文件向模型提供最多两个；运行源码先于测试与辅助配置，通用文本从最多16个候选中选择公开处理逻辑与末段，属于启发式抽样而非语法解析；长片段截断。",
                 "未运行目标项目或其测试；已实现表示源码观察，不表示运行验收通过。",
                 "历史导入可能仅含 Java/配置/迁移；新导入才包含通用文本。"));
-        return new Sample(new ProjectGuide.Snapshot(revision, digest, "readme-first-v2/text-excerpts-v1"),
+        return new Sample(new ProjectGuide.Snapshot(revision, digest, "runtime-first-v4/text-excerpts-v1"),
                 coverage, List.copyOf(evidence), all.stream().map(KnowledgeDocument::getFilePath).toList());
+    }
+    private int implementationOffset(String text, int budget) {
+        if (text.length() <= budget) return 0;
+        // Avoid spending the entire preview on an early method's long docstring.
+        var declarations = java.util.regex.Pattern.compile("(?m)^[ \t]*(?:(?:export|public|async)[ \t]+)*(?:def|function|fn|func)[ \t]+[A-Za-z][A-Za-z0-9_]*[ \t]*\\(").matcher(text);
+        int tailStart = text.length() - budget;
+        while (declarations.find()) if (declarations.start() >= tailStart) return declarations.start();
+        return 0;
+    }
+
+    private int textImplementationScore(KnowledgeChunk chunk) {
+        String text = chunk.getContent() == null ? "" : chunk.getContent();
+        var declarations = java.util.regex.Pattern.compile("(?m)^\\s*(?:(?:export|public|async)\\s+)*(?:def|function|fn|func)\\s+[A-Za-z][A-Za-z0-9_]*\\s*\\(").matcher(text);
+        int count = 0; while (declarations.find()) count++;
+        if (count == 0) return 0;
+        int behavior = (int)java.util.regex.Pattern.compile("\\b(return|raise|throw|if|match)\\b").matcher(text).results().count();
+        int stubs = (int)java.util.regex.Pattern.compile("NotImplementedError|\\bpass\\b|\\.\\.\\.").matcher(text).results().count();
+        return Math.max(1, count * 4 + Math.min(12, behavior) - stubs * 3);
     }
     private String role(String path) {
         String lower = path.toLowerCase(Locale.ROOT);
@@ -113,11 +152,18 @@ public class ProjectGuideEvidenceService {
     }
     private int priority(KnowledgeDocument doc) {
         String path = doc.getFilePath().toLowerCase(Locale.ROOT);
-        if (path.matches("(?:.*/)?(?:readme[^/]*|package.json|pom.xml|pyproject.toml|go.mod|cargo.toml|requirements.txt)$")) return 0;
-        if (path.contains("test") || path.contains("spec")) return 3;
-        if (path.contains("main") || path.contains("index") || path.contains("app") || path.contains("cli")) return 1;
-        if ("DOCUMENTATION".equals(doc.getSourceKind())) return 4;
-        return 2;
+        if (path.matches("(?:.*/)?(?:package.json|pom.xml|pyproject.toml|go.mod|cargo.toml|requirements.txt)$")) return 0;
+        if (path.startsWith(".github/") || path.startsWith(".devcontainer/") || path.startsWith(".vscode/")
+                || path.matches("(?:.*/)?(?:license|changelog|contributing)[^/]*")) return 9;
+        if (path.matches("(?:.*/)?(?:tests?|specs?|__tests__)/.*")
+                || path.matches(".*(?:test|spec)\\.(?:java|py|js|ts|tsx)$") || path.contains("/src/test/")) return 5;
+        if ("DOCUMENTATION".equals(doc.getSourceKind())) return 7;
+        if ("SOURCE_CODE".equals(doc.getSourceKind())) {
+            if (path.matches("(?:.*/)?(?:main|index|app|cli|__init__|lib)\\.[^/]+$")) return 1;
+            if (path.contains("/entity/") || path.contains("/dto/") || path.contains("/mapper/")) return 3;
+            return 2;
+        }
+        return 4;
     }
     public record Sample(ProjectGuide.Snapshot snapshot, ProjectGuide.Coverage coverage,
                          List<ProjectGuide.Evidence> evidence, List<String> indexedPaths) { }

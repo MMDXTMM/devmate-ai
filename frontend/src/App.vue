@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
+import { readReadingLocation, writeReadingLocation, subscribeReadingLocation } from './utils/readingLocation'
 import { projectEmoji } from './utils/guideAppearance'
 import AuthView from './components/AuthView.vue'
 import GenerationWorkspace from './components/GenerationWorkspace.vue'
@@ -20,7 +21,7 @@ import { ApiError, projectApi } from './services/projectApi'
 import { runProjectUnderstanding } from './services/projectUnderstandingWorkflow'
 import { clearAuthSession, getAuthSession, setAuthSession, subscribeAuthSession } from './services/authSession'
 import type { AuthSession } from './types/auth'
-import type { PageData, Project, ProjectForm, ProjectStatus, ReviewWorkflow } from './types/project'
+import type { PageData, Project, ProjectUnderstandingReport, ProjectForm, ProjectStatus, ReviewWorkflow } from './types/project'
 
 const pageData = ref<PageData<Project>>({ page: 1, size: 10, total: 0, pages: 0, items: [] })
 const query = reactive<{ name: string; status: ProjectStatus | '' }>({ name: '', status: '' })
@@ -35,6 +36,7 @@ const importingId = ref<string | null>(null)
 const workflowId = ref<string | null>(null)
 const selectedProject = ref<Project | null>(null)
 const retrievalInitialQuery = ref('')
+const workspaceReport = ref<ProjectUnderstandingReport | null>(null)
 const sourceProject = ref<Project | null>(null)
 const diffProject = ref<Project | null>(null)
 const analysisProject = ref<Project | null>(null)
@@ -53,6 +55,10 @@ const reviewingId = ref<string | null>(null)
 const reviewWorkflow = ref<ReviewWorkflow | undefined>()
 const authSession = ref<AuthSession | null>(getAuthSession())
 const workspaceArea = ref<'projects' | 'generation'>('projects')
+const readingLocation = ref(readReadingLocation())
+let routeEpoch = 0
+let pageEpoch = 0
+let stopReading: (() => void) | undefined
 let unsubscribeAuth: (() => void) | undefined
 let reviewStatusTimer: ReturnType<typeof window.setInterval> | undefined
 
@@ -85,14 +91,17 @@ function showSuccess(message: string) {
 }
 
 async function loadProjects(page = 1) {
+  const ticket = ++pageEpoch
+  const accountId = authSession.value?.user.id
   loading.value = true
   try {
-    pageData.value = await projectApi.list({
+    const result = await projectApi.list({
       page,
       size: pageData.value.size,
       name: query.name,
       status: query.status,
     })
+    if (ticket === pageEpoch && accountId === authSession.value?.user.id) pageData.value = result
   } catch (error) {
     showError(error)
   } finally {
@@ -258,6 +267,7 @@ async function checkModel(purpose: string, accountId?: string) {
 async function openConversation(project: Project, initialQuestion = '') {
   // Reading saved conversations does not require a configured or currently reachable model.
   if (selectedProject.value?.id !== project.id) return
+  writeReadingLocation({ projectId: project.id, revision: project.currentRevision, chat: '1' })
   conversationInitialQuestion.value = initialQuestion
   conversationProject.value = project
 }
@@ -267,6 +277,7 @@ async function chatFromSource(question: string) {
   if (!project || selectedProject.value?.id !== project.id) return
   await openConversation(project, question)
   if (sourceProject.value?.id === project.id) sourceProject.value = null
+    workspaceReport.value = null
 }
 
 async function loadLatestReviewWorkflow(project: Project) {
@@ -322,6 +333,7 @@ async function fetchLatestReviewWorkflow(project: Project, tolerateMissing: bool
 function openWorkspace(project: Project) {
   workspaceArea.value = 'projects'
   selectedProject.value = project
+  writeReadingLocation({ projectId: project.id, revision: project.currentRevision, item: undefined, chat: undefined, conversation: undefined })
   void loadLatestReviewWorkflow(project)
 }
 
@@ -335,10 +347,13 @@ function openProjectArea() {
   stopReviewStatusPolling()
   workspaceArea.value = 'projects'
   selectedProject.value = null
+  conversationProject.value = null
+  writeReadingLocation({ projectId: undefined })
   if (returningFromProject) void loadProjects(pageData.value.page)
 }
 
 function openGenerationArea() {
+  writeReadingLocation({ projectId: undefined })
   stopReviewStatusPolling()
   workspaceArea.value = 'generation'
   selectedProject.value = null
@@ -369,9 +384,15 @@ function handleAuthenticated(session: AuthSession) {
   setAuthSession(session)
   authSession.value = session
   void loadProjects(1)
+  void restoreReadingLocation()
 }
 
 function logout() {
+  routeEpoch++
+  conversationProject.value = null
+  sourceProject.value = null
+  workspaceReport.value = null
+  writeReadingLocation({ projectId: undefined, name: undefined, status: undefined }, true)
   modelSetupOpen.value = false
   modelConnectionsOpen.value = false
   stopReviewStatusPolling()
@@ -382,13 +403,54 @@ function logout() {
   workspaceArea.value = 'projects'
 }
 
+async function restoreReadingLocation() {
+  readingLocation.value = readReadingLocation()
+  const route = readingLocation.value
+  const epoch = ++routeEpoch
+  if (!authSession.value) return
+  if (!route.projectId) { selectedProject.value = null; conversationProject.value = null; return }
+  const accountId = authSession.value.user.id
+  try {
+    const project = selectedProject.value?.id === route.projectId ? selectedProject.value : await projectApi.get(route.projectId)
+    if (epoch !== routeEpoch || authSession.value?.user.id !== accountId) return
+    errorMessage.value = ''
+    selectedProject.value = project
+    workspaceArea.value = 'projects'
+    if (route.revision && route.revision !== project.currentRevision) {
+      showError(new ApiError('链接对应旧源码版本，已打开当前项目；请重新选择模块，历史会话仍固定各自版本。'))
+      writeReadingLocation({ revision: project.currentRevision, item: undefined }, true)
+    }
+    if (route.chat || route.conversation) conversationProject.value = project
+    else conversationProject.value = null
+    void loadLatestReviewWorkflow(project)
+  } catch (error) {
+    if (epoch === routeEpoch) { selectedProject.value = null; conversationProject.value = null; showError(error) }
+  }
+}
+function closeConversation() { conversationProject.value = null; writeReadingLocation({ chat: undefined, conversation: undefined }) }
+watch(() => [query.name, query.status], () => writeReadingLocation({ name: query.name || undefined, status: query.status || undefined }, true))
 onMounted(() => {
+  stopReading = subscribeReadingLocation(() => { void restoreReadingLocation() })
+  const route = readReadingLocation()
+  query.name = route.name ?? ''
+  if (['CREATED', 'INDEXING', 'READY', 'FAILED'].includes(route.status ?? '')) query.status = route.status as ProjectStatus
   unsubscribeAuth = subscribeAuthSession(() => {
-    authSession.value = getAuthSession()
+    const next = getAuthSession()
+    if (next?.user.id !== authSession.value?.user.id) {
+      routeEpoch++; pageEpoch++
+      selectedProject.value = null; conversationProject.value = null; sourceProject.value = null
+      workspaceReport.value = null
+      diffProject.value = null; analysisProject.value = null; retrievalProject.value = null; aiReviewProject.value = null; evaluationProject.value = null
+      pageData.value = { page: 1, size: 10, total: 0, pages: 0, items: [] }
+      stopReviewStatusPolling()
+    }
+    authSession.value = next
   })
-  if (authSession.value) void loadProjects()
+  if (authSession.value) { void loadProjects(); void restoreReadingLocation() }
 })
 onUnmounted(() => {
+  routeEpoch++
+  stopReading?.()
   stopReviewStatusPolling()
   unsubscribeAuth?.()
 })
@@ -406,10 +468,7 @@ onUnmounted(() => {
         <button class="nav-item" :class="{ active: workspaceArea === 'projects' && !selectedProject }" type="button" @click="openProjectArea"><span aria-hidden="true">🗂️</span>我的项目</button>
         <button v-if="selectedProject" class="nav-item active" type="button"><span aria-hidden="true">🧩</span>理解工作台</button>
         <button class="nav-item" type="button" @click="modelConnectionsOpen = true"><span aria-hidden="true">🔌</span>大模型连接</button>
-        <details class="experimental-nav"><summary>实验功能</summary>
-          <p>项目生成目前仅完成需求澄清，暂不生成工程。</p>
-          <button class="nav-item" type="button" @click="openGenerationArea">生成项目（需求草案）</button>
-        </details>
+        <button class="nav-item" :class="{ active: workspaceArea === 'generation' }" type="button" @click="openGenerationArea"><span aria-hidden="true">✨</span>生成新项目</button>
       </nav>
       <div class="sidebar-note"><span aria-hidden="true">🌷</span><b>陌生的代码，也能慢慢读懂</b><p>先看项目做什么，再探索它是怎么做到的。</p></div>
       <div class="sidebar-footer">
@@ -423,7 +482,7 @@ onUnmounted(() => {
       <div v-if="errorMessage" class="notice error" role="alert">{{ errorMessage }}</div>
       <div v-if="successMessage" class="notice success" role="status">{{ successMessage }}</div>
       <div v-if="workflowId" class="notice" role="status">{{ importStage }} 大型仓库可能需要更长时间；请勿重复提交。</div>
-      <GenerationWorkspace v-if="workspaceArea === 'generation'" />
+      <GenerationWorkspace v-if="workspaceArea === 'generation'" :key="authSession.user.id" />
       <ProjectUnderstandingWorkspace
         v-else-if="selectedProject"
         :project="selectedProject"
@@ -434,6 +493,7 @@ onUnmounted(() => {
         :review-workflow="reviewWorkflow?.projectId === selectedProject.id ? reviewWorkflow : undefined"
         @back="openProjectArea()"
         @configure-model="modelConnectionsOpen = true"
+        @report-loaded="workspaceReport = $event"
         @structure="sourceProject = selectedProject"
         @chat="openConversation(selectedProject, $event)"
         @search="openRetrieval(selectedProject, $event)"
@@ -537,6 +597,7 @@ onUnmounted(() => {
       :open="sourceProject !== null"
       :project-id="sourceProject?.id"
       :project-name="sourceProject?.name"
+      :guide="workspaceReport?.projectId === sourceProject?.id && workspaceReport?.revision === sourceProject?.currentRevision ? workspaceReport?.guide ?? undefined : undefined"
       @configure-model="modelConnectionsOpen = true"
       @chat="chatFromSource"
       @close="sourceProject = null"
@@ -580,8 +641,9 @@ onUnmounted(() => {
       :project-id="conversationProject?.id"
       :project-name="conversationProject?.name"
       :initial-question="conversationInitialQuestion"
+      :initial-conversation-id="readingLocation.conversation"
       @configure-model="conversationProject = null; modelConnectionsOpen = true"
-      @close="conversationProject = null"
+      @close="closeConversation"
     />
   </div>
 </template>

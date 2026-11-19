@@ -1,5 +1,5 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GenerationWorkspace from './GenerationWorkspace.vue'
 import { generationApi } from '../services/generationApi'
 import type { GenerationSession } from '../types/generation'
@@ -96,7 +96,13 @@ const structuredSession: GenerationSession = {
   },
 }
 
+enableAutoUnmount(afterEach)
 describe('GenerationWorkspace', () => {
+  beforeEach(() => {
+    vi.spyOn(generationApi, 'list').mockResolvedValue([])
+    vi.spyOn(generationApi, 'latestRun').mockResolvedValue(null)
+  })
+  afterEach(() => vi.restoreAllMocks())
   it('creates, clarifies and confirms a generation requirement', async () => {
     vi.spyOn(generationApi, 'create').mockResolvedValue(structuredClone(draftSession))
     vi.spyOn(generationApi, 'clarify').mockResolvedValue({
@@ -155,7 +161,7 @@ describe('GenerationWorkspace', () => {
       '2085617802234556419',
     )
     expect(wrapper.text()).toContain('方案已经确认')
-    expect(wrapper.text()).toContain('代码生成 Tool 尚未接入')
+    expect(wrapper.text()).toContain('生成项目源码 · 使用 API 额度')
   })
 
   it('does not submit until every required question has an answer', async () => {

@@ -1,8 +1,28 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ProjectFormModal from './ProjectFormModal.vue'
 
 describe('ProjectFormModal', () => {
+  it('contains keyboard focus, closes with Escape and returns focus to the opener', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const wrapper = mount(ProjectFormModal, { attachTo: document.body, props: { open: true, saving: false } })
+    await flushPromises()
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.element.contains(document.activeElement)).toBe(true)
+    const buttons = dialog.findAll('button')
+    buttons.at(-1)!.element.focus()
+    await dialog.trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(buttons[0]!.element)
+    await dialog.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    await wrapper.setProps({ open: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
+    opener.remove()
+  })
   it('rejects a Git project without repository url', async () => {
     const wrapper = mount(ProjectFormModal, {
       props: { open: true, project: null, saving: false },

@@ -154,8 +154,72 @@ class ProjectConversationServiceTest {
         when(modelRegistry.current("TEST", "test-model")).thenReturn(model);
     }
 
+    @Autowired private ConversationStateService conversationState;
+
     @Test
-    void keepsSavedV2ConversationGuidanceWhenNewDefaultIsV3() {
+    void cancellationDuringResearchPreservesToolSummaryAndNeverStartsAnswerStream() {
+        var created=service.create(project.getId(),new CreateConversationRequest("取证取消"));
+        when(model.supportsResearch()).thenReturn(true);
+        var call=new com.devmate.agent.model.ReviewAgentToolCall("read-cancel","function",
+                new com.devmate.agent.model.ReviewAgentToolCall.FunctionCall("read_code",
+                        "{\"chunkId\":\""+evidence.getId()+"\"}"));
+        when(model.research(any(),any())).thenReturn(reactor.core.publisher.Mono.just(
+                new com.devmate.agent.model.ReviewAgentTurn(new com.devmate.agent.model.ReviewAgentMessage(
+                        "assistant","",null,List.of(call)),0,0,0,"tool_calls")),
+                reactor.core.publisher.Mono.defer(() -> {
+                    var running=service.messages(project.getId(),created.id()).getLast();
+                    service.cancel(project.getId(),created.id(),running.id());
+                    return reactor.core.publisher.Mono.never();
+                }));
+        service.stream(project.getId(),created.id(),new CreateConversationMessageRequest("读取订单实现",java.util.UUID.randomUUID().toString()));
+        var cancelled=service.messages(project.getId(),created.id()).getLast();
+        assertThat(cancelled.status()).isEqualTo("CANCELLED");
+        assertThat(cancelled.context().actions().getFirst().status()).isEqualTo("SUCCEEDED");
+        org.mockito.Mockito.verify(model,org.mockito.Mockito.never()).stream(any());
+    }
+
+    @Test
+    void researchExpandsLongMethodAndPersistsCoverageForHistory() {
+        evidence.setContent("public void createOrder() {\n" + "// padding\n".repeat(350) + "rollbackPayment();\n}");
+        evidence.setEndLine(372); chunkMapper.updateById(evidence);
+        when(model.supportsResearch()).thenReturn(true);
+        var call = new com.devmate.agent.model.ReviewAgentToolCall("read-1", "function",
+                new com.devmate.agent.model.ReviewAgentToolCall.FunctionCall("read_code",
+                        "{\"chunkId\":\"" + evidence.getId() + "\",\"startLine\":371,\"endLine\":372}"));
+        when(model.research(any(), any())).thenReturn(
+                reactor.core.publisher.Mono.just(new com.devmate.agent.model.ReviewAgentTurn(
+                        new com.devmate.agent.model.ReviewAgentMessage("assistant", "", null, List.of(call)),0,0,0,"tool_calls")),
+                reactor.core.publisher.Mono.just(new com.devmate.agent.model.ReviewAgentTurn(
+                        new com.devmate.agent.model.ReviewAgentMessage("assistant", "done", null, List.of()),0,0,0,"stop")));
+        when(model.stream(any())).thenReturn(Flux.just("失败会调用 rollbackPayment [证据2]"));
+        var created=service.create(project.getId(),new CreateConversationRequest("取证测试"));
+        service.stream(project.getId(),created.id(),new CreateConversationMessageRequest("说明订单回滚",java.util.UUID.randomUUID().toString()));
+        var prompt=ArgumentCaptor.forClass(ProjectConversationPrompt.class); verify(model).stream(prompt.capture());
+        assertThat(prompt.getValue().messages().getLast().content()).contains("rollbackPayment();");
+        var messages=service.messages(project.getId(),created.id());
+        assertThat(messages.getLast().status()).isEqualTo("COMPLETED");
+        assertThat(messages.getLast().context().actions().getFirst().tool()).isEqualTo("read_code");
+        assertThat(messages.getLast().evidence()).anySatisfy(item -> {
+            assertThat(item.startLine()).isEqualTo(371);assertThat(item.excerpt()).contains("rollbackPayment");
+        });
+    }
+
+    @Test
+    void retainsEarlierUserTopicsAndSkipsFailedQuestionsInFollowupMemory() {
+        when(model.stream(any())).thenReturn(Flux.just("已解释 [证据1]"));
+        var created=service.create(project.getId(),new CreateConversationRequest("多轮测试"));
+        for(int i=0;i<8;i++) service.stream(project.getId(),created.id(),new CreateConversationMessageRequest(
+                i==0 ? "订单创建的事务边界" : "继续",java.util.UUID.randomUUID().toString()));
+        assertThat(conversationState.retrievalTopic(created.id(),project.getId())).isEqualTo("订单创建的事务边界");
+        assertThat(conversationState.topicMemory(created.id(),project.getId(),12)).contains("订单创建的事务边界");
+        assertThat(service.messages(project.getId(),created.id()).getLast().context().memoryUsed()).isTrue();
+        when(model.stream(any())).thenReturn(Flux.error(new AiReviewException("测试失败")));
+        service.stream(project.getId(),created.id(),new CreateConversationMessageRequest("失败问题不能成为主题",java.util.UUID.randomUUID().toString()));
+        assertThat(conversationState.retrievalTopic(created.id(),project.getId())).isEqualTo("订单创建的事务边界");
+    }
+
+    @Test
+    void keepsSavedV2ConversationGuidanceWhenNewDefaultIsV4() {
         when(model.stream(any())).thenReturn(Flux.just("旧会话回答"));
         var created = service.create(project.getId(), new CreateConversationRequest("旧会话"));
         var saved = conversationMapper.selectById(created.id());
@@ -217,14 +281,30 @@ class ProjectConversationServiceTest {
             assertThat(command.seedChunkIds()).containsExactly(evidence.getId());
             assertThat(command.retrievalMode()).isEqualTo(RetrievalMode.LEXICAL);
         });
+        assertThat(service.get(project.getId(), conversation.id()).id()).isEqualTo(conversation.id());
         assertThat(service.list(project.getId())).singleElement().satisfies(item -> {
             assertThat(item.title()).isEqualTo("订单怎么创建？");
-            assertThat(item.promptVersion()).isEqualTo("project-conversation-v3");
+            assertThat(item.promptVersion()).isEqualTo("project-conversation-v4");
         });
         assertThat(service.messages(project.getId(), conversation.id())).hasSize(4);
         var prompts = ArgumentCaptor.forClass(ProjectConversationPrompt.class);
         verify(model, times(2)).stream(prompts.capture());
         assertThat(prompts.getValue().systemPrompt()).contains("第一层", "不能声称运行验证", "不可信数据");
+    }
+
+    @Test
+    void explicitCodeFollowupDoesNotInheritThePreviousTopic() {
+        when(model.stream(any())).thenReturn(Flux.just("依据实现解释。"));
+        var conversation = service.create(project.getId(), new CreateConversationRequest(null));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest(
+                "介绍订单业务", "823e4567-e89b-42d3-a456-426614174000"));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest(
+                "请继续解释 Signer.sign 和 Signer.unsign", "923e4567-e89b-42d3-a456-426614174000"));
+        var commands = ArgumentCaptor.forClass(RetrievalSearchCommand.class);
+        verify(retrievalService, times(2)).search(eq(project.getId()), commands.capture());
+        assertThat(commands.getValue().query()).isEqualTo("请继续解释 Signer.sign 和 Signer.unsign");
+        assertThat(commands.getValue().seedChunkIds()).isEmpty();
+        assertThat(commands.getValue().retrievalMode()).isEqualTo(RetrievalMode.LEXICAL);
     }
 
     @Test
@@ -310,6 +390,7 @@ class ProjectConversationServiceTest {
         var request = new CreateConversationMessageRequest("准备问题", "723e4567-e89b-42d3-a456-426614174000");
         service.stream(project.getId(), conversation.id(), request);
         var running = service.messages(project.getId(), conversation.id()).get(1);
+        assertThat(service.get(project.getId(), conversation.id()).id()).isEqualTo(conversation.id());
         assertThatThrownBy(() -> service.rename(project.getId(), conversation.id(), "不能改")).hasMessageContaining("先停止");
         assertThatThrownBy(() -> service.delete(project.getId(), conversation.id())).hasMessageContaining("先停止");
         assertThat(service.cancel(project.getId(), conversation.id(), running.id()).cancellationRequested()).isTrue();
@@ -353,6 +434,7 @@ class ProjectConversationServiceTest {
         var conversation = service.create(project.getId(), new CreateConversationRequest(null));
         assertThatThrownBy(() -> service.cancel(project.getId(), conversation.id(), -1L)).hasMessageContaining("消息不存在");
         when(currentUserService.getRequiredUser()).thenReturn(new AuthenticatedUser(99999L, "someone-else"));
+        assertThatThrownBy(() -> service.get(project.getId(), conversation.id())).hasMessageContaining("无权");
         assertThatThrownBy(() -> service.rename(project.getId(), conversation.id(), "不能改")).hasMessageContaining("无权");
         assertThatThrownBy(() -> service.delete(project.getId(), conversation.id())).hasMessageContaining("无权");
         assertThatThrownBy(() -> service.cancel(project.getId(), conversation.id(), -1L)).hasMessageContaining("无权");
@@ -370,12 +452,29 @@ class ProjectConversationServiceTest {
                 .hasMessageContaining("必须同时指定");
     }
 
-    private RetrievalSearchResponse retrieval() {
+    @Test
+    void restoresFocusedEvidenceAndStillReadsLegacyIdArrays() {
+        evidence.setContent("header\n".repeat(200) + "def sign(value): return value"); evidence.setStartLine(1); evidence.setEndLine(201);
+        chunkMapper.updateById(evidence);
+        when(retrievalService.search(any(), any())).thenReturn(retrieval("def sign(value): return value", 201, 202));
+        when(model.stream(any())).thenReturn(Flux.just("见证据中的实际方法。"));
+        var conversation = service.create(project.getId(), new CreateConversationRequest(null));
+        service.stream(project.getId(), conversation.id(), new CreateConversationMessageRequest("Signer.sign", "a23e4567-e89b-42d3-a456-426614174000"));
+        var answer = service.messages(project.getId(), conversation.id()).get(1);
+        assertThat(answer.evidence().getFirst().startLine()).isEqualTo(201);
+        assertThat(answer.evidence().getFirst().endLine()).isEqualTo(201);
+        assertThat(answer.evidence().getFirst().excerpt()).startsWith("def sign");
+        var saved = messageMapper.selectById(answer.id()); saved.setEvidenceJson("[\"" + evidence.getId() + "\"]"); messageMapper.updateById(saved);
+        assertThat(service.messages(project.getId(), conversation.id()).get(1).evidence().getFirst().excerpt()).startsWith("header");
+    }
+
+    private RetrievalSearchResponse retrieval() { return retrieval(evidence.getContent(), 20, 22); }
+    private RetrievalSearchResponse retrieval(String excerpt, int start, int end) {
         RetrievalHitResponse hit = new RetrievalHitResponse(
                 evidence.getId(), evidence.getDocumentId(),
                 "src/main/java/com/example/OrderService.java", "SOURCE_CODE", "METHOD",
-                evidence.getSymbolName(), 20, 22, 0.9, 12,
-                List.of("VECTOR"), evidence.getContent()
+                evidence.getSymbolName(), start, end, 0.9, 12,
+                List.of("VECTOR"), excerpt
         );
         return new RetrievalSearchResponse(project.getId(), REVISION, "订单", "hybrid-test",
                 "HYBRID", "HYBRID", "LOCAL", "hash", true, 1, false, null,

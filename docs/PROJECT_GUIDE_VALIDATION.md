@@ -1,5 +1,7 @@
 # Project Guide 验证记录
 
+> 下文为2026-11-11独立Skill试用的历史记录。当前产品接入与2026-11-13真实浏览器/MySQL验收见 [接入记录](PROJECT_GUIDE_IMPLEMENTATION.md) 和 [体验矩阵](BEGINNER_EXPERIENCE_ACCEPTANCE.md)。
+
 日期：2026-11-11。对应 [project-guide skill](skills/project-guide/SKILL.md) 与 [独立提示词](PROJECT_GUIDE_PROMPT.md)，协议为 `project-guide-v1`。
 
 本轮验证的是“AI 依据文件生成新人导览”的方法与 skill 包，未把它接入 DevMate 页面。外部参考产品只查阅了资料，没有安装或运行。

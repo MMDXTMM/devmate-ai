@@ -137,7 +137,7 @@ class GenerationSessionControllerTest {
     }
 
     @Test
-    void rejectsBlankAndOutOfScopeRequirements() throws Exception {
+    void rejectsBlankButAcceptsDifferentKindsOfProjectRequirements() throws Exception {
         mockMvc.perform(post("/api/generation-sessions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requirement\":\" \"}"))
@@ -147,10 +147,8 @@ class GenerationSessionControllerTest {
         mockMvc.perform(post("/api/generation-sessions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requirement\":\"做一个实时音视频平台\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(
-                        "第一版暂不支持“实时音视频”类项目，请先使用管理或业务流程型 Spring Boot 后端需求"
-                ));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.originalRequirement").value("做一个实时音视频平台"));
     }
 
     @Test

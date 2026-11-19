@@ -1,0 +1,6 @@
+[
+  {"datasetVersion":"retrieval-regression-v1","name":"exact-method","query":"OrderService.reserveStock","expectedFilePath":"src/main/java/com/example/OrderService.java","expectedSymbolName":"com.example.OrderService#reserveStock(Long)","topK":3},
+  {"datasetVersion":"retrieval-regression-v1","name":"exact-file","query":"OrderRepository.java","expectedFilePath":"src/main/java/com/example/OrderRepository.java","expectedSymbolName":"com.example.OrderRepository#saveOrder(Long)","topK":3},
+  {"datasetVersion":"retrieval-regression-v1","name":"mixed-language","query":"请解释 reserveStock 中的库存预留逻辑","expectedFilePath":"src/main/java/com/example/OrderService.java","expectedSymbolName":"com.example.OrderService#reserveStock(Long)","topK":3},
+  {"datasetVersion":"retrieval-regression-v1","name":"implementation-before-caller","query":"saveOrder 如何持久化订单","expectedFilePath":"src/main/java/com/example/OrderRepository.java","expectedSymbolName":"com.example.OrderRepository#saveOrder(Long)","topK":3}
+]

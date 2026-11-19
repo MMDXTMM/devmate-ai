@@ -103,3 +103,7 @@ GET /api/projects/{projectId}/embeddings/tasks/latest
 - 为什么不能只按源码内容哈希复用向量：当前 Embedding 输入还包含路径、类型和符号名，复用键必须覆盖真实模型输入。
 - 跨 revision 复用为什么复制向量值但保留新 Chunk 的独立绑定，以及它如何维持 revision 隔离。
 - MySQL 线性扫描方案的边界，以及未来替换专业向量库的条件。
+
+## 2026-11-17：分页扫描
+
+MySqlVectorStore改为256条游标分页和有界Top-K优先队列，默认最多扫描50000条，达到上限返回部分覆盖原因。它降低一次装载向量的内存占用，不改变线性余弦搜索复杂度或引入ANN。现有LOCAL/DASHSCOPE配置保持，聊天API不自动成为Embedding配置。

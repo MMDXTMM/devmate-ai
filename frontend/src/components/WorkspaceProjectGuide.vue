@@ -8,8 +8,9 @@ import { projectEmoji } from '../utils/guideAppearance'
 
 const requireModel = useModelAccess()
 const props = defineProps<{ project: Project }>()
-const emit = defineEmits<{ chat: [question: string]; configureModel: [] }>()
+const emit = defineEmits<{ chat: [question: string]; configureModel: []; reportLoaded: [report: ProjectUnderstandingReport | null] }>()
 const report = ref<ProjectUnderstandingReport | null>(null)
+watch(report, value => emit('reportLoaded', value), { immediate: true })
 const loading = ref(false)
 const generating = ref(false)
 const waiting = ref(false)
@@ -42,7 +43,7 @@ function schedule(generation: number) {
     return
   }
   timer = setTimeout(() => {
-    void load(false, generation)
+    void load(generation)
   }, 3000)
 }
 function accept(item: ProjectUnderstandingReport, generation: number) {
@@ -95,14 +96,14 @@ async function generate(generation = epoch) {
     if (cause instanceof ApiError && cause.status) attemptKey = undefined
     if (cause instanceof ApiError && cause.status === 409) {
       const conflict = error.value
-      await load(false, generation)
+      await load(generation)
       if (current(generation) && !waiting.value) error.value = conflict
     }
   } finally {
     if (current(generation)) generating.value = false
   }
 }
-async function load(allowInitialGeneration: boolean, generation = epoch) {
+async function load(generation = epoch) {
   if (
     !current(generation) ||
     !props.project.currentRevision ||
@@ -115,34 +116,16 @@ async function load(allowInitialGeneration: boolean, generation = epoch) {
     const item = await projectApi.latestUnderstandingReport(props.project.id)
     if (!current(generation)) return
     if (!belongs(item)) {
-      if (allowInitialGeneration) await generate(generation)
-      else {
-        waiting.value = false
-        error.value = '上次导览对应其他源码版本，请为当前版本生成导览'
-      }
+      waiting.value = false
+      error.value = '上次导览对应其他源码版本，请为当前版本生成导览'
       return
     }
     accept(item, generation)
-    // Keep the old guide visible while filling the newly introduced learning overview once.
-    if (
-      allowInitialGeneration &&
-      item.status === 'SUCCEEDED' &&
-      !item.guide?.content.overview
-    ) {
-      await generate(generation)
-    }
   } catch (cause) {
     if (!current(generation)) return
-    if (
-      cause instanceof ApiError &&
-      cause.status === 404 &&
-      allowInitialGeneration
-    )
-      await generate(generation)
-    else {
-      waiting.value = false
-      error.value =
-        cause instanceof ApiError ? cause.message : '导览读取失败，请刷新重试'
+    waiting.value = false
+    if (!(cause instanceof ApiError && cause.status === 404)) {
+      error.value = cause instanceof ApiError ? cause.message : '导览读取失败，请刷新重试'
     }
   } finally {
     if (current(generation)) loading.value = false
@@ -160,7 +143,7 @@ watch(
     generating.value = false
     waiting.value = false
     error.value = ''
-    void load(true, epoch)
+    void load(epoch)
   },
   { immediate: true },
 )
@@ -180,14 +163,14 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">从这里开始</p>
         <h2 id="project-overview-title">项目概要 · 新人导览 <span aria-hidden="true">{{ projectEmoji(project, report?.guide?.content.appearance) }}</span></h2>
-        <p>优先阅读 README，再结合源码认识用途、语言和模块，了解值得学习的设计。</p>
+        <p>先看用途和模块，选择感兴趣的内容再深入。阅读与刷新已保存的导览不会调用模型。</p>
       </div>
       <div class="workspace-guide-controls">
         <button
           class="button secondary"
           type="button"
           :disabled="loading || generating"
-          @click="load(false)"
+          @click="load()"
         >
           刷新导览
         </button>
@@ -199,7 +182,7 @@ onBeforeUnmount(() => {
           "
           @click="generate()"
         >
-          {{ generating ? '正在整理…' : '重新分析' }}
+          {{ generating ? '正在整理…' : report ? '更新导览 · 使用 API 额度' : '生成导览 · 使用 API 额度' }}
         </button>
       </div>
     </header>
@@ -231,7 +214,7 @@ onBeforeUnmount(() => {
           class="button secondary"
           type="button"
           :disabled="loading || generating"
-          @click="load(false)"
+          @click="load()"
         >
           刷新状态
         </button>
@@ -255,6 +238,7 @@ onBeforeUnmount(() => {
     <ProjectGuideView
       v-if="report?.guide"
       :guide="report.guide"
+      :project-id="project.id"
       @chat="emit('chat', $event)"
     />
     <section v-else class="workspace-guide-placeholder">
@@ -266,7 +250,7 @@ onBeforeUnmount(() => {
         请先完成项目导入，才能根据源码整理概要。
       </p>
       <p v-else-if="!loading && !generating && !waiting">
-        尚无新版导览。配置模型后可重试，已有项目数据仍保留。
+        点击“生成导览”开始分析，会使用当前账户的 API 额度。
       </p>
     </section>
     <p v-if="report?.guide" class="workspace-guide-saved">

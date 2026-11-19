@@ -3,7 +3,17 @@ import { computed, defineComponent, h, type VNodeChild } from 'vue'
 import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
 import AnswerCodeBlock from './AnswerCodeBlock.vue'
-const props = defineProps<{ content: string }>()
+const props = defineProps<{ content: string; evidenceCount?: number }>()
+const emit = defineEmits<{ citation: [index: number] }>()
+function textNodes(text: string): VNodeChild[] {
+  return text.split(/(\*\*[^*\n]{1,300}\*\*|\[证据\s*\d+\])/g).map(part => {
+    if (/^\*\*\S(?:[^*]*\S)?\*\*$/.test(part)) return h('strong', {}, textNodes(part.slice(2, -2)))
+    const match = /^\[证据\s*(\d+)\]$/.exec(part)
+    const index = match ? Number(match[1]) - 1 : -1
+    return index >= 0 && index < (props.evidenceCount ?? 0)
+      ? h('button', { type: 'button', class: 'answer-citation', 'aria-label': `查看证据 ${index + 1}`, onClick: () => emit('citation', index) }, part) : part
+  })
+}
 // Parse Markdown, then create Vue nodes from a fixed tag/attribute whitelist. No v-html or model HTML.
 const markdown = new MarkdownIt({ html: false, linkify: false, breaks: true })
 const allowedTags = new Set(['p', 'ul', 'ol', 'li', 'blockquote', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'strong', 'em', 's'])
@@ -38,6 +48,7 @@ function renderTokens(tokens: Token[]): VNodeChild[] {
       else if (token.type === 'softbreak' || token.type === 'hardbreak') nodes.push(h('br'))
       else if (token.type === 'hr') nodes.push(h('hr'))
       else if (token.type === 'image') nodes.push(h('span', { class: 'answer-image-label' }, `[图片：${token.content || '未加载'}]`))
+      else if (token.type === 'text') nodes.push(...textNodes(token.content))
       else nodes.push(token.content)
     }
     return nodes
